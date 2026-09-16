@@ -1,0 +1,1 @@
+{"name":"rabbit-hole","private":true,"packageManager":"pnpm@10.28.2","scripts":{"dev":"pnpm --dir src/frontend dev","build":"pnpm --dir src/frontend build","test":"pnpm --dir src/frontend test","typecheck":"pnpm --dir src/frontend typecheck","e2e":"pnpm --dir src/frontend e2e"}}
