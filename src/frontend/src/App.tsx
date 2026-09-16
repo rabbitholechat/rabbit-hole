@@ -1,6 +1,31 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Background, BackgroundVariant, ReactFlow, ReactFlowProvider, useReactFlow, useViewport, type Edge } from '@xyflow/react'
-import { ArrowUp, ChevronLeft, ChevronRight, Clock3, ExternalLink, Maximize, Minus, Plus, Search, Square, Trash2, X, FlaskConical, RotateCcw, LoaderCircle, Compass } from 'lucide-react'
+import {
+  Background,
+  BackgroundVariant,
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  useViewport,
+  type Edge,
+} from '@xyflow/react'
+import {
+  ArrowUp,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  ExternalLink,
+  Maximize,
+  Minus,
+  Plus,
+  Search,
+  Square,
+  Trash2,
+  X,
+  FlaskConical,
+  RotateCcw,
+  LoaderCircle,
+  Compass,
+} from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 import { useStore } from './store'
 import { RabbitIcon } from './components/RabbitIcon'
@@ -13,17 +38,23 @@ import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
 import type { PageNode } from './types'
 
-const nodeTypes = { page: PageCard }, edgeTypes = { relation: RelationEdge }
+const nodeTypes = { page: PageCard },
+  edgeTypes = { relation: RelationEdge }
 const suggestions = ['벡터 검색이란?', '아이폰 폴드 가격과 출시일', '오사카 최저가 항공권']
 function Workspace() {
-  const state = useStore(), session = state.session
-  const flow = useReactFlow<PageNode>(), viewport = useViewport()
+  const state = useStore(),
+    session = state.session
+  const flow = useReactFlow<PageNode>(),
+    viewport = useViewport()
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth > 700)
   const [samplesOpen, setSamplesOpen] = useState(false)
   const [weak, setWeak] = useState(false)
-  const inputRef = useRef<HTMLTextAreaElement>(null), composing = useRef(false)
+  const inputRef = useRef<HTMLTextAreaElement>(null),
+    composing = useRef(false)
   const fitRef = useRef<(initial?: boolean) => void>(() => {})
-  useEffect(() => { void useStore.getState().initialize() }, [])
+  useEffect(() => {
+    void useStore.getState().initialize()
+  }, [])
   useEffect(() => {
     const s = useStore.getState().session
     void flow.setViewport(s?.viewport ?? { x: 0, y: 0, zoom: 1 })
@@ -31,18 +62,27 @@ function Workspace() {
   function fit(initial = false) {
     let nodes = useStore.getState().session?.nodes
     if (!nodes?.length) return
-    if (initial && window.innerWidth < 700) nodes = nodes.slice(0, 2)
-    const minX = Math.min(...nodes.map(n => n.position.x)), minY = Math.min(...nodes.map(n => n.position.y))
-    const width = Math.max(...nodes.map(n => n.position.x + CARD_WIDTH)) - minX
-    const height = Math.max(...nodes.map(n => n.position.y + CARD_HEIGHT)) - minY
+    if (initial && window.innerWidth < 700) nodes = nodes.slice(0, 1)
+    const minX = Math.min(...nodes.map((n) => n.position.x)),
+      minY = Math.min(...nodes.map((n) => n.position.y))
+    const width = Math.max(...nodes.map((n) => n.position.x + CARD_WIDTH)) - minX
+    const height = Math.max(...nodes.map((n) => n.position.y + CARD_HEIGHT)) - minY
     const mobile = window.innerWidth < 700
     const left = mobile ? 24 : historyOpen ? 250 : 75
     const right = mobile ? 24 : 34
-    const top = mobile ? 170 : session?.answer ? 240 : 120, bottom = mobile ? 160 : 150
-    const roomW = Math.max(220, window.innerWidth - left - right), roomH = Math.max(200, window.innerHeight - top - bottom)
+    const top = mobile ? 170 : session?.answer ? 240 : 120,
+      bottom = mobile ? 160 : 150
+    const roomW = Math.max(220, window.innerWidth - left - right),
+      roomH = Math.max(200, window.innerHeight - top - bottom)
     const zoom = Math.min(0.95, roomW / (width + 60), roomH / (height + 60))
-    const next = { x: left + roomW / 2 - (minX + width / 2) * zoom, y: top + roomH / 2 - (minY + height / 2) * zoom, zoom }
-    void flow.setViewport(next, { duration: 250 }); state.viewport(next); state.markFitted()
+    const next = {
+      x: left + roomW / 2 - (minX + width / 2) * zoom,
+      y: top + roomH / 2 - (minY + height / 2) * zoom,
+      zoom,
+    }
+    void flow.setViewport(next, { duration: initial ? 0 : 250 })
+    state.viewport(next)
+    state.markFitted()
   }
   fitRef.current = fit
   useEffect(() => {
@@ -51,75 +91,431 @@ function Workspace() {
       return () => clearTimeout(timer)
     }
   }, [session?.id, session?.nodes.length, session?.fitted, session?.status])
-  const related = useMemo(() => new Set(session?.graph.relations.flatMap(e => e.source === state.selected ? [e.target] : e.target === state.selected ? [e.source] : []) ?? []), [session?.graph, state.selected])
-  const nodes = useMemo(() => session?.nodes.map(n => ({ ...n, selected: n.id === state.selected, data: { ...n.data, related: related.has(n.id), dimmed: Boolean(state.selected && n.id !== state.selected && !related.has(n.id)) } })) ?? [], [session?.nodes, related, state.selected])
-  const edges: Edge[] = useMemo(() => session?.graph.relations.map((e, i) => ({ id: `edge-${i}`, source: e.source, target: e.target, type: 'relation', label: e.label,
-    hidden: e.strength === 'weak' && !weak, style: { stroke: e.source === state.selected || e.target === state.selected || state.selectedEdge === i ? '#0F766E' : '#becbc6', strokeWidth: state.selectedEdge === i ? 2.4 : 1.35, opacity: state.selected && e.source !== state.selected && e.target !== state.selected ? 0.3 : 1, strokeDasharray: e.strength === 'weak' ? '4 5' : undefined } })) ?? [], [session?.graph, state.selected, state.selectedEdge, weak])
-  const selectedSource = session?.sources.find(s => s.id === state.selected)
-  const selectedRelation = state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]
+  const related = useMemo(
+    () =>
+      new Set(
+        session?.graph.relations.flatMap((e) =>
+          e.source === state.selected ? [e.target] : e.target === state.selected ? [e.source] : [],
+        ) ?? [],
+      ),
+    [session?.graph, state.selected],
+  )
+  const nodes = useMemo(
+    () =>
+      session?.nodes.map((n) => ({
+        ...n,
+        selected: n.id === state.selected,
+        data: {
+          ...n.data,
+          related: related.has(n.id),
+          dimmed: Boolean(state.selected && n.id !== state.selected && !related.has(n.id)),
+        },
+      })) ?? [],
+    [session?.nodes, related, state.selected],
+  )
+  const edges: Edge[] = useMemo(
+    () =>
+      session?.graph.relations.map((e, i) => ({
+        id: `edge-${i}`,
+        source: e.source,
+        target: e.target,
+        type: 'relation',
+        label: e.label,
+        hidden: e.strength === 'weak' && !weak,
+        style: {
+          stroke:
+            e.source === state.selected || e.target === state.selected || state.selectedEdge === i
+              ? '#0F766E'
+              : '#becbc6',
+          strokeWidth: state.selectedEdge === i ? 2.4 : 1.35,
+          opacity: state.selected && e.source !== state.selected && e.target !== state.selected ? 0.3 : 1,
+          strokeDasharray: e.strength === 'weak' ? '4 5' : undefined,
+        },
+      })) ?? [],
+    [session?.graph, state.selected, state.selectedEdge, weak],
+  )
+  const selectedSource = session?.sources.find((s) => s.id === state.selected)
+  const selectedRelation =
+    state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]
   const busy = Boolean(state.activeRequest)
-  function submit(event: FormEvent) { event.preventDefault(); if (!composing.current && !busy) void state.run() }
-  function fill(query: string) { state.setInput(query); inputRef.current?.focus() }
-  return <main className="workspace" aria-label="검색 관계 지도">
-    <ReactFlow<PageNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-      onNodesChange={state.nodesChange} onNodeClick={(_, node) => state.select(node.id)}
-      onNodeDragStop={(_, node) => state.nodesChange([{ type: 'position', id: node.id, position: node.position, dragging: false }])}
-      onPaneClick={() => { state.select(null); state.selectEdge(null) }}
-      onMoveEnd={(_, v) => state.viewport(v)} minZoom={0.15} maxZoom={1.75} nodesConnectable={false}
-      deleteKeyCode={null} selectionKeyCode={null} aria-label="페이지 관계 캔버스" proOptions={{ hideAttribution: true }}>
-      <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#d9dfda"/>
-    </ReactFlow>
-    <div className="brand panel"><RabbitIcon/><span>Rabbit Hole</span></div>
-    <aside className={`history-panel panel ${historyOpen ? '' : 'collapsed'}`} aria-label="검색 기록">
-      <div className="history-actions">{historyOpen && <Button className="new-search" onClick={() => { state.newSearch(); inputRef.current?.focus() }}><Plus/>새 검색</Button>}
-        <Button variant="ghost" size="icon" aria-label={historyOpen ? '검색 기록 접기' : '검색 기록 펼치기'} aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? <ChevronLeft/> : <ChevronRight/>}</Button></div>
-      {historyOpen && <><h2>최근 검색 <span>{state.history.length || ''}</span></h2>
-        <div className="history-list">{!state.history.length && <p className="history-empty">검색 기록이 여기에 쌓입니다.</p>}
-          {state.history.map(h => <div className={`history-row ${session?.id === h.id ? 'active' : ''}`} key={h.id}>
-            <button className="history-item" onClick={() => { state.open(h.id); if (window.innerWidth < 700) setHistoryOpen(false) }}><Clock3 size={14}/><span>{h.query}</span>{h.mode === 'sample' && <small>예시</small>}</button>
-            <button className="history-delete" aria-label={`${h.query} 기록 삭제`} onClick={() => void state.remove(h.id)}><Trash2 size={13}/></button>
-          </div>)}
-        </div><div className="sample-controls"><button onClick={() => setSamplesOpen(!samplesOpen)} aria-expanded={samplesOpen}><FlaskConical size={13}/>디자인 예시 둘러보기<ChevronRight size={12}/></button>
-          {samplesOpen && <div className="sample-menu">{(['vector', 'fold', 'flight'] as const).map((kind, i) => <button key={kind} onClick={() => { state.sample(kind); if (window.innerWidth < 700) setHistoryOpen(false) }}>{suggestions[i]}<span>가상 데이터</span></button>)}</div>}
-        </div></>}
-    </aside>
-    {!session && <section className="welcome"><h1>호기심이 이어지는 곳</h1><p>검색은 AI에게, 이해는 사람에게.</p><div className="suggestions">{suggestions.map(q => <button key={q} onClick={() => fill(q)}>{q}<ChevronRight size={13}/></button>)}</div></section>}
-    {session && <div className="canvas-heading"><div><span className="eyebrow">{session.mode === 'sample' ? 'DESIGN PREVIEW' : 'YOUR EXPLORATION'}</span><h1>{session.query.split('\n')[0]}</h1></div><span>{session.sources.length}개의 페이지</span>
-      {session.mode === 'sample' && <span className="sample-badge">디자인 예시 · 가상 데이터</span>}
-    </div>}
-    <AnswerPanel/>
-    {(selectedSource || selectedRelation) && <section className="detail-panel panel" aria-label={selectedSource ? '출처 상세' : '관계 상세'}>
-      <header><span>{selectedSource ? '페이지 자세히 보기' : '왜 연결되었나요?'}</span><Button variant="ghost" size="icon" aria-label="상세 닫기" onClick={() => { state.select(null); state.selectEdge(null) }}><X/></Button></header>
-      <div className="detail-body">{selectedSource ? <><small>{selectedSource.domain}</small><h2>{selectedSource.title}</h2>
-        <span className="tag">{selectedSource.read_status === 'read' ? '원문 확인 기반' : '검색 요약 기반 · 원문 미확인'}</span>
-        <blockquote>{selectedSource.excerpt || selectedSource.summary || '확보한 발췌가 없습니다.'}</blockquote>
-        {selectedSource.retrieved_at && <p className="timestamp">조회 {new Date(selectedSource.retrieved_at).toLocaleString('ko-KR')}</p>}
-        {selectedSource.published_at && <p className="timestamp">게시 {selectedSource.published_at}</p>}
-        {safeUrl(selectedSource.url) && <a className="source-link" href={safeUrl(selectedSource.url)} target="_blank" rel="noopener noreferrer">원문 열기<ExternalLink size={14}/></a>}
-        <Button className="explore-button" variant="outline" size="sm" disabled={busy || session?.mode === 'sample' || !session?.continuation} onClick={() => void state.run({ focusId: selectedSource.id })}><Compass/>관련 자료 더 찾기</Button>
-        {session?.mode === 'sample' && <p className="timestamp">디자인 예시에서는 외부 검색을 실행하지 않습니다.</p>}
-      </> : selectedRelation && <><h2>{selectedRelation.label}</h2><p>{selectedRelation.explanation}</p>{selectedRelation.evidence.map((e, i) => <div className="evidence" key={i}><button onClick={() => state.select(e.source_id)}>{session?.sources.find(s => s.id === e.source_id)?.domain}</button><blockquote>{e.quote}</blockquote><small>{e.basis === 'excerpt' ? '원문 확인 기반' : '검색 요약 기반'}</small></div>)}<p className="timestamp">연결은 내용의 관련성이며 사실의 신뢰도를 뜻하지 않습니다.</p></>}
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!composing.current && !busy) void state.run()
+  }
+  function fill(query: string) {
+    state.setInput(query)
+    inputRef.current?.focus()
+  }
+  return (
+    <main className="workspace" aria-label="검색 관계 지도">
+      <ReactFlow<PageNode>
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodesChange={state.nodesChange}
+        onNodeClick={(_, node) => state.select(node.id)}
+        onNodeDragStop={(_, node) => {
+          state.nodesChange([{ type: 'position', id: node.id, position: node.position, dragging: false }])
+          state.markFitted()
+        }}
+        onPaneClick={() => {
+          state.select(null)
+          state.selectEdge(null)
+        }}
+        onMoveEnd={(event, v) => {
+          state.viewport(v)
+          if (event) state.markFitted()
+        }}
+        minZoom={0.15}
+        maxZoom={1.75}
+        nodesConnectable={false}
+        deleteKeyCode={null}
+        selectionKeyCode={null}
+        aria-label="페이지 관계 캔버스"
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#d9dfda" />
+      </ReactFlow>
+      <div className="brand panel">
+        <RabbitIcon />
+        <span>Rabbit Hole</span>
       </div>
-    </section>}
-    <div className="composer-area">
-      {state.needsFlight && <FlightForm/>}
-      {(state.error || state.storageError) && <div className="error-banner panel" role="alert"><span>{state.error || state.storageError}</span>
-        <Button variant="ghost" size="icon" aria-label="오류 안내 닫기" onClick={() => useStore.setState({ error: null, storageError: null })}><X/></Button>
-        {!busy && session?.mode === 'live' && session.failedParts.filter(p => p === 'answer' || p === 'relationships').map(part => <Button key={part} size="sm" variant="outline" disabled={!session.continuation} onClick={() => void state.run({ retry: part as 'answer' | 'relationships' })}>{part === 'answer' ? '답변' : '관계'} 재시도</Button>)}
-        {!busy && session?.status === 'failed' && <Button variant="outline" size="sm" onClick={() => void state.run({ fresh: true })}>다시 검색</Button>}
-      </div>}
-      {busy && <div className="search-status" role="status"><LoaderCircle className="spin" size={14}/>{state.stage}<span>확보한 자료부터 보여드릴게요.</span></div>}
-      {!busy && session && session.mode === 'live' && <div className="result-status"><span>{({ completed: '탐색을 이어가 보세요', partial: '부분 완료 · 확보한 결과 유지', failed: '검색을 완료하지 못했어요', cancelled: '검색 중지 · 확보한 결과 유지', idle: '', running: '' })[session.status]}</span><button onClick={() => void state.run({ fresh: true })}><RotateCcw size={12}/>새로 조회</button></div>}
-      <form className="composer panel" onSubmit={submit}><Search size={21}/><textarea ref={inputRef} rows={1} aria-label="검색 질문" placeholder={session ? '더 궁금한 내용을 이어서 물어보세요' : '무엇이 궁금한가요?'} value={state.input} maxLength={2000}
-        onChange={e => state.setInput(e.target.value)} onCompositionStart={() => { composing.current = true }} onCompositionEnd={() => { composing.current = false }}
-        onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !composing.current && e.keyCode !== 229) { e.preventDefault(); if (!busy) void state.run() } }}/>
-        {busy ? <Button type="button" size="icon" aria-label="검색 중지" onClick={state.stop}><Square size={15}/></Button> : <Button type="submit" size="icon" aria-label="검색 실행" disabled={!state.input.trim()}><ArrowUp/></Button>}
-      </form><p className="composer-note">{session?.mode === 'sample' ? '디자인 예시입니다. 질문을 입력하면 새로운 실제 검색을 시작합니다.' : '검색은 AI에게, 이해는 사람에게.'}</p>
-    </div>
-    {session?.sources.length ? <div className="map-legend"><span/><span>페이지 사이의 내용 관계</span>{session.graph.relations.some(e => e.strength === 'weak') && <label><input type="checkbox" checked={weak} onChange={e => setWeak(e.target.checked)}/>약한 연결</label>}</div> : null}
-    <nav className="canvas-tools panel" aria-label="캔버스 도구"><Button variant="ghost" size="icon" aria-label="화면 맞춤" onClick={() => fit()}><Maximize/></Button><i/>
-      <Button variant="ghost" size="icon" aria-label="축소" onClick={() => void flow.zoomOut({ duration: 150 })}><Minus/></Button><span aria-label="현재 배율">{Math.round(viewport.zoom * 100)}%</span>
-      <Button variant="ghost" size="icon" aria-label="확대" onClick={() => void flow.zoomIn({ duration: 150 })}><Plus/></Button></nav>
-  </main>
+      <aside className={`history-panel panel ${historyOpen ? '' : 'collapsed'}`} aria-label="검색 기록">
+        <div className="history-actions">
+          {historyOpen && (
+            <Button
+              className="new-search"
+              onClick={() => {
+                state.newSearch()
+                inputRef.current?.focus()
+              }}
+            >
+              <Plus />새 검색
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={historyOpen ? '검색 기록 접기' : '검색 기록 펼치기'}
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen(!historyOpen)}
+          >
+            {historyOpen ? <ChevronLeft /> : <ChevronRight />}
+          </Button>
+        </div>
+        {historyOpen && (
+          <>
+            <h2>
+              최근 검색 <span>{state.history.length || ''}</span>
+            </h2>
+            <div className="history-list">
+              {!state.history.length && <p className="history-empty">검색 기록이 여기에 쌓입니다.</p>}
+              {state.history.map((h) => (
+                <div className={`history-row ${session?.id === h.id ? 'active' : ''}`} key={h.id}>
+                  <button
+                    className="history-item"
+                    onClick={() => {
+                      state.open(h.id)
+                      if (window.innerWidth < 700) setHistoryOpen(false)
+                    }}
+                  >
+                    <Clock3 size={14} />
+                    <span>{h.query}</span>
+                    {h.mode === 'sample' && <small>예시</small>}
+                  </button>
+                  <button
+                    className="history-delete"
+                    aria-label={`${h.query} 기록 삭제`}
+                    onClick={() => void state.remove(h.id)}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="sample-controls">
+              <button onClick={() => setSamplesOpen(!samplesOpen)} aria-expanded={samplesOpen}>
+                <FlaskConical size={13} />
+                디자인 예시 둘러보기
+                <ChevronRight size={12} />
+              </button>
+              {samplesOpen && (
+                <div className="sample-menu">
+                  {(['vector', 'fold', 'flight'] as const).map((kind, i) => (
+                    <button
+                      key={kind}
+                      onClick={() => {
+                        state.sample(kind)
+                        if (window.innerWidth < 700) setHistoryOpen(false)
+                      }}
+                    >
+                      {suggestions[i]}
+                      <span>가상 데이터</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </aside>
+      {!session && (
+        <section className="welcome">
+          <h1>호기심이 이어지는 곳</h1>
+          <p>검색은 AI에게, 이해는 사람에게.</p>
+          <div className="suggestions">
+            {suggestions.map((q) => (
+              <button key={q} onClick={() => fill(q)}>
+                {q}
+                <ChevronRight size={13} />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {session && (
+        <div className="canvas-heading">
+          <div>
+            <span className="eyebrow">
+              {session.mode === 'sample' ? 'DESIGN PREVIEW' : 'YOUR EXPLORATION'}
+            </span>
+            <h1>{session.query.split('\n')[0]}</h1>
+          </div>
+          <span>{session.sources.length}개의 페이지</span>
+          {session.mode === 'sample' && <span className="sample-badge">디자인 예시 · 가상 데이터</span>}
+        </div>
+      )}
+      <AnswerPanel />
+      {(selectedSource || selectedRelation) && (
+        <section className="detail-panel panel" aria-label={selectedSource ? '출처 상세' : '관계 상세'}>
+          <header>
+            <span>{selectedSource ? '페이지 자세히 보기' : '왜 연결되었나요?'}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="상세 닫기"
+              onClick={() => {
+                state.select(null)
+                state.selectEdge(null)
+              }}
+            >
+              <X />
+            </Button>
+          </header>
+          <div className="detail-body">
+            {selectedSource ? (
+              <>
+                <small>{selectedSource.domain}</small>
+                <h2>{selectedSource.title}</h2>
+                <span className="tag">
+                  {selectedSource.read_status === 'read' ? '원문 확인 기반' : '검색 요약 기반 · 원문 미확인'}
+                </span>
+                <blockquote>
+                  {selectedSource.excerpt || selectedSource.summary || '확보한 발췌가 없습니다.'}
+                </blockquote>
+                {selectedSource.retrieved_at && (
+                  <p className="timestamp">
+                    조회 {new Date(selectedSource.retrieved_at).toLocaleString('ko-KR')}
+                  </p>
+                )}
+                {selectedSource.published_at && (
+                  <p className="timestamp">게시 {selectedSource.published_at}</p>
+                )}
+                {safeUrl(selectedSource.url) && (
+                  <a
+                    className="source-link"
+                    href={safeUrl(selectedSource.url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    원문 열기
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+                <Button
+                  className="explore-button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || session?.mode === 'sample' || !session?.continuation}
+                  onClick={() => void state.run({ focusId: selectedSource.id })}
+                >
+                  <Compass />
+                  관련 자료 더 찾기
+                </Button>
+                {session?.mode === 'sample' && (
+                  <p className="timestamp">디자인 예시에서는 외부 검색을 실행하지 않습니다.</p>
+                )}
+              </>
+            ) : (
+              selectedRelation && (
+                <>
+                  <h2>{selectedRelation.label}</h2>
+                  <p>{selectedRelation.explanation}</p>
+                  {selectedRelation.evidence.map((e, i) => (
+                    <div className="evidence" key={i}>
+                      <button onClick={() => state.select(e.source_id)}>
+                        {session?.sources.find((s) => s.id === e.source_id)?.domain}
+                      </button>
+                      <blockquote>{e.quote}</blockquote>
+                      <small>{e.basis === 'excerpt' ? '원문 확인 기반' : '검색 요약 기반'}</small>
+                    </div>
+                  ))}
+                  <p className="timestamp">연결은 내용의 관련성이며 사실의 신뢰도를 뜻하지 않습니다.</p>
+                </>
+              )
+            )}
+          </div>
+        </section>
+      )}
+      <div className="composer-area">
+        {state.needsFlight && <FlightForm />}
+        {(state.error || state.storageError) && (
+          <div className="error-banner panel" role="alert">
+            <span>{state.error || state.storageError}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="오류 안내 닫기"
+              onClick={() => useStore.setState({ error: null, storageError: null })}
+            >
+              <X />
+            </Button>
+
+            {!busy && session?.status === 'failed' && (
+              <Button variant="outline" size="sm" onClick={() => void state.run({ fresh: true })}>
+                다시 검색
+              </Button>
+            )}
+          </div>
+        )}
+        {busy && (
+          <div className="search-status" role="status">
+            <LoaderCircle className="spin" size={14} />
+            {state.stage}
+            <span>확보한 자료부터 보여드릴게요.</span>
+          </div>
+        )}
+        {!busy && session && session.mode === 'live' && (
+          <div className="result-status">
+            <span>
+              {
+                {
+                  completed: '탐색을 이어가 보세요',
+                  partial: '부분 완료 · 확보한 결과 유지',
+                  failed: '검색을 완료하지 못했어요',
+                  cancelled: '검색 중지 · 확보한 결과 유지',
+                  idle: '',
+                  running: '',
+                }[session.status]
+              }
+            </span>
+            <button onClick={() => void state.run({ fresh: true })}>
+              <RotateCcw size={12} />
+              새로 조회
+            </button>
+            {session.failedParts
+              .filter((p) => p === 'answer' || p === 'relationships')
+              .map((part) => (
+                <Button
+                  key={part}
+                  size="sm"
+                  variant="outline"
+                  disabled={!session.continuation}
+                  onClick={() => void state.run({ retry: part as 'answer' | 'relationships' })}
+                >
+                  {part === 'answer' ? '답변' : '관계'} 재시도
+                </Button>
+              ))}
+          </div>
+        )}
+        <form className="composer panel" onSubmit={submit}>
+          <Search size={21} />
+          <textarea
+            ref={inputRef}
+            rows={1}
+            aria-label="검색 질문"
+            placeholder={session ? '더 궁금한 내용을 이어서 물어보세요' : '무엇이 궁금한가요?'}
+            value={state.input}
+            maxLength={2000}
+            onChange={(e) => state.setInput(e.target.value)}
+            onCompositionStart={() => {
+              composing.current = true
+            }}
+            onCompositionEnd={() => {
+              composing.current = false
+            }}
+            onKeyDown={(e) => {
+              if (
+                e.key === 'Enter' &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing &&
+                !composing.current &&
+                e.keyCode !== 229
+              ) {
+                e.preventDefault()
+                if (!busy) void state.run()
+              }
+            }}
+          />
+          {busy ? (
+            <Button type="button" size="icon" aria-label="검색 중지" onClick={state.stop}>
+              <Square size={15} />
+            </Button>
+          ) : (
+            <Button type="submit" size="icon" aria-label="검색 실행" disabled={!state.input.trim()}>
+              <ArrowUp />
+            </Button>
+          )}
+        </form>
+        <p className="composer-note">
+          {session?.mode === 'sample'
+            ? '디자인 예시입니다. 질문을 입력하면 새로운 실제 검색을 시작합니다.'
+            : '검색은 AI에게, 이해는 사람에게.'}
+        </p>
+      </div>
+      {session?.sources.length ? (
+        <div className="map-legend">
+          <span />
+          <span>페이지 사이의 내용 관계</span>
+          {session.graph.relations.some((e) => e.strength === 'weak') && (
+            <label>
+              <input type="checkbox" checked={weak} onChange={(e) => setWeak(e.target.checked)} />
+              약한 연결
+            </label>
+          )}
+        </div>
+      ) : null}
+      <nav className="canvas-tools panel" aria-label="캔버스 도구">
+        <Button variant="ghost" size="icon" aria-label="화면 맞춤" onClick={() => fit()}>
+          <Maximize />
+        </Button>
+        <i />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="축소"
+          onClick={() => void flow.zoomOut({ duration: 150 })}
+        >
+          <Minus />
+        </Button>
+        <span aria-label="현재 배율">{Math.round(viewport.zoom * 100)}%</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="확대"
+          onClick={() => void flow.zoomIn({ duration: 150 })}
+        >
+          <Plus />
+        </Button>
+      </nav>
+    </main>
+  )
 }
-export default function App() { return <ReactFlowProvider><Workspace/></ReactFlowProvider> }
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <Workspace />
+    </ReactFlowProvider>
+  )
+}

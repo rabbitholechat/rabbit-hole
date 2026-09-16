@@ -1,0 +1,28 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "corepack pnpm install --frozen-lockfile",
+  "buildCommand": "corepack pnpm build",
+  "outputDirectory": "src/frontend/dist",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 120,
+      "includeFiles": "src/backend/rabbit_hole/**",
+      "excludeFiles": "{src/backend/.venv/**,src/backend/tests/**,src/frontend/node_modules/**,node_modules/**,docs/**,**/.env,**/.env.*}"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    }
+  ]
+}

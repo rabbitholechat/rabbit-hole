@@ -1,0 +1,285 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Rabbit Hole",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "post": {
+        "summary": "Search",
+        "operationId": "search_api_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Versioned SSE envelopes; see docs/API.md",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Expired or invalid continuation; start a new search"
+          },
+          "413": {
+            "description": "Request body exceeds configured byte limit"
+          },
+          "429": {
+            "description": "Rate or concurrent job limit"
+          },
+          "503": {
+            "description": "Search provider configuration is missing"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "delete": {
+        "summary": "Cancel",
+        "operationId": "cancel_api_jobs__job_id__delete",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Flight": {
+        "properties": {
+          "origin": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Origin"
+          },
+          "departure": {
+            "type": "string",
+            "format": "date",
+            "title": "Departure"
+          },
+          "return_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Date"
+          },
+          "trip": {
+            "type": "string",
+            "enum": ["one_way", "round_trip"],
+            "title": "Trip"
+          },
+          "passengers": {
+            "type": "integer",
+            "maximum": 9.0,
+            "minimum": 1.0,
+            "title": "Passengers"
+          },
+          "direct": {
+            "type": "boolean",
+            "title": "Direct"
+          },
+          "baggage": {
+            "type": "string",
+            "enum": ["none", "cabin", "checked"],
+            "title": "Baggage"
+          }
+        },
+        "type": "object",
+        "required": ["origin", "departure", "trip", "passengers", "direct", "baggage"],
+        "title": "Flight"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "SearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation"
+          },
+          "focus_source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Focus Source Id"
+          },
+          "retry_part": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["answer", "relationships"]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Part"
+          },
+          "flight": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Flight"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": ["query", "request_id"],
+        "title": "SearchRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

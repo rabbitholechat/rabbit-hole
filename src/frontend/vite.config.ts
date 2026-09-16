@@ -7,8 +7,18 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, backend, '')
   return {
     plugins: [react(), tailwind()],
-    build: { rollupOptions: { output: { manualChunks: { canvas: ['@xyflow/react', 'd3-force'], markdown: ['react-markdown', 'remark-gfm'] } } } },
-    server: { port: Number(env.FRONTEND_PORT || 5178), strictPort: true, proxy: { '/api': `http://127.0.0.1:${env.BACKEND_PORT || 8018}` } },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: { canvas: ['@xyflow/react', 'd3-force'], markdown: ['react-markdown', 'remark-gfm'] },
+        },
+      },
+    },
+    server: {
+      port: Number(env.FRONTEND_PORT || 5178),
+      strictPort: true,
+      proxy: { '/api': `http://127.0.0.1:${env.BACKEND_PORT || 8018}` },
+    },
     // No env is copied to define/import.meta.env: server keys stay server-side.
   }
 })

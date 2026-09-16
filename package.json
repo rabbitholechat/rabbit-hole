@@ -8,5 +8,8 @@
     "test": "corepack pnpm --dir src/frontend test",
     "typecheck": "corepack pnpm --dir src/frontend typecheck",
     "e2e": "corepack pnpm --dir src/frontend e2e"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.7"
   }
 }
