@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     max_stored_jobs: int = Field(100, ge=1, le=1000)
     session_signing_key: SecretStr = SecretStr('')
     backend_host: str = '127.0.0.1'
-    backend_port: int = 8000
-    frontend_port: int = 5173
+    backend_port: int = 8018
+    frontend_port: int = 5178
 
     @property
     def configured(self) -> bool:
