@@ -17,10 +17,10 @@ it('uses one shared profile rabbit and accessible button', () => {
   const click = vi.fn()
   render(
     <Button onClick={click}>
-      <RabbitIcon />새 검색
+      <RabbitIcon />새 대화
     </Button>,
   )
-  fireEvent.click(screen.getByRole('button', { name: '새 검색' }))
+  fireEvent.click(screen.getByRole('button', { name: '새 대화' }))
   expect(click).toHaveBeenCalledOnce()
 })
 describe('layout', () => {
@@ -159,15 +159,13 @@ it('shows a diagnostic code when a search tool fails', () => {
     activeRequest: 'current',
     lastSeq: 0,
   })
-  useStore
-    .getState()
-    .receive({
-      version: 1,
-      request_id: 'current',
-      job_id: 'job',
-      seq: 1,
-      type: 'part_error',
-      data: { part: 'search', code: 'timeout', message: '응답 시간이 초과되었습니다.' },
-    })
+  useStore.getState().receive({
+    version: 1,
+    request_id: 'current',
+    job_id: 'job',
+    seq: 1,
+    type: 'part_error',
+    data: { part: 'search', code: 'timeout', message: '응답 시간이 초과되었습니다.' },
+  })
   expect(useStore.getState().error).toBe('응답 시간이 초과되었습니다. [timeout]')
 })

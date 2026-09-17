@@ -13,7 +13,7 @@ export async function consumeSSE(
     )
   }
   if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream'))
-    throw new Error('검색 스트림을 열지 못했습니다.')
+    throw new Error('응답 연결을 열지 못했습니다.')
   const reader = response.body.getReader(),
     decoder = new TextDecoder()
   let buffer = ''

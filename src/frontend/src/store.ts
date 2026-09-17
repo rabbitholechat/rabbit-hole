@@ -160,7 +160,7 @@ export const useStore = create<State>((set, get) => ({
         : before.input.trim()
     if (!query) return
     if (before.session?.clarification && !before.session.continuation && !options.fresh) {
-      set({ error: '이어서 검색할 정보가 없습니다. 새로 조회해 주세요.' })
+      set({ error: '이전 대화를 이어갈 정보가 없습니다. 새 대화를 시작해 주세요.' })
       return
     }
     const reusable = before.session?.mode === 'live' && before.session.continuation && !options.fresh
@@ -174,7 +174,7 @@ export const useStore = create<State>((set, get) => ({
       session,
       activeRequest: requestId,
       lastSeq: 0,
-      stage: '검색 중',
+      stage: '요청을 준비하고 있어요',
       error: null,
       baseline: session.nodes,
       focusId: options.focusId,
@@ -197,7 +197,7 @@ export const useStore = create<State>((set, get) => ({
       await consumeSSE(response, get().receive, abort.signal)
     } catch (error) {
       if (get().activeRequest !== requestId || abort.signal.aborted) return
-      set({ error: error instanceof Error ? error.message : '검색 중 오류가 발생했습니다.' })
+      set({ error: error instanceof Error ? error.message : '요청 처리 중 오류가 발생했습니다.' })
       const current = get().session
       if (current) commit({ ...current, status: current.sources.length ? 'partial' : 'failed' })
     } finally {
@@ -223,11 +223,11 @@ export const useStore = create<State>((set, get) => ({
             (
               {
                 understanding: '질문 확인 중',
-                searching: '검색 중',
+                searching: '자료를 조사하고 있어요',
                 reading: '자료 확인 중',
                 relating: '관련성 정리 중',
               } as Record<string, string>
-            )[String(event.data.stage)] || '검색 중',
+            )[String(event.data.stage)] || '요청을 처리하고 있어요',
         })
         break
       case 'sources': {

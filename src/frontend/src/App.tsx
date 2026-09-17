@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Background,
   BackgroundVariant,
+  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -10,14 +11,14 @@ import {
 } from '@xyflow/react'
 import {
   ArrowUp,
-  ChevronLeft,
+  PanelLeftClose,
   ChevronRight,
   Clock3,
   ExternalLink,
   Maximize,
   Minus,
   Plus,
-  Search,
+  MessageCircle,
   Square,
   Trash2,
   X,
@@ -40,13 +41,26 @@ import type { PageNode } from './types'
 
 const nodeTypes = { page: PageCard },
   edgeTypes = { relation: RelationEdge }
-const suggestions = ['벡터 검색이란?', '아이폰 폴드 가격과 출시일', '오사카 최저가 항공권']
+const sampleTitles = ['벡터 검색이란?', '아이폰 폴드 가격과 출시일', '오사카 최저가 항공권']
+const suggestions = [
+  '복잡한 개념을 쉽게 설명해줘',
+  '두 가지 선택지를 비교해줘',
+  '아이디어를 실행 계획으로 정리해줘',
+]
 function Workspace() {
   const state = useStore(),
     session = state.session
   const flow = useReactFlow<PageNode>(),
     viewport = useViewport()
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth > 700)
+  useEffect(() => {
+    const mobile = window.matchMedia('(max-width: 700px)')
+    const collapseOnMobile = () => {
+      if (mobile.matches) setHistoryOpen(false)
+    }
+    mobile.addEventListener('change', collapseOnMobile)
+    return () => mobile.removeEventListener('change', collapseOnMobile)
+  }, [])
   const [samplesOpen, setSamplesOpen] = useState(false)
   const [weak, setWeak] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null),
@@ -71,7 +85,7 @@ function Workspace() {
     const left = mobile ? 24 : historyOpen ? 250 : 75
     const right = mobile ? 24 : 34
     const top = mobile ? 170 : session?.answer ? 240 : 120,
-      bottom = mobile ? 160 : 150
+      bottom = mobile ? 280 : 150
     const roomW = Math.max(220, window.innerWidth - left - right),
       roomH = Math.max(200, window.innerHeight - top - bottom)
     const zoom = Math.min(0.95, roomW / (width + 60), roomH / (height + 60))
@@ -120,6 +134,7 @@ function Workspace() {
         source: e.source,
         target: e.target,
         type: 'relation',
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#94b2a6', width: 16, height: 16 },
         label: e.label,
         hidden: e.strength === 'weak' && !weak,
         style: {
@@ -147,7 +162,10 @@ function Workspace() {
     inputRef.current?.focus()
   }
   return (
-    <main className="workspace" aria-label="검색 관계 지도">
+    <main
+      className={`workspace ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'}`}
+      aria-label="대화 캔버스"
+    >
       <ReactFlow<PageNode>
         nodes={nodes}
         edges={edges}
@@ -175,105 +193,105 @@ function Workspace() {
         aria-label="페이지 관계 캔버스"
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#d9dfda" />
+        <Background variant={BackgroundVariant.Lines} gap={28} lineWidth={0.6} color="#e2e6df" />
       </ReactFlow>
-      <div className="brand panel">
-        <RabbitIcon />
-        <span>Rabbit Hole</span>
-      </div>
-      <aside className={`history-panel panel ${historyOpen ? '' : 'collapsed'}`} aria-label="검색 기록">
-        <div className="history-actions">
-          {historyOpen && (
-            <Button
-              className="new-search"
-              onClick={() => {
-                state.newSearch()
-                inputRef.current?.focus()
-              }}
-            >
-              <Plus />새 검색
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={historyOpen ? '검색 기록 접기' : '검색 기록 펼치기'}
-            aria-expanded={historyOpen}
-            onClick={() => setHistoryOpen(!historyOpen)}
-          >
-            {historyOpen ? <ChevronLeft /> : <ChevronRight />}
-          </Button>
+      <header className="sidebar-header">
+        <button
+          className="brand"
+          aria-label={historyOpen ? 'Rabbit Hole' : '대화 기록 펼치기'}
+          aria-expanded={historyOpen}
+          data-tooltip={historyOpen ? undefined : '대화 기록 펼치기'}
+          data-tooltip-position="bottom"
+          onClick={() => {
+            if (!historyOpen) setHistoryOpen(true)
+          }}
+        >
+          <RabbitIcon />
+          <span>Rabbit Hole</span>
+        </button>
+        <Button
+          className="sidebar-collapse"
+          variant="ghost"
+          size="icon"
+          aria-label="대화 기록 접기"
+          data-tooltip="대화 기록 접기"
+          data-tooltip-position="bottom"
+          aria-expanded={historyOpen}
+          aria-hidden={!historyOpen}
+          tabIndex={historyOpen ? 0 : -1}
+          onClick={() => setHistoryOpen(false)}
+        >
+          <PanelLeftClose size={18} />
+        </Button>
+      </header>
+      <aside
+        className="history-panel panel"
+        aria-label="대화 기록"
+        aria-hidden={!historyOpen}
+        inert={!historyOpen}
+      >
+        <Button
+          className="new-search"
+          onClick={() => {
+            state.newSearch()
+            if (window.innerWidth < 700) setHistoryOpen(false)
+            inputRef.current?.focus()
+          }}
+        >
+          <Plus />새 대화
+        </Button>
+        <h2>
+          최근 대화 <span>{state.history.length || ''}</span>
+        </h2>
+        <div className="history-list">
+          {!state.history.length && <p className="history-empty">대화 기록이 여기에 쌓입니다.</p>}
+          {state.history.map((h) => (
+            <div className={`history-row ${session?.id === h.id ? 'active' : ''}`} key={h.id}>
+              <button
+                className="history-item"
+                onClick={() => {
+                  state.open(h.id)
+                  if (window.innerWidth < 700) setHistoryOpen(false)
+                }}
+              >
+                <Clock3 size={14} />
+                <span>{h.query}</span>
+                {h.mode === 'sample' && <small>예시</small>}
+              </button>
+              <button
+                className="history-delete"
+                aria-label={`${h.query} 기록 삭제`}
+                onClick={() => void state.remove(h.id)}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
         </div>
-        {historyOpen && (
-          <>
-            <h2>
-              최근 검색 <span>{state.history.length || ''}</span>
-            </h2>
-            <div className="history-list">
-              {!state.history.length && <p className="history-empty">검색 기록이 여기에 쌓입니다.</p>}
-              {state.history.map((h) => (
-                <div className={`history-row ${session?.id === h.id ? 'active' : ''}`} key={h.id}>
-                  <button
-                    className="history-item"
-                    onClick={() => {
-                      state.open(h.id)
-                      if (window.innerWidth < 700) setHistoryOpen(false)
-                    }}
-                  >
-                    <Clock3 size={14} />
-                    <span>{h.query}</span>
-                    {h.mode === 'sample' && <small>예시</small>}
-                  </button>
-                  <button
-                    className="history-delete"
-                    aria-label={`${h.query} 기록 삭제`}
-                    onClick={() => void state.remove(h.id)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
+        <div className="sample-controls">
+          <button onClick={() => setSamplesOpen(!samplesOpen)} aria-expanded={samplesOpen}>
+            <FlaskConical size={13} />
+            디자인 예시 둘러보기
+            <ChevronRight size={12} />
+          </button>
+          {samplesOpen && (
+            <div className="sample-menu">
+              {(['vector', 'fold', 'flight'] as const).map((kind, i) => (
+                <button
+                  key={kind}
+                  onClick={() => {
+                    state.sample(kind)
+                    if (window.innerWidth < 700) setHistoryOpen(false)
+                  }}
+                >
+                  {sampleTitles[i]}
+                  <span>가상 데이터</span>
+                </button>
               ))}
             </div>
-            <div className="sample-controls">
-              <button onClick={() => setSamplesOpen(!samplesOpen)} aria-expanded={samplesOpen}>
-                <FlaskConical size={13} />
-                디자인 예시 둘러보기
-                <ChevronRight size={12} />
-              </button>
-              {samplesOpen && (
-                <div className="sample-menu">
-                  {(['vector', 'fold', 'flight'] as const).map((kind, i) => (
-                    <button
-                      key={kind}
-                      onClick={() => {
-                        state.sample(kind)
-                        if (window.innerWidth < 700) setHistoryOpen(false)
-                      }}
-                    >
-                      {suggestions[i]}
-                      <span>가상 데이터</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
+          )}
+        </div>
       </aside>
-      {!session && (
-        <section className="welcome">
-          <h1>호기심이 이어지는 곳</h1>
-          <p>검색은 AI에게, 이해는 사람에게.</p>
-          <div className="suggestions">
-            {suggestions.map((q) => (
-              <button key={q} onClick={() => fill(q)}>
-                {q}
-                <ChevronRight size={13} />
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
       {session && (
         <div className="canvas-heading">
           <div>
@@ -310,10 +328,10 @@ function Workspace() {
                 <h2>{selectedSource.title}</h2>
                 <span className="tag">
                   {selectedSource.content_origin === 'web_search_summary'
-                    ? 'AI 검색 요약 · 원문 미확인'
+                    ? 'AI 생성 요약 · 원문 미확인'
                     : selectedSource.read_status === 'read'
                       ? '원문 확인 기반'
-                      : '검색 요약 기반 · 원문 미확인'}
+                      : '자료 요약 기반 · 원문 미확인'}
                 </span>
                 <blockquote>
                   {selectedSource.excerpt || selectedSource.summary || '확보한 발췌가 없습니다.'}
@@ -348,7 +366,7 @@ function Workspace() {
                   관련 자료 더 찾기
                 </Button>
                 {session?.mode === 'sample' && (
-                  <p className="timestamp">디자인 예시에서는 외부 검색을 실행하지 않습니다.</p>
+                  <p className="timestamp">디자인 예시에서는 실제 요청을 실행하지 않습니다.</p>
                 )}
               </>
             ) : (
@@ -365,10 +383,10 @@ function Workspace() {
                       <small>
                         {session?.sources.find((s) => s.id === e.source_id)?.content_origin ===
                         'web_search_summary'
-                          ? 'AI 검색 요약 · 원문 미확인'
+                          ? 'AI 생성 요약 · 원문 미확인'
                           : e.basis === 'excerpt'
                             ? '원문 확인 기반'
-                            : '검색 요약 기반'}
+                            : '자료 요약 기반'}
                       </small>
                     </div>
                   ))}
@@ -395,7 +413,7 @@ function Workspace() {
 
             {!busy && session?.status === 'failed' && (
               <Button variant="outline" size="sm" onClick={() => void state.run({ fresh: true })}>
-                다시 검색
+                다시 시도
               </Button>
             )}
           </div>
@@ -415,8 +433,8 @@ function Workspace() {
                   completed: '탐색을 이어가 보세요',
                   awaiting_input: '추가 답변을 기다리고 있어요',
                   partial: '부분 완료 · 확보한 결과 유지',
-                  failed: '검색을 완료하지 못했어요',
-                  cancelled: '검색 중지 · 확보한 결과 유지',
+                  failed: '요청을 완료하지 못했어요',
+                  cancelled: '응답 중지 · 확보한 결과 유지',
                   idle: '',
                   running: '',
                 }[session.status]
@@ -424,7 +442,7 @@ function Workspace() {
             </span>
             <button onClick={() => void state.run({ fresh: true })}>
               <RotateCcw size={12} />
-              새로 조회
+              다시 요청
             </button>
             {session.failedParts
               .filter((p) => p === 'intent' || p === 'answer' || p === 'relationships')
@@ -441,18 +459,24 @@ function Workspace() {
               ))}
           </div>
         )}
+        {!session && (
+          <section className="welcome">
+            <h1>호기심이 이어지는 곳</h1>
+            <p>질문에서 아이디어로, 대화에서 다음 단계로.</p>
+          </section>
+        )}
         <form className="composer panel" onSubmit={submit}>
-          <Search size={21} />
+          <MessageCircle size={21} />
           <textarea
             ref={inputRef}
             rows={1}
-            aria-label="검색 질문"
+            aria-label="메시지 입력"
             placeholder={
               session?.clarification
                 ? '추가 질문에 답변해 주세요'
                 : session
-                  ? '더 궁금한 내용을 이어서 물어보세요'
-                  : '무엇이 궁금한가요?'
+                  ? '이어서 질문하거나 다음 작업을 요청하세요'
+                  : '무엇을 함께 풀어볼까요?'
             }
             value={state.input}
             maxLength={2000}
@@ -477,19 +501,29 @@ function Workspace() {
             }}
           />
           {busy ? (
-            <Button type="button" size="icon" aria-label="검색 중지" onClick={state.stop}>
+            <Button type="button" size="icon" aria-label="응답 중지" onClick={state.stop}>
               <Square size={15} />
             </Button>
           ) : (
-            <Button type="submit" size="icon" aria-label="검색 실행" disabled={!state.input.trim()}>
+            <Button type="submit" size="icon" aria-label="메시지 보내기" disabled={!state.input.trim()}>
               <ArrowUp />
             </Button>
           )}
         </form>
+        {!session && (
+          <div className="suggestions">
+            {suggestions.map((q) => (
+              <button key={q} onClick={() => fill(q)}>
+                {q}
+                <ChevronRight size={13} />
+              </button>
+            ))}
+          </div>
+        )}
         <p className="composer-note">
           {session?.mode === 'sample'
-            ? '디자인 예시입니다. 질문을 입력하면 새로운 실제 검색을 시작합니다.'
-            : '검색은 AI에게, 이해는 사람에게.'}
+            ? '디자인 예시입니다. 메시지를 보내면 새로운 대화를 시작합니다.'
+            : '질문에서 아이디어로, 대화에서 다음 단계로.'}
         </p>
       </div>
       {session?.sources.length ? (
@@ -505,7 +539,13 @@ function Workspace() {
         </div>
       ) : null}
       <nav className="canvas-tools panel" aria-label="캔버스 도구">
-        <Button variant="ghost" size="icon" aria-label="화면 맞춤" onClick={() => fit()}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="화면 맞춤"
+          data-tooltip="화면 맞춤"
+          onClick={() => fit()}
+        >
           <Maximize />
         </Button>
         <i />
@@ -513,6 +553,7 @@ function Workspace() {
           variant="ghost"
           size="icon"
           aria-label="축소"
+          data-tooltip="축소"
           onClick={() => void flow.zoomOut({ duration: 150 })}
         >
           <Minus />
@@ -522,6 +563,7 @@ function Workspace() {
           variant="ghost"
           size="icon"
           aria-label="확대"
+          data-tooltip="확대"
           onClick={() => void flow.zoomIn({ duration: 150 })}
         >
           <Plus />
