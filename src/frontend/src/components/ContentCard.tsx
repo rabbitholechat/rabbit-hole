@@ -1,10 +1,11 @@
+import { RabbitLoader } from './RabbitLoader'
 import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { NodeActions } from './NodeActions'
 import { PreviousNodeButton } from './PreviousNodeButton'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { ExternalLink, LoaderCircle } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import type { InformationNode, SourceNode } from '../types'
 import { useStore } from '../store'
 import { safeUrl } from '../lib/utils'
@@ -42,8 +43,8 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
           <NodeTag kind={entity.type} />
           {entity.type === 'information' && <small>{kinds[entity.subtype]}</small>}
           {source && <small className="source-progress" role="status">
-            {pending && <LoaderCircle className="source-spinner" size={14} aria-hidden="true" />}
-            {content?.status === 'reading' ? '조회 중' : content?.status === 'summarizing' ? '요약 중' : content?.summary ? '요약 완료' : ''}
+            {pending && <RabbitLoader />}
+            {content?.status === 'reading' ? '조회 중' : content?.status === 'summarizing' ? '요약 중' : content?.status === 'cancelled' ? '요약 중지됨' : content?.summary ? content.summary_error ? '일부 요약' : '요약 완료' : ''}
           </small>}
           <NodeActions id={id} collapsed={collapsed} canCollapse={canCollapse} />
         </header>
@@ -77,12 +78,13 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
             <h2 title={entity.source.title}>{entity.source.title}</h2>
             <p className="source-domain">{new URL(entity.source.url).hostname}</p>
             <p className="source-access">페이지 요약</p>
-            {pending ? (
+            {pending && !content?.summary ? (
               <p className="source-content-note source-pending">
                 {content?.status === 'reading' ? '페이지 내용을 가져오고 있어요.' : '읽은 내용을 요약하고 있어요.'}
               </p>
-            ) : content?.status === 'read' ? (
+            ) : content && (content.status === 'read' || Boolean(content.summary)) ? (
               <>
+                {content.summary && (content.summary_error || content.status === 'cancelled') && <p className="source-content-note">요약이 중단되어 생성된 부분만 표시합니다.</p>}
                 {!content.summary && <p className="source-content-note">
                   {content.summary_error ? '요약을 완료하지 못했습니다. 확보한 원문을 표시합니다.' : '이전 기록에 요약이 없어 확보한 원문을 표시합니다.'}
                 </p>}

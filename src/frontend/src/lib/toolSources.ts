@@ -34,7 +34,7 @@ export function parseToolSources(value: unknown): ToolSource[] | undefined {
         (['read', 'summarizing'].includes(body.status) && (item.access !== 'page_read' || !body.text.trim() || !body.final_url || body.error_code !== null)) ||
         (['failed', 'skipped'].includes(body.status) && (body.text !== '' || body.error_code === null)) ||
         (body.status === 'reading' && (body.text !== '' || body.error_code !== null)) ||
-        (body.summary !== undefined && (typeof body.summary !== 'string' || Array.from(body.summary).length > 2000 || (body.summary && body.status !== 'read'))) ||
+        (body.summary !== undefined && (typeof body.summary !== 'string' || Array.from(body.summary).length > 2000 || (body.summary && !['read', 'summarizing', 'cancelled'].includes(body.status)))) ||
         ![undefined, null, 'summary_unavailable', 'summary_timeout', 'summary_budget_exhausted'].includes(body.summary_error)
       ) return
       content = { status: body.status, text: body.text, truncated: body.truncated, final_url: body.final_url, error_code: body.error_code, summary: body.summary, summary_error: body.summary_error }

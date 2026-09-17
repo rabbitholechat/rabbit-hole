@@ -32,6 +32,7 @@ export type SourceContent = {
   truncated: boolean
   final_url: string | null
   error_code: 'page_unavailable' | 'page_timeout' | 'budget_exhausted' | 'page_blocked' | 'page_not_found' | 'page_size_limit' | 'unsupported_content_type' | 'unsupported_encoding' | 'empty_page' | 'unsafe_url' | null
+  /** Cumulative public summary text, including partial text while summarizing. */
   summary?: string
   summary_error?: 'summary_unavailable' | 'summary_timeout' | 'summary_budget_exhausted' | null
 }

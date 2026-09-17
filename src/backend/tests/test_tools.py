@@ -339,15 +339,36 @@ async def test_compressed_article_extraction_and_bounded_truncation(monkeypatch)
     assert len(page["text"]) == 1024 and page["truncated"]
 
 
+class SummaryStream:
+    def __init__(self, events):
+        self.events = events
+        self.closed = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        self.closed = True
+
+    async def __aiter__(self):
+        for event in self.events:
+            yield event
+
+
 @pytest.mark.asyncio
 async def test_source_summaries_publish_progress_and_isolate_model_failure(monkeypatch):
     async def create(**kwargs):
-        assert "tools" not in kwargs and kwargs["store"] is False
+        assert "tools" not in kwargs and kwargs["store"] is False and kwargs["stream"] is True
         data = json.loads(kwargs["input"])
         assert data["text"].startswith("Only page")
         if data["title"] == "bad":
             raise TimeoutError()
-        return SimpleNamespace(status="completed", output_text="• 이 페이지의 핵심 내용입니다.")
+        return SummaryStream([
+            SimpleNamespace(type="response.reasoning_text.delta", delta="PRIVATE"),
+            SimpleNamespace(type="response.output_text.delta", delta="• 이 페이지의"),
+            SimpleNamespace(type="response.output_text.delta", delta=" 핵심 내용입니다."),
+            SimpleNamespace(type="response.completed", response=SimpleNamespace(status="completed")),
+        ])
 
     client = SimpleNamespace(responses=SimpleNamespace(create=AsyncMock(side_effect=create)))
     tools = AgentTools(settings(max_source_summaries=2), client)
@@ -366,9 +387,57 @@ async def test_source_summaries_publish_progress_and_isolate_model_failure(monke
     await tools.enrich_sources(update)
     assert all(s["content"]["status"] == "reading" for s in snapshots[0])
     assert any(s["content"]["status"] == "summarizing" for batch in snapshots for s in batch)
+    assert any(s["content"]["status"] == "summarizing" and s["content"]["summary"] == "• 이 페이지의"
+               for batch in snapshots for s in batch)
+    assert "PRIVATE" not in str(snapshots)
     sources = list(tools.sources.values())
     assert sources[0].content.summary == "• 이 페이지의 핵심 내용입니다."
     assert sources[1].content.status == "read" and sources[1].content.summary_error == "summary_timeout"
     assert sources[2].content.summary_error == "summary_budget_exhausted"
     assert client.responses.create.await_count == 2
     assert all(s.content.text == "Only page text" for s in sources)
+
+
+@pytest.mark.asyncio
+async def test_partial_summary_failure_closes_stream_and_preserves_public_text(monkeypatch):
+    stream = SummaryStream([
+        SimpleNamespace(type="response.output_text.delta", delta="부분 요약"),
+        SimpleNamespace(type="response.incomplete"),
+    ])
+    client = SimpleNamespace(responses=SimpleNamespace(create=AsyncMock(return_value=stream)))
+    tools = AgentTools(settings(), client)
+    source = tools.record("https://example.com/a", "Title", "search_result")
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", AsyncMock(return_value={
+        "url": source.url, "title": source.title, "text": "Actual page", "truncated": False,
+    }))
+    await tools.enrich_sources()
+    assert stream.closed
+    assert source.content.summary == "부분 요약"
+    assert source.content.summary_error == "summary_unavailable"
+    assert source.content.status == "read"
+
+
+@pytest.mark.asyncio
+async def test_summary_cancellation_closes_provider_stream_and_retains_partial_text(monkeypatch):
+    entered = asyncio.Event()
+
+    class WaitingStream(SummaryStream):
+        async def __aiter__(self):
+            yield SimpleNamespace(type="response.output_text.delta", delta="받은 요약")
+            entered.set()
+            await asyncio.Event().wait()
+
+    stream = WaitingStream([])
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=AsyncMock(return_value=stream))))
+    source = tools.record("https://example.com/a", "Title", "search_result")
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", AsyncMock(return_value={
+        "url": source.url, "title": source.title, "text": "Actual page", "truncated": False,
+    }))
+    task = asyncio.create_task(tools.enrich_sources())
+    await asyncio.wait_for(entered.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert stream.closed
+    assert source.content.summary == "받은 요약"
+    assert source.content.summary_error == "summary_timeout"

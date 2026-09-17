@@ -828,10 +828,11 @@ test('source cards show lookup and summary spinners then persist the page summar
             source.access = 'page_read'
             source.content.text = 'Only the actual page body. '.repeat(50)
             source.content.final_url = source.url
-            source.content.status = phase === 1 ? 'summarizing' : 'read'
-            if (phase === 2) source.content.summary = '• 이 페이지는 병렬 처리 방법을 설명합니다.\n• 실제 본문에 있는 핵심 내용을 요약했습니다.'
+            source.content.status = phase < 3 ? 'summarizing' : 'read'
+            if (phase === 2) source.content.summary = '• 이 페이지는 병렬 처리 방법을'
+            if (phase === 3) source.content.summary = '• 이 페이지는 병렬 처리 방법을 설명합니다.\n• 실제 본문에 있는 핵심 내용을 요약했습니다.'
             emit('response_sources', { id, sources: [source] })
-            if (phase === 2) {
+            if (phase === 3) {
               emit('checkpoint', { continuation: 'signed' })
               emit('done', { status: 'completed', failed_parts: [] })
               controller.close()
@@ -847,15 +848,20 @@ test('source cards show lookup and summary spinners then persist the page summar
   const card = page.locator('.source-card')
   await expect(card.locator('.source-access')).toHaveText('페이지 요약')
   await expect(card.getByRole('status')).toHaveText('조회 중')
-  await expect(card.locator('.source-spinner')).toHaveCount(1)
+  await expect(card.locator('.rabbit-loader')).toHaveCount(1)
   await expect(card).toHaveAttribute('aria-busy', 'true')
   const position = await page.locator('.react-flow__node-source').evaluate((el) => (el as HTMLElement).style.transform)
   await page.evaluate(() => (window as unknown as { nextSourcePhase: () => void }).nextSourcePhase())
   await expect(card.getByRole('status')).toHaveText('요약 중')
-  await expect(card.locator('.source-spinner')).toHaveCount(1)
+  await expect(card.locator('.rabbit-loader')).toHaveCount(1)
+  await page.evaluate(() => (window as unknown as { nextSourcePhase: () => void }).nextSourcePhase())
+  await expect(card.getByRole('status')).toHaveText('요약 중')
+  await expect(card.locator('.source-body')).toHaveText('• 이 페이지는 병렬 처리 방법을')
+  await expect(card.locator('.rabbit-loader')).toHaveCount(1)
+  await expect(card.locator('.rabbit-loader-paw')).toHaveCSS('animation-name', 'rabbit-dig')
   await page.evaluate(() => (window as unknown as { nextSourcePhase: () => void }).nextSourcePhase())
   await expect(card.getByRole('status')).toHaveText('요약 완료')
-  await expect(card.locator('.source-spinner')).toHaveCount(0)
+  await expect(card.locator('.rabbit-loader')).toHaveCount(0)
   await expect(card.locator('.source-body')).toContainText('이 페이지는 병렬 처리 방법')
   await expect(card).not.toContainText('Only the actual page body')
   expect(await page.locator('.react-flow__node-source').evaluate((el) => (el as HTMLElement).style.transform)).toBe(position)
@@ -863,5 +869,5 @@ test('source cards show lookup and summary spinners then persist the page summar
   await openHistory(page)
   await page.getByRole('button', { name: '페이지 요약 테스트', exact: true }).click()
   await expect(card.locator('.source-body')).toContainText('이 페이지는 병렬 처리 방법')
-  await expect(card.locator('.source-spinner')).toHaveCount(0)
+  await expect(card.locator('.rabbit-loader')).toHaveCount(0)
 })

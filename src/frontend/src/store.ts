@@ -142,7 +142,7 @@ function finish(session: Session, status: Session['status']): Session {
   const stopSource = (source: import('./types').ToolSource) => {
     const content = source.content
     if (!content || !['reading', 'summarizing'].includes(content.status)) return source
-    return { ...source, content: { ...content, status: 'cancelled' as const, summary: '' } }
+    return { ...source, content: { ...content, status: 'cancelled' as const } }
   }
   session = {
     ...session,

@@ -7,6 +7,7 @@ import ipaddress
 import json
 import logging
 import socket
+import time
 import zlib
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal, DecimalException, localcontext
@@ -344,9 +345,9 @@ class AgentTools:
         return {"status": "ok", "source": source.model_dump(exclude={"content"}), "text": page["text"],
                 "truncated": page["truncated"], "content_origin": "page_text"}
 
-    async def summarize_source(self, source):
+    async def summarize_source(self, source, publish):
         async with asyncio.timeout(self.settings.source_summary_timeout_seconds):
-            result = await self.client.responses.create(
+            stream = await self.client.responses.create(
                 model=self.settings.openai_source_summary_model,
                 instructions=(
                     "Summarize only the supplied page text in Korean, in 3-5 concise bullet points, "
@@ -360,12 +361,29 @@ class AgentTools:
                 ),
                 input=json.dumps({"title": source.title, "text": source.content.text,
                                   "truncated": source.content.truncated}, ensure_ascii=False),
-                max_output_tokens=700, store=False,
+                max_output_tokens=700, store=False, stream=True,
             )
-        summary = result.output_text.strip()
-        if result.status != "completed" or not summary or len(summary) > 2000:
-            raise ToolFailure("summary_unavailable")
-        return summary
+            completed = False
+            last_publish = None
+            async with stream:
+                async for event in stream:
+                    if event.type == "response.output_text.delta":
+                        if len(source.content.summary) + len(event.delta) > 2000:
+                            raise ToolFailure("summary_unavailable")
+                        source.content.summary += event.delta
+                        now = time.monotonic()
+                        # First text is immediate; coalesce snapshots to limit repeated page payloads.
+                        if last_publish is None or now - last_publish >= 0.08:
+                            await publish()
+                            last_publish = now
+                    elif event.type == "response.completed":
+                        completed = event.response.status == "completed"
+                    elif event.type in ("response.failed", "response.incomplete", "error"):
+                        raise ToolFailure("summary_unavailable")
+            summary = source.content.summary.strip()
+            if not completed or not summary:
+                raise ToolFailure("summary_unavailable")
+            return summary
 
     async def enrich_sources(self, on_update=None):
         """Publish page-specific progress; bound reads and summaries to this request."""
@@ -427,7 +445,7 @@ class AgentTools:
                         return
                     summary_calls += 1
                     try:
-                        source.content.summary = await self.summarize_source(source)
+                        source.content.summary = await self.summarize_source(source, publish)
                     except (TimeoutError, httpx.TimeoutException):
                         source.content.summary_error = "summary_timeout"
                     except Exception:

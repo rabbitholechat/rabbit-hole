@@ -340,6 +340,8 @@ def test_page_enrichment_contract_preserves_answer_and_excludes_body_from_checkp
             self.sources[0].content = SourceContent(status="summarizing", text="PRIVATE_PAGE_TEST_TEXT",
                                                    final_url="https://example.com/a")
             await on_update()
+            self.sources[0].content.summary = "페이지"
+            await on_update()
             self.sources[0].content.status = "read"
             self.sources[0].content.summary = "페이지 요약"
             await on_update()
@@ -353,7 +355,8 @@ def test_page_enrichment_contract_preserves_answer_and_excludes_body_from_checkp
     snapshots = [e for e in result if e["type"] == "response_sources"]
     sources = snapshots[-1]
     if not fail:
-        assert [e["data"]["sources"][0]["content"]["status"] for e in snapshots] == ["reading", "summarizing", "read", "read"]
+        assert [e["data"]["sources"][0]["content"]["status"] for e in snapshots] == ["reading", "summarizing", "summarizing", "read", "read"]
+        assert snapshots[2]["data"]["sources"][0]["content"]["summary"] == "페이지"
     assert completed["seq"] < reading["seq"] < sources["seq"]
     content = sources["data"]["sources"][0]["content"]
     assert content is None if fail else content["text"] == "PRIVATE_PAGE_TEST_TEXT"
