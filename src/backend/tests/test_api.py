@@ -133,7 +133,7 @@ def test_partial_failure_preserves_text_but_does_not_commit_unfinished_turn(capl
                 raise APIError(
                     "SECRET raw provider body",
                     request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
-                    body={"message": "SECRET", "code": "server_error"},
+                    body={"message": "SECRET", "code": "server_error", "type": "server_error"},
                 )
             raise TimeoutError("SECRET raw provider body")
 
@@ -154,6 +154,14 @@ def test_partial_failure_preserves_text_but_does_not_commit_unfinished_turn(capl
         assert "받은 내용" not in caplog.text
         assert {r.levelname for r in caplog.records} >= {"INFO", "DEBUG", "ERROR"}
         assert "location" in caplog.text
+        failed_log = next(json.loads(r.message) for r in caplog.records if '"event": "request_failed"' in r.message)
+        if failure_kind == "provider_error":
+            assert failed_log["provider"] == {
+                "code": "server_error", "type": "server_error", "param": None, "http_status": None,
+            }
+            assert "provider" not in failure
+        else:
+            assert "provider" not in failed_log
     finally:
         diagnostics.logger.removeHandler(caplog.handler)
 

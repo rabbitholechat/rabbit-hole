@@ -295,7 +295,8 @@ test('IME submission and unconfigured agent show an error without sample fallbac
   expect(calls).toBe(0)
   await input.dispatchEvent('compositionend')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
-  await expect(page.getByRole('alert')).toContainText('모델 API 키')
+  await expect(page.getByRole('alert')).toHaveText('응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.')
+  await expect(page.getByRole('alert')).not.toContainText('API')
   await expect(page.locator('.page-card, .response-card')).toHaveCount(0)
 })
 
@@ -508,7 +509,7 @@ test('cancel preserves partial text and ignores stale events after switching can
   await expect(page.getByRole('heading', { name: '호기심이 이어지는 곳' })).toBeVisible()
 })
 
-test('partial error keeps response text and retry uses the prior checkpoint', async ({ page }) => {
+test('partial error keeps response text and retry uses the prior checkpoint', async ({ page }, testInfo) => {
   let count = 0
   await page.route('**/api/agent', async (route) => {
     const request = route.request().postDataJSON()
@@ -535,9 +536,20 @@ test('partial error keeps response text and retry uses the prior checkpoint', as
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('설명해줘')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.response-card')).toContainText('보존할 내용')
-  await expect(page.getByRole('alert')).toContainText('[timeout]')
+  const toast = page.getByRole('alert')
+  await expect(toast).toHaveText('응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.')
+  await expect(toast).toHaveCSS('background-color', 'rgb(15, 118, 110)')
+  await expect(toast).toHaveCSS('border-radius', '999px')
+  await expect(toast).toHaveCSS('opacity', '1')
+  const bounds = await toast.boundingBox()
+  expect(Math.abs(bounds!.x + bounds!.width / 2 - page.viewportSize()!.width / 2)).toBeLessThan(2)
+  expect(bounds!.y).toBeLessThan(40)
+  await page.screenshot({ path: testInfo.outputPath('error-toast.png') })
+  await expect(toast).toHaveCount(0, { timeout: 6000 })
+  await expect(page.locator('.response-card')).toContainText('보존할 내용')
   await page.getByRole('button', { name: '다시 요청', exact: true }).click()
   await expect(page.locator('.response-card')).toHaveCount(2)
+  await expect(page.getByRole('alert')).toBeVisible()
 })
 
 test('composer and canvas tools stay separate while resizing with sidebar open or closed', async ({

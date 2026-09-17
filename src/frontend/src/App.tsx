@@ -1,7 +1,7 @@
 import { useGraphArrival } from './hooks/useGraphArrival'
 import { TooltipLayer } from './components/TooltipLayer'
 import { nodeLabel, responseParentId } from './lib/nodeActions'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -35,6 +35,7 @@ import { RabbitLoader } from './components/RabbitLoader'
 import { RabbitIcon } from './components/RabbitIcon'
 import { HistoryLoading } from './components/HistoryLoading'
 import { ServerErrorPage } from './components/ServerErrorPage'
+import { ErrorToast } from './components/ErrorToast'
 import { PageCard } from './components/PageCard'
 import { ConversationEdge } from './components/ConversationEdge'
 import { RelationEdge } from './components/RelationEdge'
@@ -54,6 +55,7 @@ const nodeTypes = { page: PageCard, response: ResponseCard, information: Content
 function Workspace() {
   const state = useStore(),
     session = state.session
+  const dismissError = useCallback(() => useStore.setState({ error: null, storageError: null }), [])
   const flow = useReactFlow<CanvasNode>(),
     viewport = useViewport()
   const [screenSize, setScreenSize] = useState({ width: window.innerWidth, height: window.innerHeight })
@@ -585,26 +587,14 @@ function Workspace() {
           </div>
         </section>
       )}
+      {!opening && (state.error || state.storageError) && (
+        <ErrorToast
+          key={`${state.error ?? ''}:${state.storageError ?? ''}`}
+          message={state.error || '기록을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'}
+          onDismiss={dismissError}
+        />
+      )}
       {!opening && <div className="composer-area">
-        {(state.error || state.storageError) && (
-          <div className="error-banner panel" role="alert">
-            <span>{state.error || state.storageError}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="오류 안내 닫기"
-              onClick={() => useStore.setState({ error: null, storageError: null })}
-            >
-              <X />
-            </Button>
-
-            {!busy && session?.status === 'failed' && (
-              <Button variant="outline" size="sm" onClick={() => void state.run({ retry: true })}>
-                다시 시도
-              </Button>
-            )}
-          </div>
-        )}
         {busy && (
           <div className="agent-status" role="status">
             <RabbitLoader />

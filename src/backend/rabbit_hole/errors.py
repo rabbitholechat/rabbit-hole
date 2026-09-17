@@ -14,6 +14,55 @@ class StageFailure(ValueError):
         super().__init__(code)
 
 
+_PROVIDER_CODES = frozenset({
+    "server_error", "internal_error", "server_is_overloaded", "service_unavailable",
+    "rate_limit_exceeded", "insufficient_quota", "billing_hard_limit_reached",
+    "invalid_api_key", "invalid_organization", "organization_deactivated",
+    "permission_denied", "model_not_found", "model_not_available",
+    "unsupported_parameter", "unsupported_value", "invalid_parameter", "invalid_value",
+    "missing_required_parameter", "context_length_exceeded", "invalid_request_error",
+    "content_policy_violation", "content_filter", "request_timeout", "timeout",
+    "response_failed", "response_incomplete", "tool_error", "invalid_tool_output",
+})
+_PROVIDER_TYPES = frozenset({
+    "server_error", "internal_error", "invalid_request_error", "rate_limit_error",
+    "insufficient_quota", "authentication_error", "permission_error", "api_error",
+    "not_found_error", "requests", "tokens",
+})
+_PROVIDER_PARAMS = frozenset({
+    "model", "input", "instructions", "tools", "tool_choice", "parallel_tool_calls",
+    "max_output_tokens", "temperature", "top_p", "reasoning", "reasoning.effort",
+    "text", "text.format", "text.verbosity", "stream", "store", "previous_response_id",
+    "include", "service_tier", "truncation",
+})
+
+
+def provider_diagnostics(error: Exception) -> dict:
+    """Only known provider metadata; never serialize arbitrary response fields."""
+    if not isinstance(error, APIError):
+        return {}
+    body = error.body if isinstance(error.body, dict) else {}
+    if isinstance(body.get("error"), dict):
+        body = body["error"]
+
+    def allowed(name: str, choices: frozenset[str]) -> str | None:
+        value = getattr(error, name, None)
+        if value is None:
+            value = body.get(name)
+        if value is None:
+            return None
+        return value if isinstance(value, str) and value in choices else "redacted"
+
+    status = getattr(error, "status_code", None)
+    return {"provider": {
+        "code": allowed("code", _PROVIDER_CODES),
+        "type": allowed("type", _PROVIDER_TYPES),
+        "param": allowed("param", _PROVIDER_PARAMS),
+        # SSE errors do not carry an HTTP failure status; do not invent 500.
+        "http_status": status if type(status) is int and 100 <= status <= 599 else None,
+    }}
+
+
 def error_code(error: Exception) -> str:
     if isinstance(error, StageFailure):
         return error.code

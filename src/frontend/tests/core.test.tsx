@@ -125,7 +125,7 @@ it('never forwards legacy topic fields when continuing a saved session', async (
   }
 })
 
-it('shows a diagnostic code when the agent fails', () => {
+it('shows a simple notice without provider diagnostics when the agent fails', () => {
   useStore.setState({
     session: { ...makeSample('vector'), mode: 'live' },
     activeRequest: 'current',
@@ -139,7 +139,7 @@ it('shows a diagnostic code when the agent fails', () => {
     type: 'part_error',
     data: { part: 'response', code: 'timeout', message: '응답 시간이 초과되었습니다.' },
   })
-  expect(useStore.getState().error).toBe('응답 시간이 초과되었습니다. [timeout]')
+  expect(useStore.getState().error).toBe('응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.')
 })
 
 it('appends deltas exactly once and preserves node placement on completion and interruption', () => {

@@ -652,20 +652,34 @@ svg {
   color: #728c6d;
   font-size: 10px;
 }
-.error-banner {
-  padding: 10px 12px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
-  font-size: 11px;
+.error-toast {
+  position: fixed;
+  z-index: 100;
+  top: max(24px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 13px 24px;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  box-shadow: 0 6px 24px #0f766e26;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
   line-height: 1.6;
-  color: #8b6950;
+  pointer-events: none;
+  animation: error-toast-in 240ms ease-out both;
 }
-.error-banner > span {
-  flex: 1;
-  min-width: 65%;
+.error-toast.is-leaving { animation: error-toast-out 280ms ease-in both; }
+@keyframes error-toast-in {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes error-toast-out {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, -6px); }
 }
 @media (min-width: 1600px) {
   .composer-area {
@@ -808,9 +822,6 @@ svg {
   }
   .agent-status > span {
     display: none;
-  }
-  .error-banner {
-    font-size: 10px;
   }
   .sample-badge {
     font-size: 9px;

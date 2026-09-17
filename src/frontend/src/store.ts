@@ -1,7 +1,7 @@
 import { nodeContext } from './lib/nodeActions'
 import { create } from 'zustand'
 import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
-import type { CanvasNode, Envelope, Session, ResponseNode, PartError } from './types'
+import type { CanvasNode, Envelope, Session, ResponseNode } from './types'
 import { deleteSession, loadSession, loadSessions, saveSession } from './lib/db'
 import { consumeSSE } from './lib/sse'
 import { parseToolSources } from './lib/toolSources'
@@ -500,9 +500,9 @@ export const useStore = create<State>((set, get) => ({
         }),
       })
       await consumeSSE(response, get().receive, abort.signal)
-    } catch (error) {
+    } catch {
       if (get().activeRequest !== requestId || abort.signal.aborted) return
-      set({ error: error instanceof Error ? error.message : '요청 처리 중 오류가 발생했습니다.' })
+      set({ error: '응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.' })
       const current = get().session
       if (current)
         commit(
@@ -618,9 +618,8 @@ export const useStore = create<State>((set, get) => ({
         break
       }
       case 'part_error': {
-        const failure = event.data as unknown as PartError
         session.failedParts = ['response']
-        set({ session, error: failure.code ? `${failure.message} [${failure.code}]` : failure.message })
+        set({ session, error: '응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.' })
         break
       }
       case 'checkpoint':

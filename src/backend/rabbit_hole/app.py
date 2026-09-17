@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from . import diagnostics
 from .agent import AgentService
 from .config import Settings, get_settings
-from .errors import MESSAGES, StageFailure, error_code, error_location
+from .errors import MESSAGES, StageFailure, error_code, error_location, provider_diagnostics
 from .history import HistoryRepository, history_router
 from .middleware import BodyLimitMiddleware
 from .models import AgentRequest, ConversationTurn, Snapshot, TitleRequest, TitleResponse
@@ -227,6 +227,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService, h
                     code=code,
                     exception=type(error).__name__,
                     location=error_location(error),
+                    **provider_diagnostics(error),
                 )
                 await emit("part_error", {"part": "response", "code": code, "message": MESSAGES[code]})
             finally:
@@ -317,7 +318,8 @@ def create_app(settings: Settings | None = None, service_factory=AgentService, h
             return result
         except Exception as error:
             diagnostics.log(logging.WARNING, request_id, "title_failed",
-                            code=error_code(error), exception=type(error).__name__)
+                            code=error_code(error), exception=type(error).__name__,
+                            **provider_diagnostics(error))
             raise HTTPException(502, "대화 제목을 생성하지 못했습니다.") from error
         finally:
             job.finished = True
@@ -362,7 +364,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService, h
             raise
         except Exception as error:
             diagnostics.log(logging.ERROR, str(body.request_id), "structure_failed",
-                            code=error_code(error), location="structure")
+                            code=error_code(error), location="structure", **provider_diagnostics(error))
             raise HTTPException(502, "응답 구조화에 실패했습니다. 원래 답변은 유지됩니다.") from error
         finally:
             if task and not task.done():

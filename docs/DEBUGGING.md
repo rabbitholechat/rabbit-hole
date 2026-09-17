@@ -9,7 +9,7 @@ VS Code Python 디버거에서 자동 활성화됩니다. 일반 터미널에서
 | INFO | request_started | request_id, job_id |
 | DEBUG | agent_start | 모델, 문맥 메시지/문자 수, 도구 수(현재 3), 턴 제한 |
 | DEBUG | response_delta | seq, 이번 델타 문자 수, 누적 문자 수 |
-| ERROR | request_failed | part, code, 예외 클래스, 파일·줄·함수 위치 |
+| ERROR | request_failed | part, code, 예외 클래스, 파일·줄·함수 위치, provider(code/type/param/http_status) |
 | WARNING | cleanup_failed | 클라이언트 종료 실패 예외 클래스 |
 | INFO | request_finished | 상태, 응답 문자 수, 소요 시간 |
 
@@ -21,6 +21,8 @@ INFO: {"request_id":"…","event":"request_finished","status":"completed","outpu
 ```
 
 위 로그는 형식 예시입니다. 실제 모델 결과가 아닙니다. 키, 작업 토큰, continuation, 질문·응답 원문, 전체 공급자 응답, 내부 추론은 DEBUG에도 기록하지 않습니다.
+
+공급자 API 오류는 디버그 설정과 무관하게 `provider` 객체를 기록합니다. 예: `{"code":"unsupported_parameter","type":"invalid_request_error","param":"temperature","http_status":400}`. 정상 HTTP 연결 후 SSE 오류가 발생하면 `http_status`는 `null`입니다. 공급자가 생략한 항목은 `null`, 허용 목록 밖의 항목은 `redacted`로 표시합니다. 오류 message/body/요청 헤더는 기록하지 않습니다. 제목·구조화 실패에도 같은 진단 정보를 기록합니다. 이미 발생한 오류의 상세는 복원할 수 없으며 변경 후 새 요청부터 적용됩니다.
 
 추천 중단점:
 
