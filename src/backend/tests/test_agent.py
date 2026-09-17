@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -49,6 +50,31 @@ async def test_sdk_adapter_tools_only_public_text(monkeypatch):
     client.close.assert_awaited_once()
 
 
+async def test_request_date_refreshes_without_changing_conversation(monkeypatch):
+    monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(close=AsyncMock()))
+    dates = iter(["\nCurrent date (UTC): 2040-12-31.\n", "\nCurrent date (UTC): 2041-01-01.\n"])
+    monkeypatch.setattr("rabbit_hole.agent.current_date_context", lambda: next(dates))
+    instructions = []
+
+    def run(agent, **kwargs):
+        instructions.append(agent.instructions)
+        assert kwargs["input"] == [{"role": "user", "content": "What is current?"}]
+        return StreamResult([
+            event("response.output_text.delta", delta="answer"),
+            event("response.completed", response=SimpleNamespace(status="completed")),
+        ])
+
+    monkeypatch.setattr("rabbit_hole.agent.Runner.run_streamed", run)
+    service = AgentService(Settings(_env_file=None, openai_api_key="fake"))
+    try:
+        for _ in range(2):
+            assert [s async for s in service.stream([ConversationTurn(role="user", content="What is current?")])] == ["answer"]
+        assert "2040-12-31" in instructions[0]
+        assert "2041-01-01" in instructions[1] and "2040-12-31" not in instructions[1]
+    finally:
+        await service.close()
+
+
 async def test_sdk_incomplete_response_and_generator_close_cancel_runner(monkeypatch):
     monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(close=AsyncMock()))
     result = StreamResult(
@@ -67,8 +93,8 @@ async def test_sdk_incomplete_response_and_generator_close_cancel_runner(monkeyp
     result.cancel.assert_called_once()
 
 
-@pytest.mark.parametrize("with_calculator", [False, True])
-async def test_real_sdk_with_mock_http_stream(monkeypatch, with_calculator):
+@pytest.mark.parametrize("tool_case", ["none", "calculator", "web_search", "search_failure"])
+async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
     """Exercise installed Agents + OpenAI SDK, without a paid/network request."""
     import json
 
@@ -123,10 +149,23 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, with_calculator):
 
     async def transport(request):
         captured.append(json.loads(request.content))
+        if not captured[-1].get("stream"):
+            assert tool_case in ("web_search", "search_failure")
+            assert captured[-1]["tools"][0]["type"] == "web_search"
+            if tool_case == "search_failure":
+                return httpx.Response(503, json={"error": {"message": "PRIVATE provider failure"}})
+            return httpx.Response(200, json={**response, "output": [
+                {"id": "ws_test", "type": "web_search_call", "status": "completed",
+                 "action": {"type": "search", "query": "current information", "sources": [
+                     {"type": "url", "url": "https://example.com/current"}]}},
+                message,
+            ]})
         batch = wire_events
-        if with_calculator and len(captured) == 1:
+        if tool_case != "none" and len(captured) == 1:
+            name = "calculator" if tool_case == "calculator" else "web_search"
+            arguments = '{"expression":"0.1 + 0.2"}' if name == "calculator" else '{"query":"current information"}'
             call = {"id": "fc_test", "type": "function_call", "call_id": "call_calc",
-                    "name": "calculator", "arguments": '{"expression":"0.1 + 0.2"}', "status": "completed"}
+                    "name": name, "arguments": arguments, "status": "completed"}
             batch = [
                 {"type": "response.created", "sequence_number": 0,
                  "response": {**response, "status": "in_progress", "output": []}},
@@ -154,11 +193,24 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, with_calculator):
         assert [delta async for delta in service.stream([ConversationTurn(role="user", content="안녕")])] == [
             "**응답**"
         ]
-        assert len(captured) == (2 if with_calculator else 1)
-        if with_calculator:
-            output = next(i for i in captured[1]["input"] if i.get("type") == "function_call_output")
+        main_calls = [c for c in captured if c.get("stream")]
+        assert len(main_calls) == (1 if tool_case == "none" else 2)
+        assert len(captured) == {"none": 1, "calculator": 2, "web_search": 3, "search_failure": 3}[tool_case]
+        today = datetime.now(UTC).date().isoformat()
+        for call in captured:
+            instructions = call.get("instructions") or str(call["input"])
+            assert f"Current date (UTC): {today}" in instructions
+        if tool_case != "none":
+            output = next(i for i in main_calls[1]["input"] if i.get("type") == "function_call_output")
             assert output["call_id"] == "call_calc"
-            assert "0.3" in str(output["output"])
+            expected = {"calculator": "0.3", "web_search": "https://example.com/current",
+                        "search_failure": "tool_failed"}[tool_case]
+            assert expected in str(output["output"])
+            assert "PRIVATE" not in str(output["output"])
+        if tool_case == "web_search":
+            assert service.sources[0].url == "https://example.com/current"
+        elif tool_case == "search_failure":
+            assert service.sources == []
         assert captured[0]["stream"] is True
         assert captured[0]["store"] is False
         assert [t["name"] for t in captured[0]["tools"]] == ["calculator", "web_search", "read_page"]
