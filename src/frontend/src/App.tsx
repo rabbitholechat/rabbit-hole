@@ -33,6 +33,7 @@ import '@xyflow/react/dist/style.css'
 import { useStore } from './store'
 import { RabbitLoader } from './components/RabbitLoader'
 import { RabbitIcon } from './components/RabbitIcon'
+import { ServerErrorPage } from './components/ServerErrorPage'
 import { PageCard } from './components/PageCard'
 import { ConversationEdge } from './components/ConversationEdge'
 import { RelationEdge } from './components/RelationEdge'
@@ -82,7 +83,7 @@ function Workspace() {
   const fitRef = useRef<(initial?: boolean) => void>(() => {})
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.isComposing || event.altKey) return
+      if (event.isComposing || event.altKey || useStore.getState().serverError) return
       const target = event.target
       if (
         target instanceof HTMLElement &&
@@ -316,13 +317,13 @@ function Workspace() {
   }
   return (
     <main
-      className={`workspace ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'}`}
+      className={`workspace ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'} ${state.serverError ? 'has-server-error' : ''}`}
       aria-label="대화 캔버스"
     >
       <ReactFlow<CanvasNode>
         translateExtent={extent}
-        nodes={arrivingGraph.nodes}
-        edges={arrivingGraph.edges}
+        nodes={state.serverError ? [] : arrivingGraph.nodes}
+        edges={state.serverError ? [] : arrivingGraph.edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={state.nodesChange}
@@ -370,6 +371,10 @@ function Workspace() {
       >
         <Background variant={BackgroundVariant.Lines} gap={28} lineWidth={0.6} color="#e2e6df" />
       </ReactFlow>
+      {state.serverError ? (
+        <ServerErrorPage retrying={state.retryingServer} onRetry={() => void state.initialize()} />
+      ) : (
+      <>
       {Boolean(session?.nodes.length) && (
         <nav className="node-navigation panel" aria-label="노드 탐색">
           <Button
@@ -753,6 +758,8 @@ function Workspace() {
           <Plus />
         </Button>
       </nav>
+      </>
+      )}
     </main>
   )
 }

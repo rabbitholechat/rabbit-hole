@@ -1923,3 +1923,64 @@ svg {
     pointer-events: auto;
   }
 }
+
+
+/* The server error screen keeps the canvas grid and the shared brand mark. */
+.has-server-error > .react-flow {
+  pointer-events: none;
+}
+.server-error-page {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: 40px 24px;
+  background: radial-gradient(ellipse at center, #fafaf8 0%, #fafaf8e6 28%, #fafaf800 72%);
+}
+.server-error-content {
+  width: min(100%, 460px);
+  text-align: center;
+}
+.server-error-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: #29322e;
+}
+.server-error-brand svg {
+  width: 58px;
+  height: 74px;
+}
+.server-error-brand span {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -1px;
+}
+.server-error-code {
+  margin: 36px 0 12px;
+  color: #78817c;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 2px;
+}
+.server-error-content h1 {
+  margin: 0;
+  font-size: clamp(21px, 4.8vw, 27px);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -1px;
+  word-break: keep-all;
+}
+.server-error-description {
+  margin: 12px 0 28px;
+  color: #78817c;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.server-error-content > button {
+  min-width: 140px;
+  min-height: 44px;
+}

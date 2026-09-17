@@ -19,8 +19,9 @@ async function mockHistory(context: BrowserContext, history = memoryHistoryApi()
 }
 test.beforeEach(async ({ page, context }) => {
   await mockHistory(context)
-  // No unmocked structure call may reach a local backend during browser tests.
+  // No unmocked background model call may reach a local backend during browser tests.
   await page.route('**/api/structure', (route) => route.fulfill({ status: 502, body: '{}' }))
+  await page.route('**/api/title', (route) => route.fulfill({ status: 502, body: '{}' }))
 })
 async function openHistory(page: Page) {
   const expand = page.getByRole('button', { name: '대화 기록 펼치기' })
@@ -998,4 +999,41 @@ test('independent browsers share server history and deletion without a model req
   } finally {
     await otherContext.close()
   }
+})
+
+
+test('server failures show the branded 500 canvas page and retry without reloading', async ({ page }, testInfo) => {
+  let calls = 0
+  let modelCalls = 0
+  let finishRetry!: () => void
+  const retryGate = new Promise<void>((resolve) => { finishRetry = resolve })
+  await page.route('**/api/sessions', async (route) => {
+    calls++
+    if (calls === 2) await retryGate
+    await route.fulfill({ status: calls < 3 ? 503 : 200, json: calls < 3 ? { detail: 'unavailable' } : { sessions: [] } })
+  })
+  await page.route(/\/api\/(agent|title|structure)/, async (route) => {
+    modelCalls++
+    await route.abort()
+  })
+  await page.goto('/')
+  const errorPage = page.locator('.server-error-page')
+  await expect(errorPage.getByRole('heading', { name: '서버에 오류가 발생했어요' })).toBeVisible()
+  await expect(errorPage.locator('.server-error-brand svg')).toBeVisible()
+  await expect(errorPage).toContainText('500 · SERVER ERROR')
+  await expect(page.locator('.react-flow__background')).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveCount(0)
+  await expect(page.locator('.history-panel, .canvas-tools, .error-banner')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('server-error.png') })
+  await page.getByRole('button', { name: '다시 시도', exact: true }).click()
+  await expect(page.getByRole('button', { name: '다시 연결하고 있어요' })).toBeDisabled()
+  await expect.poll(() => calls).toBe(2)
+  finishRetry()
+  await expect(page.getByRole('button', { name: '다시 시도', exact: true })).toBeEnabled()
+  await expect(errorPage).toBeVisible()
+  await page.getByRole('button', { name: '다시 시도', exact: true }).click()
+  await expect(errorPage).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toBeVisible()
+  expect(calls).toBe(3)
+  expect(modelCalls).toBe(0)
 })

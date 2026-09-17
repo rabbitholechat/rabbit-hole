@@ -368,3 +368,23 @@ it('keeps the history entry and shows an error when server deletion fails', asyn
   expect(useStore.getState().storageError).toBe('서버 삭제 실패')
   remove.mockRestore()
 })
+
+
+it('shows a server error for failed initialization and coalesces repeated retries', async () => {
+  const list = vi.spyOn(historyApi, 'list').mockRejectedValueOnce(Error('unavailable'))
+  useStore.setState({ session: null, serverError: false })
+  await useStore.getState().initialize()
+  expect(useStore.getState().serverError).toBe(true)
+  let finish!: () => void
+  list.mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve({ sessions: [] }) }))
+  const retry = useStore.getState().initialize()
+  const duplicate = useStore.getState().initialize()
+  expect(retry).toBe(duplicate)
+  expect(useStore.getState().retryingServer).toBe(true)
+  await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+  finish()
+  await retry
+  expect(useStore.getState().serverError).toBe(false)
+  expect(useStore.getState().retryingServer).toBe(false)
+  list.mockRestore()
+})

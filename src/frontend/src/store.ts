@@ -33,6 +33,7 @@ const emptySession = (query: string): Session => ({
 let controller: AbortController | undefined
 let access: { id: string; token: string } | undefined
 let persistence: Promise<unknown> = Promise.resolve()
+let initialization: Promise<void> | undefined
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 const structureRequests = new Map<string, AbortController>()
 function persist(session: Session) {
@@ -62,6 +63,8 @@ interface State {
   stage: string
   error: string | null
   storageError: string | null
+  serverError: boolean
+  retryingServer: boolean
   initialize: () => Promise<void>
   setInput: (input: string) => void
   newConversation: () => void
@@ -194,6 +197,8 @@ export const useStore = create<State>((set, get) => ({
   stage: '',
   error: null,
   storageError: null,
+  serverError: false,
+  retryingServer: false,
   cancelStructure: (responseId) => {
     const session = get().session
     if (!session) return
@@ -294,48 +299,57 @@ export const useStore = create<State>((set, get) => ({
       if (structureRequests.get(key) === abort) structureRequests.delete(key)
     }
   },
-  initialize: async () => {
-    try {
-      await persistence
-      set({ storageError: null })
-      const history = (await loadSessions((storageError) => set({ storageError }))).map((session) => ({
-        ...session,
-        nodes: session.nodes.map((node) => {
-          if (node.type === 'source') {
+  initialize: () => {
+    if (initialization) return initialization
+    set({ retryingServer: true })
+    initialization = (async () => {
+      try {
+        await persistence
+        set({ storageError: null })
+        const history = (await loadSessions((storageError) => set({ storageError }))).map((session) => ({
+          ...session,
+          nodes: session.nodes.map((node) => {
+            if (node.type === 'source') {
+              const { height: _height, measured: _measured, ...rest } = node
+              return { ...rest, data: { ...node.data, collapsed: node.data.collapsed ?? true }, width: Math.max(node.width ?? 0, 460) }
+            }
+            // Remeasure expandable content; older records stored a fixed collapsed height.
             const { height: _height, measured: _measured, ...rest } = node
-            return { ...rest, data: { ...node.data, collapsed: node.data.collapsed ?? true }, width: Math.max(node.width ?? 0, 460) }
-          }
-          // Remeasure expandable content; older records stored a fixed collapsed height.
-          const { height: _height, measured: _measured, ...rest } = node
-          return rest
-        }),
-      }))
-      set({
-        history: history.map((s) => {
-          let restored = s.status === 'running' ? finish(s, 'partial') : s
-          if (restored.contentGraph)
-            restored = {
-              ...restored,
-              contentGraph: {
-                ...restored.contentGraph,
-                jobs: Object.fromEntries(
-                  Object.entries(restored.contentGraph.jobs).map(([id, job]) => [
-                    id,
-                    job.status === 'running' ? { ...job, status: 'cancelled' as const } : job,
-                  ]),
-                ),
-              },
-            }
-          if (restored.protocol === 2)
-            for (const node of restored.nodes) {
-              if (node.type === 'response') restored = attachSources(restored, node.id)
-            }
-          return restored
-        }),
-      })
-    } catch {
-      set({ storageError: '서버에서 공용 기록을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.' })
-    }
+            return rest
+          }),
+        }))
+        set({
+          serverError: false,
+          history: history.map((s) => {
+            let restored = s.status === 'running' ? finish(s, 'partial') : s
+            if (restored.contentGraph)
+              restored = {
+                ...restored,
+                contentGraph: {
+                  ...restored.contentGraph,
+                  jobs: Object.fromEntries(
+                    Object.entries(restored.contentGraph.jobs).map(([id, job]) => [
+                      id,
+                      job.status === 'running' ? { ...job, status: 'cancelled' as const } : job,
+                    ]),
+                  ),
+                },
+              }
+            if (restored.protocol === 2)
+              for (const node of restored.nodes) {
+                if (node.type === 'response') restored = attachSources(restored, node.id)
+              }
+            return restored
+          }),
+        })
+      } catch {
+        set({ serverError: true, storageError: null })
+      }
+    })().finally(() => {
+      initialization = undefined
+      set({ retryingServer: false })
+    })
+    return initialization
   },
   setInput: (input) => set({ input }),
   newConversation: () => {
