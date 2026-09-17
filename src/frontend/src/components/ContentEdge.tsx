@@ -1,14 +1,16 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react'
+import type { CSSProperties } from 'react'
+import { ArrivingEdgePath } from './ArrivingEdgePath'
+import { EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react'
 
 export function ContentEdge(props: EdgeProps) {
   const [path, x, y] = getBezierPath(props)
   return (
     <>
-      <BaseEdge id={props.id} path={path} markerEnd={props.markerEnd} style={props.style} />
+      <ArrivingEdgePath {...props} path={path} />
       <EdgeLabelRenderer>
         <span
-          className="content-edge-label"
-          style={{ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)` }}
+          className={`content-edge-label ${typeof props.data?.arrivalDelay === 'number' ? 'connection-label-arriving' : ''}`}
+          style={{ transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`, '--arrival-delay': `${Number(props.data?.arrivalDelay ?? 0) + 400}ms` } as CSSProperties}
         >
           {props.label}
         </span>

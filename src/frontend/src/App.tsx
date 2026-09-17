@@ -1,3 +1,4 @@
+import { useGraphArrival } from './hooks/useGraphArrival'
 import { TooltipLayer } from './components/TooltipLayer'
 import { nodeLabel, responseParentId } from './lib/nodeActions'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
@@ -299,6 +300,7 @@ function Workspace() {
     state.selectedEdge,
     weak,
   ])
+  const arrivingGraph = useGraphArrival(session?.id, nodes, edges)
   const selectedSource = session?.sources.find((s) => s.id === state.selected)
   const selectedRelation =
     state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]
@@ -314,8 +316,8 @@ function Workspace() {
     >
       <ReactFlow<CanvasNode>
         translateExtent={extent}
-        nodes={nodes}
-        edges={edges}
+        nodes={arrivingGraph.nodes}
+        edges={arrivingGraph.edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={state.nodesChange}

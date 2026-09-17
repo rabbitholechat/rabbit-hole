@@ -1721,13 +1721,22 @@ svg {
   border-radius: 5px;
 }
 
-.content-card { animation: node-enter 300ms cubic-bezier(.2,.8,.2,1) backwards; }
-@keyframes node-enter {
-  from { opacity: 0; transform: translateY(10px) scale(.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+/* Animate card interiors so React Flow positions and handle measurements stay stable. */
+.node-arriving .content-card {
+  transform-origin: left center;
+  animation: content-arrive 560ms cubic-bezier(.16, 1, .3, 1) var(--arrival-delay, 0ms) backwards;
 }
-@media (prefers-reduced-motion: reduce) {
-  .content-card { animation: none; }
+@keyframes content-arrive {
+  from { opacity: 0; transform: translateX(-16px) translateY(6px) scale(.97); }
+  to { opacity: 1; transform: translateX(0) translateY(0) scale(1); }
+}
+.connection-reveal {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: edge-arrive 680ms cubic-bezier(.4, 0, .2, 1) var(--arrival-delay, 0ms) backwards;
+}
+.connection-label-arriving {
+  animation: relation-arrive 280ms ease-out var(--arrival-delay, 0ms) backwards;
 }
 
 .content-card > header .response-actions { margin-left: auto; }
