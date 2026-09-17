@@ -331,12 +331,18 @@ def test_page_enrichment_contract_preserves_answer_and_excludes_body_from_checkp
             self.sources = [ToolSource(id="src_" + "a" * 24, url="https://example.com/a", title="Page",
                                       access="search_result", accessed_at="2026-09-17T00:00:00Z")]
 
-        async def enrich_sources(self):
+        async def enrich_sources(self, on_update=None):
             if fail:
                 raise TimeoutError()
+            self.sources[0].content = SourceContent(status="reading")
+            await on_update()
             self.sources[0].access = "page_read"
-            self.sources[0].content = SourceContent(status="read", text="PRIVATE_PAGE_TEST_TEXT",
+            self.sources[0].content = SourceContent(status="summarizing", text="PRIVATE_PAGE_TEST_TEXT",
                                                    final_url="https://example.com/a")
+            await on_update()
+            self.sources[0].content.status = "read"
+            self.sources[0].content.summary = "페이지 요약"
+            await on_update()
 
     configured = settings()
     result = events(TestClient(create_app(configured, EnrichedService)).post("/api/agent", json=body()))
@@ -344,7 +350,10 @@ def test_page_enrichment_contract_preserves_answer_and_excludes_body_from_checkp
     assert not any(e["type"] == "part_error" for e in result)
     completed = next(e for e in result if e["type"] == "response_completed")
     reading = next(e for e in result if e["type"] == "status" and e["data"]["stage"] == "reading_sources")
-    sources = next(e for e in result if e["type"] == "response_sources")
+    snapshots = [e for e in result if e["type"] == "response_sources"]
+    sources = snapshots[-1]
+    if not fail:
+        assert [e["data"]["sources"][0]["content"]["status"] for e in snapshots] == ["reading", "summarizing", "read", "read"]
     assert completed["seq"] < reading["seq"] < sources["seq"]
     content = sources["data"]["sources"][0]["content"]
     assert content is None if fail else content["text"] == "PRIVATE_PAGE_TEST_TEXT"

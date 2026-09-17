@@ -377,10 +377,10 @@ test('tool retrieval history distinguishes access and restores without new reque
   await expect(sourceCard).toHaveClass(/is-collapsed/)
   await expect(page.locator('.response-sources')).toHaveCount(0)
   await expect(page.locator('.source-card').filter({ hasText: '검색으로 찾은 페이지' })).toContainText(
-    '검색 결과',
+    '페이지 요약',
   )
   await expect(page.locator('.source-card').filter({ hasText: '본문을 읽은 페이지' })).toContainText(
-    '본문 조회',
+    '페이지 요약',
   )
   await expect(page.locator('.content-edge-label').filter({ hasText: '출처 표기' })).toHaveCount(1)
   await expect(page.locator('.content-edge-label').filter({ hasText: /^조회$/ })).toHaveCount(1)
@@ -795,4 +795,73 @@ test('long information collapses like a response while short sources cannot coll
   await openHistory(page)
   await page.getByRole('button', { name: '접기와 출처 표시', exact: true }).click()
   await expect(page.locator('.source-card')).toHaveCount(8)
+})
+
+test('source cards show lookup and summary spinners then persist the page summary', async ({ page }) => {
+  await page.route('**/api/title', (route) => route.fulfill({ status: 502, body: '{}' }))
+  await page.route('**/api/structure', (route) => route.fulfill({ status: 502, body: '{}' }))
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window)
+    window.fetch = async (input, init) => {
+      if (input !== '/api/agent') return original(input, init)
+      const request = JSON.parse(init!.body as string)
+      const id = `response_${request.request_id}`
+      let seq = 0
+      let phase = 0
+      const source = {
+        id: 'src_' + 'a'.repeat(24), title: '페이지 제목', url: 'https://example.com/article',
+        access: 'search_result', accessed_at: '2026-09-17T00:00:00Z', verification: 'unverified',
+        content: { status: 'reading', text: '', truncated: false, final_url: null as string | null, error_code: null, summary: '', summary_error: null },
+      }
+      return new Response(new ReadableStream({
+        start(controller) {
+          const emit = (type: string, data: object) => controller.enqueue(new TextEncoder().encode(
+            `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: ++seq, type, data })}\n\n`,
+          ))
+          emit('started', { access_token: 'token' })
+          emit('response_started', { id })
+          emit('response_completed', { id, text: '원래 답변입니다.' })
+          emit('status', { stage: 'reading_sources' })
+          emit('response_sources', { id, sources: [source] })
+          Object.assign(window, { nextSourcePhase: () => {
+            phase++
+            source.access = 'page_read'
+            source.content.text = 'Only the actual page body. '.repeat(50)
+            source.content.final_url = source.url
+            source.content.status = phase === 1 ? 'summarizing' : 'read'
+            if (phase === 2) source.content.summary = '• 이 페이지는 병렬 처리 방법을 설명합니다.\n• 실제 본문에 있는 핵심 내용을 요약했습니다.'
+            emit('response_sources', { id, sources: [source] })
+            if (phase === 2) {
+              emit('checkpoint', { continuation: 'signed' })
+              emit('done', { status: 'completed', failed_parts: [] })
+              controller.close()
+            }
+          } })
+        },
+      }), { headers: { 'Content-Type': 'text/event-stream' } })
+    }
+  })
+  await page.goto('/')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('페이지 요약 테스트')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  const card = page.locator('.source-card')
+  await expect(card.locator('.source-access')).toHaveText('페이지 요약')
+  await expect(card.getByRole('status')).toHaveText('조회 중')
+  await expect(card.locator('.source-spinner')).toHaveCount(1)
+  await expect(card).toHaveAttribute('aria-busy', 'true')
+  const position = await page.locator('.react-flow__node-source').evaluate((el) => (el as HTMLElement).style.transform)
+  await page.evaluate(() => (window as unknown as { nextSourcePhase: () => void }).nextSourcePhase())
+  await expect(card.getByRole('status')).toHaveText('요약 중')
+  await expect(card.locator('.source-spinner')).toHaveCount(1)
+  await page.evaluate(() => (window as unknown as { nextSourcePhase: () => void }).nextSourcePhase())
+  await expect(card.getByRole('status')).toHaveText('요약 완료')
+  await expect(card.locator('.source-spinner')).toHaveCount(0)
+  await expect(card.locator('.source-body')).toContainText('이 페이지는 병렬 처리 방법')
+  await expect(card).not.toContainText('Only the actual page body')
+  expect(await page.locator('.react-flow__node-source').evaluate((el) => (el as HTMLElement).style.transform)).toBe(position)
+  await page.reload()
+  await openHistory(page)
+  await page.getByRole('button', { name: '페이지 요약 테스트', exact: true }).click()
+  await expect(card.locator('.source-body')).toContainText('이 페이지는 병렬 처리 방법')
+  await expect(card.locator('.source-spinner')).toHaveCount(0)
 })

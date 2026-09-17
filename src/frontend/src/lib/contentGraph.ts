@@ -81,7 +81,7 @@ function withRelations(graph: ContentGraph, extra: ContentRelation[]) {
 function estimatedHeight(session: Session, node: CanvasNode) {
   if (node.measured?.height ?? node.height) return node.measured?.height ?? node.height!
   const entity = session.contentGraph?.entities[node.id]
-  return entity?.type === 'source' ? (entity.source.content?.status === 'read' ? 480 : 260) : 400
+  return entity?.type === 'source' ? (entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
 }
 function place(session: Session, ids: string[], response: ResponseNode): CanvasNode[] {
   const nodes = [...session.nodes]
@@ -89,7 +89,7 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
     const width = entity.type === 'information' ? 340 : 460
-    const height = entity.type === 'source' ? (entity.source.content?.status === 'read' ? 480 : 260) : 280
+    const height = entity.type === 'source' ? (entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
     const x =
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
@@ -120,7 +120,10 @@ function mergeSource(kept: SourceEntity, incoming: SourceEntity): SourceEntity {
     const spans = [...new Map([...(old?.spans ?? []), ...next.spans].map((s) => [`${s.start}:${s.end}`, s])).values()]
     observations.set(next.responseId, { ...preferred, spans })
   }
-  const source = kept.source.content?.status === 'read' ? kept.source : incoming.source.content?.status === 'read' ? incoming.source : kept.source.access === 'page_read' ? kept.source : incoming.source
+  const source = kept.source.content?.status === 'read' && !incoming.source.content?.text
+    ? kept.source
+    : incoming.source.content ? incoming.source
+      : kept.source.access === 'page_read' ? kept.source : incoming.source
   return { ...kept, source: { ...source, id: kept.id }, observations: [...observations.values()] }
 }
 

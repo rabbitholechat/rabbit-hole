@@ -289,3 +289,22 @@ it('selected information is sent as context and linked without replacing the que
   useStore.getState().open('legacy-followup')
   expect(previousNodes(useStore.getState().session!, id).map((n) => n.id)).toEqual([info.id])
 })
+
+it('restoring an interrupted source lookup clears its spinner without fetching again', async () => {
+  let saved = session()
+  saved.id = 'interrupted-source-lookup'
+  saved.status = 'running'
+  const node = saved.nodes[0] as ResponseNode
+  node.data.toolSources = [{
+    ...node.data.toolSources![0],
+    content: { status: 'reading', text: '', truncated: false, final_url: null, error_code: null },
+  }]
+  saved = attachSources(saved, node.id)
+  await saveSession(saved)
+  const request = vi.spyOn(globalThis, 'fetch')
+  await useStore.getState().initialize()
+  const restored = useStore.getState().history.find((s) => s.id === saved.id)!
+  const source = restored.contentGraph!.entities[node.data.toolSources[0].id]
+  expect(source.type === 'source' && source.source.content?.status).toBe('cancelled')
+  expect(request).not.toHaveBeenCalled()
+})

@@ -13,7 +13,7 @@ export function nodeText(session: Session | null, id: string): string {
   if (node?.type === 'page') return `${node.data.source.title}\n${node.data.source.url}\n\n${node.data.source.summary}`
   const entity = session?.contentGraph?.entities[id]
   if (entity?.type === 'information') return entity.excerpt.quote
-  return entity ? `${entity.source.title}\n${entity.source.url}${entity.source.content?.status === 'read' ? `\n\n${entity.source.content.text}` : ''}` : ''
+  return entity ? `${entity.source.title}\n${entity.source.url}${entity.source.content?.status === 'read' ? `\n\n${entity.source.content.summary || entity.source.content.text}` : ''}` : ''
 }
 export function nodeContext(session: Session | null, id: string | null): NodeContext | undefined {
   if (!id || session?.protocol !== 2 || session.mode !== 'live') return

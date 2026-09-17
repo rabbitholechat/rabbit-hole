@@ -51,11 +51,15 @@ class TitleResponse(BaseModel):
 
 class SourceContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["read", "failed", "skipped"]
+    status: Literal["reading", "summarizing", "read", "failed", "skipped", "cancelled"]
     text: str = Field(default="", max_length=32000)
     truncated: bool = False
     final_url: str | None = None
-    error_code: Literal["page_unavailable", "page_timeout", "budget_exhausted"] | None = None
+    error_code: Literal["page_unavailable", "page_timeout", "budget_exhausted", "page_blocked",
+                        "page_not_found", "page_size_limit", "unsupported_content_type", "unsupported_encoding",
+                        "empty_page", "unsafe_url"] | None = None
+    summary: str = Field(default="", max_length=2000)
+    summary_error: Literal["summary_unavailable", "summary_timeout", "summary_budget_exhausted"] | None = None
 
 
 class ToolSource(BaseModel):

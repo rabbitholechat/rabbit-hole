@@ -139,6 +139,21 @@ async function generateTitle(session: Session) {
   }
 }
 function finish(session: Session, status: Session['status']): Session {
+  const stopSource = (source: import('./types').ToolSource) => {
+    const content = source.content
+    if (!content || !['reading', 'summarizing'].includes(content.status)) return source
+    return { ...source, content: { ...content, status: 'cancelled' as const, summary: '' } }
+  }
+  session = {
+    ...session,
+    nodes: session.nodes.map((node) => node.type === 'response'
+      ? { ...node, data: { ...node.data, toolSources: node.data.toolSources?.map(stopSource) } } : node),
+    ...(session.contentGraph ? { contentGraph: {
+      ...session.contentGraph,
+      entities: Object.fromEntries(Object.entries(session.contentGraph.entities).map(([id, entity]) =>
+        [id, entity.type === 'source' ? { ...entity, source: stopSource(entity.source) } : entity])),
+    } } : {}),
+  }
   return {
     ...session,
     status,

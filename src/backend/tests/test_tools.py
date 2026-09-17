@@ -91,7 +91,6 @@ async def test_redirect_cannot_enter_private_network(monkeypatch):
 @pytest.mark.parametrize(("headers", "body", "code"), [
     ({"content-type": "application/pdf"}, b"PDF", "unsupported_content_type"),
     ({"content-type": "text/html", "content-encoding": "gzip"}, b"data", "unsupported_encoding"),
-    ({"content-type": "text/plain"}, b"x" * 1025, "page_size_limit"),
     ({"content-type": "text/html"}, b"<script>only js</script>", "empty_page"),
 ])
 async def test_page_limits(monkeypatch, headers, body, code):
@@ -258,7 +257,7 @@ async def test_source_content_parallel_budget_reuse_and_failure_isolation(monkey
     assert sources[1].content.final_url.endswith("/final")
     assert sources[1].content.truncated
     assert sources[2].content.status == "failed" and sources[2].access == "search_result"
-    assert sources[2].content.text == "" and sources[2].content.error_code == "page_unavailable"
+    assert sources[2].content.text == "" and sources[2].content.error_code == "unsafe_url"
     assert sources[5].content.status == "skipped"
     assert sources[5].content.error_code == "budget_exhausted"
 
@@ -312,3 +311,64 @@ async def test_agent_read_redirect_is_reused_and_only_displayed_sources_are_read
     assert tools.calls == 1
     assert sources[0].content.error_code == "page_timeout"
     assert sources[1].content is None and sources[2].content is None
+
+
+@pytest.mark.asyncio
+async def test_compressed_article_extraction_and_bounded_truncation(monkeypatch):
+    import gzip
+
+    article = "<article><h1>Article</h1><p>Actual facts.</p></article>"
+    html = ("<head><script>" + "x" * 1_100_000 + "</script></head><nav>Menu</nav>"
+            "<main>" + article + "</main><footer>Footer</footer>").encode()
+    mock_pages(monkeypatch, lambda request: httpx.Response(
+        200, headers={"content-type": "text/html", "content-encoding": "gzip"},
+        stream=httpx.ByteStream(gzip.compress(html))))
+    page = await fetch_page("https://example.com", settings())
+    assert page["text"] == "Article\nActual facts." and not page["truncated"]
+
+    # A compressed bomb stops at the decoded ceiling; only the bounded prefix is retained.
+    mock_pages(monkeypatch, lambda request: httpx.Response(
+        200, headers={"content-type": "text/plain", "content-encoding": "gzip"},
+        stream=httpx.ByteStream(gzip.compress(b"x" * 100_000))))
+    page = await fetch_page("https://example.com", settings(max_page_decoded_bytes=1024))
+    assert len(page["text"]) == 1024 and page["truncated"]
+
+    mock_pages(monkeypatch, lambda request: httpx.Response(
+        200, headers={"content-type": "text/plain"}, stream=httpx.ByteStream(b"x" * 1025)))
+    page = await fetch_page("https://example.com", settings(max_page_bytes=1024))
+    assert len(page["text"]) == 1024 and page["truncated"]
+
+
+@pytest.mark.asyncio
+async def test_source_summaries_publish_progress_and_isolate_model_failure(monkeypatch):
+    async def create(**kwargs):
+        assert "tools" not in kwargs and kwargs["store"] is False
+        data = json.loads(kwargs["input"])
+        assert data["text"].startswith("Only page")
+        if data["title"] == "bad":
+            raise TimeoutError()
+        return SimpleNamespace(status="completed", output_text="• 이 페이지의 핵심 내용입니다.")
+
+    client = SimpleNamespace(responses=SimpleNamespace(create=AsyncMock(side_effect=create)))
+    tools = AgentTools(settings(max_source_summaries=2), client)
+    for title in ("good", "bad", "limited"):
+        tools.record("https://example.com/" + title, title, "search_result")
+
+    async def fetch(url, _settings):
+        return {"url": url, "title": url.rsplit("/", 1)[1], "text": "Only page text", "truncated": False}
+
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", fetch)
+    snapshots = []
+
+    async def update():
+        snapshots.append([s.model_dump() for s in tools.sources.values()])
+
+    await tools.enrich_sources(update)
+    assert all(s["content"]["status"] == "reading" for s in snapshots[0])
+    assert any(s["content"]["status"] == "summarizing" for batch in snapshots for s in batch)
+    sources = list(tools.sources.values())
+    assert sources[0].content.summary == "• 이 페이지의 핵심 내용입니다."
+    assert sources[1].content.status == "read" and sources[1].content.summary_error == "summary_timeout"
+    assert sources[2].content.summary_error == "summary_budget_exhausted"
+    assert client.responses.create.await_count == 2
+    assert all(s.content.text == "Only page text" for s in sources)

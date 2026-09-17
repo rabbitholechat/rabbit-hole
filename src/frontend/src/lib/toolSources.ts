@@ -26,15 +26,18 @@ export function parseToolSources(value: unknown): ToolSource[] | undefined {
       const body = item.content
       if (
         typeof body !== 'object' ||
-        !['read', 'failed', 'skipped'].includes(body.status) ||
+        !['reading', 'summarizing', 'read', 'failed', 'skipped', 'cancelled'].includes(body.status) ||
         typeof body.text !== 'string' || Array.from(body.text).length > 32000 ||
         typeof body.truncated !== 'boolean' ||
         !(body.final_url === null || (typeof body.final_url === 'string' && body.final_url.length <= 4096 && safeUrl(body.final_url))) ||
-        ![null, 'page_unavailable', 'page_timeout', 'budget_exhausted'].includes(body.error_code) ||
-        (body.status === 'read' && (item.access !== 'page_read' || !body.text.trim() || !body.final_url || body.error_code !== null)) ||
-        (body.status !== 'read' && (body.text !== '' || body.error_code === null))
+        ![null, 'page_unavailable', 'page_timeout', 'budget_exhausted', 'page_blocked', 'page_not_found', 'page_size_limit', 'unsupported_content_type', 'unsupported_encoding', 'empty_page', 'unsafe_url'].includes(body.error_code) ||
+        (['read', 'summarizing'].includes(body.status) && (item.access !== 'page_read' || !body.text.trim() || !body.final_url || body.error_code !== null)) ||
+        (['failed', 'skipped'].includes(body.status) && (body.text !== '' || body.error_code === null)) ||
+        (body.status === 'reading' && (body.text !== '' || body.error_code !== null)) ||
+        (body.summary !== undefined && (typeof body.summary !== 'string' || Array.from(body.summary).length > 2000 || (body.summary && body.status !== 'read'))) ||
+        ![undefined, null, 'summary_unavailable', 'summary_timeout', 'summary_budget_exhausted'].includes(body.summary_error)
       ) return
-      content = { status: body.status, text: body.text, truncated: body.truncated, final_url: body.final_url, error_code: body.error_code }
+      content = { status: body.status, text: body.text, truncated: body.truncated, final_url: body.final_url, error_code: body.error_code, summary: body.summary, summary_error: body.summary_error }
     }
     sources.push({
       id: item.id,

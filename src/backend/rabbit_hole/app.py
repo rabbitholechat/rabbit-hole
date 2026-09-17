@@ -201,7 +201,11 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                     remaining = settings.job_timeout_seconds - (time.monotonic() - job.created)
                     try:
                         async with asyncio.timeout(max(0, remaining)):
-                            await service.enrich_sources()
+                            async def source_progress():
+                                await emit("response_sources", {"id": response_id, "sources": [
+                                    s.model_dump() for s in service.sources[:settings.max_response_sources]
+                                ]})
+                            await service.enrich_sources(source_progress)
                     except Exception:
                         diagnostics.log(logging.INFO, request_id, "source_content_incomplete")
             except asyncio.CancelledError:

@@ -1869,3 +1869,8 @@ svg {
   overscroll-behavior: contain;
 }
 .source-content-note { font-size: 11px; line-height: 1.6; color: #6d8298; margin: 8px 0; }
+
+.source-progress { display: inline-flex; align-items: center; gap: 5px; color: #72907b !important; }
+.source-spinner { flex-shrink: 0; animation: source-spin 900ms linear infinite; }
+.source-pending { min-height: 160px; }
+@keyframes source-spin { to { transform: rotate(360deg); } }

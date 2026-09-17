@@ -91,8 +91,8 @@ class AgentService:
     def sources(self):
         return list(self.toolkit.sources.values())
 
-    async def enrich_sources(self):
-        await self.toolkit.enrich_sources()
+    async def enrich_sources(self, on_update=None):
+        await self.toolkit.enrich_sources(on_update)
 
     async def stream(self, conversation: list[ConversationTurn]) -> AsyncIterator[str]:
         # Recompute for every request, including after midnight; never persist a stale date in history.

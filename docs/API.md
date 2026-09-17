@@ -29,7 +29,7 @@ SSE envelope: `{version:2, request_id, job_id, seq, type, data}`. `id: seq`, `ev
 | done | status, failed_parts | completed/partial/failed, 실패 시 [response] |
 
 정상 순서: started → checkpoint(이전 이력) → response_started → status → response_delta 반복 → response_completed → checkpoint(이번 턴 포함) → done.
-조회 자료가 있으면 마지막 checkpoint 직전에 `response_sources`를 보냅니다. 응답 실패 시에도 확보한 조회 자료가 있으면 전송합니다. 취소/연결 종료 뒤에는 전송하지 않습니다. 자료가 없으면 이벤트를 생략합니다. 델타와 동일한 요청/응답 ID·seq 검증을 적용하며, 기존 클라이언트는 모르는 이벤트를 무시할 수 있습니다.
+조회 자료가 있으면 출처별 조회/요약 시작과 완료 시 `response_sources` 전체 스냅샷을 반복 전송하고, 마지막 checkpoint 직전에도 최종 상태를 보냅니다. 응답 실패 시에도 확보한 조회 자료가 있으면 전송합니다. 취소/연결 종료 뒤에는 전송하지 않습니다. 자료가 없으면 이벤트를 생략합니다. 델타와 동일한 요청/응답 ID·seq 검증을 적용하며, 기존 클라이언트는 모르는 이벤트를 무시할 수 있습니다.
 실패 시 response_completed 없음. 받은 텍스트가 있으면 partial, 없으면 failed. checkpoint는 이전 완료 대화만 유지합니다. 취소 시 연결 종료, 클라이언트가 노드 상태를 cancelled로 확정합니다.
 
 에이전트 응답 1개 = 응답 태그·아이콘을 가진 캔버스 노드 1개. 높이는 Markdown 내용에 맞춰 증가합니다. 이어지는 응답은 오른쪽에 배치하고 클라이언트에서 대화 순서 화살표로 연결합니다. 이는 내용 근거 관계가 아닙니다. 완료 후 아래의 독립 구조화 요청으로 정보 노드를 추가합니다. 근거 검증·의미 관계 생성 호출은 없습니다. SDK의 공개 output_text/refusal delta와 제한된 조회 메타데이터만 전달하고 내부 추론·도구 인자·원시 도구 이벤트는 전달하지 않습니다. 출처 카드에는 아래 한도 내에서 실제 읽은 페이지 본문을 전달합니다.
@@ -38,10 +38,10 @@ SSE envelope: `{version:2, request_id, job_id, seq, type, data}`. `id: seq`, `ev
 
 - `calculator(expression)`: 최대 256자, AST 노드 64개. 십진수 +, -, *, /, 괄호, 절댓값 100 이하 정수 지수의 ** 연산. 유효숫자 40자리, 값의 절댓값 1e100 이하. 코드 실행·함수·속성 접근 금지. 비율은 /100으로 표현.
 - `web_search(query)`: 최대 2000자. `OPENAI_SEARCH_MODEL`로 OpenAI Responses 내장 `web_search`를 한 번 호출하며 검색 요약과 실제 응답 메타데이터의 URL만 반환. 요약은 모델 생성 요약이며 본문 인용문이 아님. 출처 메타데이터가 없으면 요약도 사용하지 않음.
-- `read_page(url)`: 공개 HTTP(S) HTML/일반 텍스트 읽기. 기본 포트만 허용. DNS 전체 주소 검사 및 연결 IP 고정, Host/TLS 호스트 보존, 리디렉션 최대 3회 재검사, 쿠키·인증·환경 프록시 미사용. PDF·JS 렌더링·로그인·압축 응답은 미지원. 실패는 안전한 코드로 반환하며 샘플 대체 없음.
+- `read_page(url)`: 공개 HTTP(S) HTML/일반 텍스트 읽기. 기본 포트만 허용. DNS 전체 주소 검사 및 연결 IP 고정, Host/TLS 호스트 보존, 리디렉션 최대 3회 재검사, 쿠키·인증·환경 프록시 미사용. gzip 압축 응답을 지원하며 PDF·JS 렌더링·로그인은 미지원. 실패는 안전한 코드로 반환하며 샘플 대체 없음.
 - 도구는 일반 에이전트가 필요할 때 선택. 완료 답변에 실제 조회 출처가 있으면 표시 대상 출처의 본문만 자동 병렬 조회. 별도 키워드 분기나 매 요청 강제 검색 없음. 도구 출력은 신뢰할 수 없는 데이터로 취급하며 그 안의 명령은 수행하지 않음.
 - 최신성 정책: 요청마다 실제 UTC 날짜, Asia/Seoul 날짜와 UTC+09:00 요청 시각을 본문/검색 모델 지침에 전달. 오늘/최신 같은 상대 날짜는 기본 서울 시간으로 해석하고 사용자가 날짜·시간대를 지정하면 우선 적용. 변할 수 있는 사실·최신 정보·명시적 검색 요청에는 검색 후 답하도록 지시. 과거 대화/학습 기억을 현재 사실의 근거로 삼지 않으며 검색 실패·빈 결과·오래되거나 불충분한 결과는 확인 불가로 설명. 발표/출시/판매·소문 및 문서 발행일/사건 날짜 구분. 사용자가 검색을 금지하면 이를 준수. 이는 일반 에이전트 지침이며 모델의 검색 선택/최신성 판단을 코드로 보증하는 분류기가 아님.
-- 기본 예산: SDK 최대 6턴, 요청당 도구 최대 8회(실패 포함), 검색 최대 2회, 도구 20초, 페이지 1MB/본문 16,000자. 잘린 본문에는 `truncated=true`. 검색 호출별 출력 최대 1,500토큰. 기존 전체 요청 시간·동시 실행·출력 제한 및 취소 유지. MAX_OUTPUT_TOKENS는 본문 모델 호출별 제한이며 도구 후속 턴/검색 호출은 추가 비용이 발생할 수 있음. 자동 재시도 없음.
+- 기본 예산: SDK 최대 6턴, 요청당 도구 최대 8회(실패 포함), 검색 최대 2회, 도구 20초, 페이지 전송 1MB, 압축 해제 4MB/본문 16,000자. 용량 초과 시 한도 안에서 확보한 본문만 반환하며 본문이 없으면 실패. 잘린 본문에는 `truncated=true`. 검색 호출별 출력 최대 1,500토큰. 기존 전체 요청 시간·동시 실행·출력 제한 및 취소 유지. MAX_OUTPUT_TOKENS는 본문 모델 호출별 제한이며 도구 후속 턴/검색 호출은 추가 비용이 발생할 수 있음. 자동 재시도 없음.
 
 `response_sources.data` 예시:
 
@@ -193,7 +193,7 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 
 ### 출처 본문 병렬 조회
 
-완료 응답에 실제 도구 출처가 있으면 `response_completed` 이후 `status(stage=reading_sources)`를 전송하고 표시 대상 출처(`MAX_RESPONSE_SOURCES`, 기본 5개)의 공개 페이지를 병렬 조회합니다. `MAX_SOURCE_CONCURRENCY`는 기본 3, 범위 1..8입니다. 검색 없는 응답에는 조회를 추가하지 않으며 추가 모델/검색/검증 호출도 없습니다. 에이전트가 이미 읽은 본문은 같은 요청에서 재사용합니다.
+완료 응답에 실제 도구 출처가 있으면 `response_completed` 이후 `status(stage=reading_sources)`를 전송하고 표시 대상 출처(`MAX_RESPONSE_SOURCES`, 기본 5개)의 공개 페이지를 병렬 조회합니다. `MAX_SOURCE_CONCURRENCY`는 기본 3, 범위 1..8입니다. 출처 없는 응답에는 조회를 추가하지 않습니다. 확보한 각 페이지 본문은 아래의 제한된 독립 요약 호출로 요약하며 추가 검색/검증 호출은 없습니다. 에이전트가 이미 읽은 본문은 같은 요청에서 재사용합니다.
 
 자동 조회도 기존 `MAX_TOOL_CALLS`(실패 포함), `JOB_TIMEOUT_SECONDS`의 남은 시간, 페이지별 시간/바이트/문자 한도 안에서 실행합니다. 대기 작업과 진행 중 요청 모두 연결 종료/취소에 연동됩니다. 기존 `fetch_page`의 URL·DNS·IP 고정·리디렉션 검사를 그대로 적용합니다. 실패는 답변 완료 상태와 별개로 격리합니다. 개별 페이지 실패가 다른 페이지 처리를 막지 않습니다.
 
@@ -203,10 +203,26 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 {"status":"read","text":"실제로 읽은 페이지 텍스트","truncated":false,"final_url":"https://example.com/page","error_code":null}
 ```
 
-- `status`: read / failed / skipped. text는 최대 32,000자(설정 기본 16,000자), 실패/건너뜀은 빈 문자열.
+- `status`: reading / summarizing / read / failed / skipped / cancelled. text는 최대 32,000자(설정 기본 16,000자), 실패/건너뜀은 빈 문자열.
 - `truncated`: 페이지 문자 한도로 잘렸는지 표시.
 - `final_url`: 읽기 성공 시 안전 검사한 최종 URL, 실패 시 null.
-- `error_code`: null / page_unavailable / page_timeout / budget_exhausted.
+- `error_code`: null / page_unavailable / page_timeout / budget_exhausted / page_blocked / page_not_found / page_size_limit / unsupported_content_type / unsupported_encoding / empty_page / unsafe_url.
 - 자동 읽기는 원래 검색 출처 ID와 URL을 유지하며 리디렉션 도착 주소는 final_url로 구분합니다. 성공 시 access=page_read, verification=unverified 유지. 검색 요약을 본문으로 대체하지 않습니다.
 - 출처 본문은 HTML/Markdown으로 실행하지 않는 일반 텍스트로 표시하며, 복사·다음 응답의 명시적 참고 자료 선택에 포함됩니다. 본문이 길면 기본 접힌 상태로 표시합니다.
 - 본문과 실패 상태는 IndexedDB에 저장합니다. 기록 복원에서는 URL 조회나 모델 호출을 재실행하지 않습니다. 자동 조회 본문은 서명 continuation에 포함하지 않습니다.
+
+### 페이지 요약과 개별 진행 상태
+
+출처 카드의 본문 영역 이름은 접근 방법과 관계없이 **페이지 요약**입니다. 내부 `access`(search_result/page_read)와 `verification=unverified`는 유지합니다. `reading`은 스피너와 ‘조회 중’, `summarizing`은 스피너와 ‘요약 중’, 요약이 있으면 ‘요약 완료’를 표시합니다. 실패를 완료된 요약으로 표시하지 않습니다.
+
+`SourceContent`의 추가 필드:
+- `summary`: 실제 페이지 본문만으로 작성한 한국어 요약. 기본 빈 문자열, 최대 2,000자.
+- `summary_error`: null / summary_unavailable / summary_timeout / summary_budget_exhausted.
+- `reading`은 빈 text와 null error_code, `summarizing`은 확보한 text·final_url 및 access=page_read를 가집니다.
+- 요약 실패 시 본문 조회는 성공(read)으로 유지하고 원문임을 명시해 표시합니다. 실패한 본문에 검색 요약을 대신 넣지 않습니다. 자동 재시도는 없습니다.
+
+`OPENAI_SOURCE_SUMMARY_MODEL`(기본 gpt-4.1-mini)로 페이지당 도구 없는 요약 요청 1회, 최대 700 출력 토큰입니다. `MAX_SOURCE_SUMMARIES`는 요청당 최대 호출 수(기본 5, 범위 0..50), `SOURCE_SUMMARY_TIMEOUT_SECONDS`는 호출별 제한(기본 15초)입니다. 이 호출은 일반 응답/정보 추출과 별도로 비용이 발생합니다. 조회와 요약 모두 `MAX_SOURCE_CONCURRENCY` 및 전체 작업의 남은 시간 안에서 실행하고 중지 시 취소합니다. 원래 답변·다른 출처와 실패를 격리합니다. 입력은 페이지 제목·확보한 본문·잘림 여부뿐이며 검색 요약이나 원래 답변을 요약 근거로 사용하지 않습니다. 저장·도구·자동 재시도는 비활성화합니다.
+
+페이지 전송은 `MAX_PAGE_BYTES`(기본 1MB), gzip 압축 해제는 `MAX_PAGE_DECODED_BYTES`(기본 4MB, 범위 1KB..8MB)로 각각 제한합니다. 압축 폭탄이 전체 메모리에 풀리지 않도록 스트림을 제한하며 한도 도달 시 연결을 닫고 확보한 텍스트에 truncated=true를 표시합니다. HTML은 article, main, 일반 본문 순으로 선택하고 메뉴·스크립트·숨김 영역·반복 빈 줄을 제외한 뒤 문자 한도를 적용합니다. 안전한 DNS·연결 IP 고정·TLS·리디렉션 검증은 유지합니다.
+
+요약/본문/실패 상태는 함께 IndexedDB에 저장합니다. 복원 시 조회·요약을 재실행하지 않고 남아 있는 reading/summarizing 상태는 cancelled로 정리합니다. 이전 기록에 요약이 없으면 원문임을 명시하고 기존 데이터를 보존합니다.
