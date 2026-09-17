@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     max_context_turns: int = Field(12, ge=4, le=24)
     max_model_turns: int = Field(6, ge=1, le=20)
     max_tool_calls: int = Field(8, ge=1, le=20)
+    max_source_concurrency: int = Field(3, ge=1, le=8)
     max_response_sources: int = Field(5, ge=1, le=50)
     max_web_searches: int = Field(2, ge=1, le=5)
     tool_timeout_seconds: float = Field(20, ge=1, le=60)

@@ -285,8 +285,8 @@ export const useStore = create<State>((set, get) => ({
         ...session,
         nodes: session.nodes.map((node) => {
           if (node.type === 'source') {
-            const { measured: _measured, ...rest } = node
-            return { ...rest, data: { ...node.data, collapsed: false }, width: Math.max(node.width ?? 0, 460), height: 260 }
+            const { height: _height, measured: _measured, ...rest } = node
+            return { ...rest, data: { ...node.data, collapsed: node.data.collapsed ?? true }, width: Math.max(node.width ?? 0, 460) }
           }
           // Remeasure expandable content; older records stored a fixed collapsed height.
           const { height: _height, measured: _measured, ...rest } = node
@@ -358,7 +358,6 @@ export const useStore = create<State>((set, get) => ({
     if (!session) return
     commit({ ...session, nodes: session.nodes.map((node) => {
       if (node.id !== id || node.type === 'response') return node
-      if (node.type === 'source') return node
       const { height: _height, ...rest } = node
       return { ...rest, data: { ...node.data, collapsed: !node.data.collapsed } } as CanvasNode
     }) })
@@ -496,7 +495,7 @@ export const useStore = create<State>((set, get) => ({
         access = { id: event.job_id, token: String(event.data.access_token) }
         break
       case 'status':
-        set({ stage: '응답을 작성하고 있어요' })
+        set({ stage: event.data.stage === 'reading_sources' ? '출처 본문을 읽고 있어요' : '응답을 작성하고 있어요' })
         break
       case 'response_started': {
         if (state.responseId) break

@@ -320,3 +320,33 @@ def test_response_sources_have_server_configured_limit(limit):
     assert sources[0]["id"] == "src_" + "0" * 24
     assert len(ManySources.sources) == 8
     assert Settings(_env_file=None).max_response_sources == 5
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_page_enrichment_contract_preserves_answer_and_excludes_body_from_checkpoint(fail):
+    from rabbit_hole.models import SourceContent
+
+    class EnrichedService(FakeService):
+        def __init__(self, configured):
+            self.sources = [ToolSource(id="src_" + "a" * 24, url="https://example.com/a", title="Page",
+                                      access="search_result", accessed_at="2026-09-17T00:00:00Z")]
+
+        async def enrich_sources(self):
+            if fail:
+                raise TimeoutError()
+            self.sources[0].access = "page_read"
+            self.sources[0].content = SourceContent(status="read", text="PRIVATE_PAGE_TEST_TEXT",
+                                                   final_url="https://example.com/a")
+
+    configured = settings()
+    result = events(TestClient(create_app(configured, EnrichedService)).post("/api/agent", json=body()))
+    assert result[-1]["data"]["status"] == "completed"
+    assert not any(e["type"] == "part_error" for e in result)
+    completed = next(e for e in result if e["type"] == "response_completed")
+    reading = next(e for e in result if e["type"] == "status" and e["data"]["stage"] == "reading_sources")
+    sources = next(e for e in result if e["type"] == "response_sources")
+    assert completed["seq"] < reading["seq"] < sources["seq"]
+    content = sources["data"]["sources"][0]["content"]
+    assert content is None if fail else content["text"] == "PRIVATE_PAGE_TEST_TEXT"
+    checkpoint = [e for e in result if e["type"] == "checkpoint"][-1]["data"]["continuation"]
+    assert "PRIVATE_PAGE_TEST_TEXT" not in str(SnapshotSigner("x" * 32).verify(checkpoint).conversation)

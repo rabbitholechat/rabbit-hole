@@ -13,7 +13,7 @@ import { NodeTag } from './NodeTag'
 const kinds = { concept: '개념', entity: '대상', claim: '주장', example: '예시', comparison: '비교' }
 export function ContentCard({ id, data, selected }: NodeProps<InformationNode | SourceNode>) {
   const entity = useStore((s) => s.session?.contentGraph?.entities[data.entityId])
-  const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.excerpt.quote : '', data.collapsed)
+  const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.excerpt.quote : entity?.source.content?.text ?? '', data.collapsed)
   const collapsed = Boolean(data.collapsed && canCollapse)
   if (!entity) return null
   const source = entity.type === 'source' ? entity.source : null
@@ -61,7 +61,24 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
             <p className="source-access">
               {entity.source.access === 'page_read' ? '본문 조회' : '검색 결과'}
             </p>
-
+            {entity.source.content?.status === 'read' ? (
+              <>
+                <div ref={contentRef} className={`source-body nodrag nopan ${collapsed ? 'nowheel' : ''}`} tabIndex={collapsed ? 0 : undefined}>
+                  {entity.source.content.text}
+                </div>
+                {entity.source.content.truncated && <small className="source-content-note">본문 일부 · 길이 제한으로 잘림</small>}
+              </>
+            ) : (
+              <p className="source-content-note">
+                {entity.source.content?.error_code === 'budget_exhausted'
+                  ? '요청 한도로 본문을 가져오지 못했습니다.'
+                  : entity.source.content?.error_code === 'page_timeout'
+                    ? '본문 조회 시간이 초과되었습니다.'
+                    : entity.source.content?.status === 'failed'
+                      ? '이 페이지의 본문을 가져오지 못했습니다.'
+                      : '저장된 본문이 없습니다.'}
+              </p>
+            )}
           </>
         )}
         <footer className="node-footer">

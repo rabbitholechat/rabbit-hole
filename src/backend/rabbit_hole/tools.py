@@ -16,7 +16,7 @@ import httpx
 from agents import function_tool
 
 from .config import Settings
-from .models import ToolSource
+from .models import SourceContent, ToolSource
 
 # Vendor DEBUG/HTTP logs may contain prompts, credentials, URLs and tool bodies.
 # Application diagnostics remain available through rabbit_hole.diagnostics.
@@ -213,6 +213,7 @@ class AgentTools:
         self.calls = 0
         self.searches = 0
         self.sources: dict[str, ToolSource] = {}
+        self.page_contents: dict[str, SourceContent] = {}
 
     def consume(self, search=False):
         if self.calls >= self.settings.max_tool_calls:
@@ -230,7 +231,7 @@ class AgentTools:
         if old and old.access == "page_read" and access == "search_result":
             return old
         source = ToolSource(id=source_id, url=url, title=title[:500] or (old.title if old else url), access=access,
-                            accessed_at=datetime.now(UTC).isoformat())
+                            accessed_at=datetime.now(UTC).isoformat(), content=old.content if old else None)
         self.sources[source_id] = source
         return source
 
@@ -288,14 +289,63 @@ class AgentTools:
             # An uncited generated summary must not become a fabricated search result.
             return {"status": "no_sources", "sources": [], "summary": ""}
         return {"status": "ok", "content_origin": "web_search_summary",
-                "summary": result.output_text[:12000], "sources": [s.model_dump() for s in found.values()]}
+                "summary": result.output_text[:12000], "sources": [s.model_dump(exclude={"content"}) for s in found.values()]}
 
     async def read_page(self, url: str) -> dict:
         self.consume()
         page = await fetch_page(url, self.settings)
         source = self.record(page["url"], page["title"], "page_read")
-        return {"status": "ok", "source": source.model_dump(), "text": page["text"],
+        source.content = SourceContent(status="read", text=page["text"], truncated=page["truncated"],
+                                       final_url=page["url"])
+        self.page_contents[str(public_url(url))] = source.content
+        self.page_contents[page["url"]] = source.content
+        return {"status": "ok", "source": source.model_dump(exclude={"content"}), "text": page["text"],
                 "truncated": page["truncated"], "content_origin": "page_text"}
+
+    async def enrich_sources(self):
+        """Read displayed source pages concurrently within the same request/tool budget."""
+        semaphore = asyncio.Semaphore(self.settings.max_source_concurrency)
+        selected = list(self.sources.values())[:self.settings.max_response_sources]
+        # Reuse content obtained by the agent; no additional model calls.
+        cached = {**self.page_contents, **{s.url: s.content for s in self.sources.values()
+                  if s.content and s.content.status == "read"}}
+
+        async def read(source):
+            if source.content and source.content.status == "read":
+                return
+            if source.url in cached:
+                source.content = cached[source.url]
+                source.access = "page_read"
+                return
+            try:
+                async with semaphore:
+                    self.consume()
+                    page = await fetch_page(source.url, self.settings)
+                    # Keep the search page ID and link stable, recording redirects separately.
+                    source.content = SourceContent(status="read", text=page["text"],
+                                                   truncated=page["truncated"], final_url=page["url"])
+                    source.access = "page_read"
+                    source.accessed_at = datetime.now(UTC).isoformat()
+                    source.title = page["title"] or source.title
+            except asyncio.CancelledError:
+                source.content = SourceContent(status="failed", error_code="page_timeout")
+                raise
+            except ToolFailure as error:
+                limited = str(error) == "tool_call_limit"
+                source.content = SourceContent(status="skipped" if limited else "failed",
+                                               error_code="budget_exhausted" if limited else "page_unavailable")
+            except TimeoutError:
+                source.content = SourceContent(status="failed", error_code="page_timeout")
+            except Exception:
+                source.content = SourceContent(status="failed", error_code="page_unavailable")
+
+        for source in selected:
+            if not source.content or source.content.status != "read":
+                source.content = SourceContent(status="skipped", error_code="budget_exhausted")
+        # TaskGroup propagates cancellation to queued and in-flight page requests.
+        async with asyncio.TaskGroup() as group:
+            for source in selected:
+                group.create_task(read(source))
 
     def definitions(self):
         def safe_error(_context, _error):

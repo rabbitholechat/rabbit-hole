@@ -195,6 +195,15 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                 )
                 await emit("response_completed", {"id": response_id, "text": text})
                 status = "completed"
+                if getattr(service, "enrich_sources", None) and service.sources:
+                    # Isolate page failures from the completed answer, without extending the job deadline.
+                    await emit("status", {"stage": "reading_sources"})
+                    remaining = settings.job_timeout_seconds - (time.monotonic() - job.created)
+                    try:
+                        async with asyncio.timeout(max(0, remaining)):
+                            await service.enrich_sources()
+                    except Exception:
+                        diagnostics.log(logging.INFO, request_id, "source_content_incomplete")
             except asyncio.CancelledError:
                 job.cancel.set()
                 status = "cancelled"

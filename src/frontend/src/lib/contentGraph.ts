@@ -78,13 +78,18 @@ function relation(
 function withRelations(graph: ContentGraph, extra: ContentRelation[]) {
   return [...new Map([...graph.relations, ...extra].map((r) => [r.id, r])).values()]
 }
+function estimatedHeight(session: Session, node: CanvasNode) {
+  if (node.measured?.height ?? node.height) return node.measured?.height ?? node.height!
+  const entity = session.contentGraph?.entities[node.id]
+  return entity?.type === 'source' ? (entity.source.content?.status === 'read' ? 480 : 260) : 400
+}
 function place(session: Session, ids: string[], response: ResponseNode): CanvasNode[] {
   const nodes = [...session.nodes]
   for (const id of ids) {
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
     const width = entity.type === 'information' ? 340 : 460
-    const height = entity.type === 'source' ? 260 : 280
+    const height = entity.type === 'source' ? (entity.source.content?.status === 'read' ? 480 : 260) : 280
     const x =
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
@@ -96,13 +101,13 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
         (n) =>
           x < n.position.x + (n.measured?.width ?? n.width ?? 560) + 32 &&
           x + width + 32 > n.position.x &&
-          y < n.position.y + (n.measured?.height ?? n.height ?? 400) + 32 &&
+          y < n.position.y + estimatedHeight(session, n) + 32 &&
           y + height + 32 > n.position.y,
       )
       if (!collisions.length) break
-      y = Math.max(...collisions.map((n) => n.position.y + (n.measured?.height ?? n.height ?? 400))) + 48
+      y = Math.max(...collisions.map((n) => n.position.y + estimatedHeight(session, n))) + 48
     }
-    nodes.push({ id, type: entity.type, data: { entityId: id }, position: { x, y }, width, ...(entity.type === 'source' ? { height } : {}) })
+    nodes.push({ id, type: entity.type, data: { entityId: id, ...(entity.type === 'source' ? { collapsed: true } : {}) }, position: { x, y }, width })
   }
   return nodes
 }
@@ -115,7 +120,7 @@ function mergeSource(kept: SourceEntity, incoming: SourceEntity): SourceEntity {
     const spans = [...new Map([...(old?.spans ?? []), ...next.spans].map((s) => [`${s.start}:${s.end}`, s])).values()]
     observations.set(next.responseId, { ...preferred, spans })
   }
-  const source = kept.source.access === 'page_read' ? kept.source : incoming.source
+  const source = kept.source.content?.status === 'read' ? kept.source : incoming.source.content?.status === 'read' ? incoming.source : kept.source.access === 'page_read' ? kept.source : incoming.source
   return { ...kept, source: { ...source, id: kept.id }, observations: [...observations.values()] }
 }
 

@@ -49,6 +49,15 @@ class TitleResponse(BaseModel):
     title: str = Field(min_length=1, max_length=60)
 
 
+class SourceContent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["read", "failed", "skipped"]
+    text: str = Field(default="", max_length=32000)
+    truncated: bool = False
+    final_url: str | None = None
+    error_code: Literal["page_unavailable", "page_timeout", "budget_exhausted"] | None = None
+
+
 class ToolSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -57,3 +66,4 @@ class ToolSource(BaseModel):
     access: Literal["search_result", "page_read"]
     accessed_at: str
     verification: Literal["unverified"] = "unverified"
+    content: SourceContent | None = None

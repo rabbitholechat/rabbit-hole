@@ -1851,3 +1851,21 @@ svg {
 @media (prefers-reduced-motion: reduce) {
   .rabbit-loader-body, .rabbit-loader-paw { animation: none; }
 }
+
+/* Source bodies are fetched page text, never interpreted as HTML or instructions. */
+.source-card { height: auto; min-height: 260px; }
+.source-body {
+  --collapsed-content-height: 160px;
+  user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.75;
+  color: #47617a;
+}
+.source-card.is-collapsed .source-body {
+  max-height: var(--collapsed-content-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.source-content-note { font-size: 11px; line-height: 1.6; color: #6d8298; margin: 8px 0; }

@@ -1,4 +1,4 @@
-import type { ToolSource } from '../types'
+import type { SourceContent, ToolSource } from '../types'
 import { safeUrl } from './utils'
 
 export function parseToolSources(value: unknown): ToolSource[] | undefined {
@@ -21,6 +21,21 @@ export function parseToolSources(value: unknown): ToolSource[] | undefined {
       item.verification !== 'unverified'
     )
       return
+    let content: SourceContent | undefined
+    if (item.content != null) {
+      const body = item.content
+      if (
+        typeof body !== 'object' ||
+        !['read', 'failed', 'skipped'].includes(body.status) ||
+        typeof body.text !== 'string' || Array.from(body.text).length > 32000 ||
+        typeof body.truncated !== 'boolean' ||
+        !(body.final_url === null || (typeof body.final_url === 'string' && body.final_url.length <= 4096 && safeUrl(body.final_url))) ||
+        ![null, 'page_unavailable', 'page_timeout', 'budget_exhausted'].includes(body.error_code) ||
+        (body.status === 'read' && (item.access !== 'page_read' || !body.text.trim() || !body.final_url || body.error_code !== null)) ||
+        (body.status !== 'read' && (body.text !== '' || body.error_code === null))
+      ) return
+      content = { status: body.status, text: body.text, truncated: body.truncated, final_url: body.final_url, error_code: body.error_code }
+    }
     sources.push({
       id: item.id,
       url: item.url,
@@ -28,6 +43,7 @@ export function parseToolSources(value: unknown): ToolSource[] | undefined {
       access: item.access,
       accessed_at: item.accessed_at,
       verification: 'unverified',
+      ...(content ? { content } : {}),
     })
   }
   return [...new Map(sources.map((s) => [s.id, s])).values()]

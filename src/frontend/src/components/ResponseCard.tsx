@@ -18,10 +18,11 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
   const structure = useStore((s) => s.structure)
   const cancelStructure = useStore((s) => s.cancelStructure)
   const graphJob = useStore((s) => s.session?.contentGraph?.jobs[id])
-  const showStructureAction = data.status === 'completed' && graphJob?.status !== 'completed'
+  const readingSources = useStore((s) => s.responseId === id && Boolean(s.activeRequest) && s.stage === '출처 본문을 읽고 있어요')
+  const showStructureAction = data.status === 'completed' && !readingSources && graphJob?.status !== 'completed'
   const isStructuring = data.status === 'completed' && graphJob?.status === 'running'
-  const status = isStructuring ? 'structuring' : data.status
-  const statusText = isStructuring
+  const status = isStructuring || readingSources ? 'structuring' : data.status
+  const statusText = readingSources ? '출처 읽는 중' : isStructuring
     ? '정보 정리 중'
     : data.status === 'completed' && graphJob?.status === 'failed'
       ? '정보 정리 실패'
@@ -57,12 +58,12 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
       <article
         className={`response-card ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
         aria-label="에이전트 응답"
-        aria-busy={data.status === 'streaming' || isStructuring}
+        aria-busy={data.status === 'streaming' || isStructuring || readingSources}
       >
         <header>
           <NodeTag kind="response" />
           <small className="response-status" data-status={status} role="status">
-            {(data.status === 'streaming' || isStructuring) && <RabbitLoader />}
+            {(data.status === 'streaming' || isStructuring || readingSources) && <RabbitLoader />}
             {statusText}
           </small>
           <div className="response-actions nodrag nopan">

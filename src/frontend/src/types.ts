@@ -26,6 +26,13 @@ export type Relation = {
 }
 export type Graph = { relations: Relation[]; clusters: { id: string; label: string; source_ids: string[] }[] }
 export type PageNode = Node<{ source: Source; related?: boolean; dimmed?: boolean; collapsed?: boolean; expandedHeight?: number }, 'page'>
+export type SourceContent = {
+  status: 'read' | 'failed' | 'skipped'
+  text: string
+  truncated: boolean
+  final_url: string | null
+  error_code: 'page_unavailable' | 'page_timeout' | 'budget_exhausted' | null
+}
 export type ToolSource = {
   id: string
   url: string
@@ -33,6 +40,7 @@ export type ToolSource = {
   access: 'search_result' | 'page_read'
   accessed_at: string
   verification: 'unverified'
+  content?: SourceContent | null
 }
 export type ResponseNode = Node<
   {

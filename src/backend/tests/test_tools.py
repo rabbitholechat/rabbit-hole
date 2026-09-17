@@ -219,3 +219,96 @@ async def test_cited_primary_page_is_not_lost_behind_discovered_sources():
     assert result["sources"][0]["url"] == cited_url
     assert tools.record(cited_url, "", "search_result").title == "Dated official announcement"
     assert list(tools.sources.values())[0].url == cited_url
+
+
+@pytest.mark.asyncio
+async def test_source_content_parallel_budget_reuse_and_failure_isolation(monkeypatch):
+    from rabbit_hole.models import SourceContent
+
+    tools = AgentTools(settings(max_tool_calls=4, max_response_sources=6, max_source_concurrency=2), None)
+    sources = [tools.record(f"https://example.com/{i}", str(i), "search_result") for i in range(6)]
+    sources[0].content = SourceContent(status="read", text="cached", final_url=sources[0].url)
+    sources[0].access = "page_read"
+    active = peak = 0
+    both_started = asyncio.Event()
+    calls = []
+
+    async def fetch(url, _settings):
+        nonlocal active, peak
+        calls.append(url)
+        active += 1
+        peak = max(peak, active)
+        if active == 2:
+            both_started.set()
+        try:
+            await asyncio.wait_for(both_started.wait(), 1)
+            if url.endswith("/2"):
+                raise ToolFailure("unsafe_url")
+            return {"url": url + "/final", "title": "Actual title", "text": "<script>untrusted</script> Actual page",
+                    "truncated": True}
+        finally:
+            active -= 1
+
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", fetch)
+    await tools.enrich_sources()
+    assert peak == 2 and len(calls) == tools.calls == 4
+    assert sources[0].url not in calls and sources[0].content.text == "cached"
+    assert sources[1].content.status == "read" and sources[1].access == "page_read"
+    assert sources[1].url == "https://example.com/1"
+    assert sources[1].content.final_url.endswith("/final")
+    assert sources[1].content.truncated
+    assert sources[2].content.status == "failed" and sources[2].access == "search_result"
+    assert sources[2].content.text == "" and sources[2].content.error_code == "page_unavailable"
+    assert sources[5].content.status == "skipped"
+    assert sources[5].content.error_code == "budget_exhausted"
+
+
+@pytest.mark.asyncio
+async def test_source_content_cancellation_stops_inflight_and_queued_reads(monkeypatch):
+    tools = AgentTools(settings(max_source_concurrency=2), None)
+    for i in range(5):
+        tools.record(f"https://example.com/{i}", "", "search_result")
+    started = asyncio.Event()
+    active = 0
+
+    async def fetch(url, _settings):
+        nonlocal active
+        active += 1
+        if active == 2:
+            started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            active -= 1
+
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", fetch)
+    task = asyncio.create_task(tools.enrich_sources())
+    await asyncio.wait_for(started.wait(), 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert active == 0 and tools.calls == 2
+    assert all(s.content.status == "failed" for s in tools.sources.values())
+
+
+@pytest.mark.asyncio
+async def test_agent_read_redirect_is_reused_and_only_displayed_sources_are_read(monkeypatch):
+    tools = AgentTools(settings(max_response_sources=1), None)
+    original = tools.record("https://example.com/original", "Original", "search_result")
+    fetch = AsyncMock(return_value={"url": "https://example.com/final", "title": "Final",
+                                   "text": "Actual original page text", "truncated": False})
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", fetch)
+    await tools.read_page(original.url)
+    await tools.enrich_sources()
+    assert fetch.await_count == 1 and tools.calls == 1
+    assert original.content.text == "Actual original page text"
+    assert original.content.final_url == "https://example.com/final"
+    assert original.access == "page_read"
+
+    tools = AgentTools(settings(max_response_sources=1), None)
+    sources = [tools.record(f"https://example.com/{i}", "", "search_result") for i in range(3)]
+    fetch.side_effect = TimeoutError()
+    await tools.enrich_sources()
+    assert tools.calls == 1
+    assert sources[0].content.error_code == "page_timeout"
+    assert sources[1].content is None and sources[2].content is None

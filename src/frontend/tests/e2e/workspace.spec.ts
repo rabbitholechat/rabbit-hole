@@ -324,6 +324,7 @@ test('tool retrieval history distinguishes access and restores without new reque
         access: 'search_result',
         accessed_at: '2026-09-17T00:00:00+00:00',
         verification: 'unverified',
+        content: { status: 'failed', text: '', truncated: false, final_url: null, error_code: 'page_unavailable' },
       },
       {
         id: `src_${'b'.repeat(24)}`,
@@ -332,6 +333,13 @@ test('tool retrieval history distinguishes access and restores without new reque
         access: 'page_read',
         accessed_at: '2026-09-17T00:00:01+00:00',
         verification: 'unverified',
+        content: {
+          status: 'read',
+          text: '<script>이 내용은 실행되지 않는 원문입니다.</script>\n' + '페이지에서 확보한 실제 본문 내용입니다.\n'.repeat(30),
+          truncated: true,
+          final_url: 'https://example.com/b',
+          error_code: null,
+        },
       },
     ]
     const events = [
@@ -356,6 +364,17 @@ test('tool retrieval history distinguishes access and restores without new reque
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('계산과 자료 확인')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.source-card')).toHaveCount(2)
+  const sourceCard = page.locator('.source-card').filter({ hasText: '본문을 읽은 페이지' })
+  await expect(sourceCard.locator('.source-body')).toContainText('<script>이 내용은 실행되지 않는 원문입니다.</script>')
+  await expect(sourceCard.locator('script')).toHaveCount(0)
+  await expect(sourceCard).toContainText('본문 일부 · 길이 제한으로 잘림')
+  await expect(page.locator('.source-card').filter({ hasText: '검색으로 찾은 페이지' })).toContainText('이 페이지의 본문을 가져오지 못했습니다.')
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await expect(sourceCard.getByRole('button', { name: '노드 펼치기' })).toBeEnabled()
+  await sourceCard.getByRole('button', { name: '노드 펼치기' }).click()
+  await expect(sourceCard).not.toHaveClass(/is-collapsed/)
+  await sourceCard.getByRole('button', { name: '노드 접기' }).click()
+  await expect(sourceCard).toHaveClass(/is-collapsed/)
   await expect(page.locator('.response-sources')).toHaveCount(0)
   await expect(page.locator('.source-card').filter({ hasText: '검색으로 찾은 페이지' })).toContainText(
     '검색 결과',
@@ -372,6 +391,8 @@ test('tool retrieval history distinguishes access and restores without new reque
   await openHistory(page)
   await page.getByRole('button', { name: '계산과 자료 확인', exact: true }).click()
   await expect(page.locator('.source-card')).toHaveCount(2)
+  await expect(sourceCard.locator('.source-body')).toContainText('페이지에서 확보한 실제 본문 내용입니다.')
+  await expect(sourceCard).toHaveClass(/is-collapsed/)
   expect(requests).toBe(1)
 })
 

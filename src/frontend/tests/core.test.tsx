@@ -338,3 +338,16 @@ it('expands canvas bounds for moved and growing nodes while retaining the curren
   expect(restored[1][0]).toBeGreaterThanOrEqual(20000)
   expect(restored[1][1]).toBeGreaterThanOrEqual(17200)
 })
+
+it('validates source body snapshots without treating search summaries or unsafe redirects as page text', () => {
+  const source = {
+    id: 'src_' + 'a'.repeat(24), url: 'https://example.com/a', title: 'Page',
+    access: 'page_read', accessed_at: '2026-09-17T00:00:00Z', verification: 'unverified',
+    content: { status: 'read', text: 'Actual page text', truncated: false, final_url: 'https://example.com/final', error_code: null },
+  }
+  expect(parseToolSources([source])?.[0].content?.text).toBe('Actual page text')
+  expect(parseToolSources([{ ...source, access: 'search_result' }])).toBeUndefined()
+  expect(parseToolSources([{ ...source, content: { ...source.content, final_url: 'javascript:alert(1)' } }])).toBeUndefined()
+  expect(parseToolSources([{ ...source, content: { ...source.content, text: 'a'.repeat(32001) } }])).toBeUndefined()
+  expect(parseToolSources([{ ...source, content: { ...source.content, status: 'failed', error_code: 'page_unavailable' } }])).toBeUndefined()
+})
