@@ -44,9 +44,11 @@ def test_postgres_survives_new_app_instances_and_preserves_complete_snapshot(set
     assert first.put("/api/sessions/shared-session", json={"session": original, "revision": 0}).json() == {"revision": 1}
     second = TestClient(create_app(settings))
     assert second.get("/api/sessions").json() == {"sessions": [{"session": original, "revision": 1}]}
+    assert second.get("/api/sessions/shared-session").json() == {"session": original, "revision": 1}
     assert second.put("/api/sessions/newer", json={"session": session("newer", updatedAt=2000), "revision": 0}).status_code == 200
     assert [r["session"]["id"] for r in first.get("/api/sessions").json()["sessions"]] == ["newer", "shared-session"]
     assert second.delete("/api/sessions/shared-session?revision=1").status_code == 204
+    assert first.get("/api/sessions/shared-session").status_code == 404
     assert first.put("/api/sessions/shared-session", json={"session": original, "revision": 1}).status_code == 409
     assert first.post("/api/sessions/shared-session/import", json=original).json() == {"imported": False}
     with HistoryRepository(settings).connection() as conn:

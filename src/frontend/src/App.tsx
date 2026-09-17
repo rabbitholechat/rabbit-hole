@@ -33,6 +33,7 @@ import '@xyflow/react/dist/style.css'
 import { useStore } from './store'
 import { RabbitLoader } from './components/RabbitLoader'
 import { RabbitIcon } from './components/RabbitIcon'
+import { HistoryLoading } from './components/HistoryLoading'
 import { ServerErrorPage } from './components/ServerErrorPage'
 import { PageCard } from './components/PageCard'
 import { ConversationEdge } from './components/ConversationEdge'
@@ -83,7 +84,7 @@ function Workspace() {
   const fitRef = useRef<(initial?: boolean) => void>(() => {})
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.isComposing || event.altKey || useStore.getState().serverError) return
+      if (event.isComposing || event.altKey || useStore.getState().serverError || useStore.getState().loadingSessionId) return
       const target = event.target
       if (
         target instanceof HTMLElement &&
@@ -310,6 +311,7 @@ function Workspace() {
   const selectedSource = session?.sources.find((s) => s.id === state.selected)
   const selectedRelation =
     state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]
+  const opening = Boolean(state.loadingSessionId)
   const busy = Boolean(state.activeRequest)
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -317,13 +319,13 @@ function Workspace() {
   }
   return (
     <main
-      className={`workspace ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'} ${state.serverError ? 'has-server-error' : ''}`}
+      className={`workspace ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'} ${state.serverError ? 'has-server-error' : ''} ${opening ? 'is-loading-content' : ''}`}
       aria-label="대화 캔버스"
     >
       <ReactFlow<CanvasNode>
         translateExtent={extent}
-        nodes={state.serverError ? [] : arrivingGraph.nodes}
-        edges={state.serverError ? [] : arrivingGraph.edges}
+        nodes={(state.serverError || opening) ? [] : arrivingGraph.nodes}
+        edges={(state.serverError || opening) ? [] : arrivingGraph.edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={state.nodesChange}
@@ -372,10 +374,10 @@ function Workspace() {
         <Background variant={BackgroundVariant.Lines} gap={28} lineWidth={0.6} color="#e2e6df" />
       </ReactFlow>
       {state.serverError ? (
-        <ServerErrorPage retrying={state.retryingServer} onRetry={() => void state.initialize()} />
+        <ServerErrorPage retrying={state.retryingServer || opening} onRetry={() => void (state.failedSessionId ? state.open(state.failedSessionId) : state.initialize())} />
       ) : (
       <>
-      {Boolean(session?.nodes.length) && (
+      {!opening && Boolean(session?.nodes.length) && (
         <nav className="node-navigation panel" aria-label="노드 탐색">
           <Button
             variant="ghost"
@@ -460,16 +462,17 @@ function Workspace() {
           <Plus />새 대화
         </Button>
         <h2>
-          최근 대화 <span>{state.history.length}</span>
+          최근 대화 {!state.retryingServer && <span>{state.history.length}</span>}
         </h2>
-        <div className="history-list">
-          {!state.history.length && <p className="history-empty">대화 기록이 없습니다</p>}
-          {state.history.map((h) => (
-            <div className={`history-row ${session?.id === h.id ? 'active' : ''}`} key={h.id}>
+        <div className="history-list" aria-busy={state.retryingServer}>
+          {state.retryingServer && <HistoryLoading />}
+          {!state.retryingServer && !state.history.length && <p className="history-empty">대화 기록이 없습니다</p>}
+          {!state.retryingServer && state.history.map((h) => (
+            <div className={`history-row ${(state.loadingSessionId ?? session?.id) === h.id ? 'active' : ''}`} key={h.id}>
               <button
                 className="history-item"
                 onClick={() => {
-                  state.open(h.id)
+                  void state.open(h.id)
                   if (window.innerWidth < 700) setHistoryOpen(false)
                 }}
               >
@@ -487,7 +490,8 @@ function Workspace() {
           ))}
         </div>
       </aside>
-      {session && (
+      {opening && <HistoryLoading canvas />}
+      {!opening && session && (
         <div className="canvas-heading">
           <div>
             <h1>{(session.title || session.query).split('\n')[0]}</h1>
@@ -500,7 +504,7 @@ function Workspace() {
           {session.mode === 'sample' && <span className="sample-badge">이전 가상 데이터 기록</span>}
         </div>
       )}
-      {session?.protocol !== 2 && <AnswerPanel />}
+      {!opening && session?.protocol !== 2 && <AnswerPanel />}
       {(selectedSource || selectedRelation) && (
         <section className="detail-panel panel" aria-label={selectedSource ? '출처 상세' : '관계 상세'}>
           <header>
@@ -581,7 +585,7 @@ function Workspace() {
           </div>
         </section>
       )}
-      <div className="composer-area">
+      {!opening && <div className="composer-area">
         {(state.error || state.storageError) && (
           <div className="error-banner panel" role="alert">
             <span>{state.error || state.storageError}</span>
@@ -706,8 +710,8 @@ function Workspace() {
             이전 가상 데이터 기록입니다. 메시지를 보내면 새로운 대화를 시작합니다.
           </p>
         )}
-      </div>
-      {session?.sources.length ? (
+      </div>}
+      {!opening && session?.sources.length ? (
         <div className="map-legend">
           <span />
           <span>페이지 사이의 내용 관계</span>
@@ -719,7 +723,7 @@ function Workspace() {
           )}
         </div>
       ) : null}
-      <nav className="canvas-tools panel" aria-label="캔버스 도구">
+      {!opening && <nav className="canvas-tools panel" aria-label="캔버스 도구">
         <Button
           variant="ghost"
           size="icon"
@@ -757,7 +761,7 @@ function Workspace() {
         >
           <Plus />
         </Button>
-      </nav>
+      </nav>}
       </>
       )}
     </main>

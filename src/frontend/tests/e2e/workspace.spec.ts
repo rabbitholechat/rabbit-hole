@@ -7,7 +7,7 @@ async function mockHistory(context: BrowserContext, history = memoryHistoryApi()
     const parts = url.pathname.split('/')
     const id = decodeURIComponent(parts[3] ?? '')
     try {
-      const result = request.method() === 'GET' ? await history.list()
+      const result = request.method() === 'GET' ? (id ? await history.get(id) : await history.list())
         : request.method() === 'POST' ? await history.import(request.postDataJSON())
         : request.method() === 'PUT' ? await history.save(id, request.postDataJSON())
         : await history.delete(id, Number(url.searchParams.get('revision')))
@@ -1035,5 +1035,62 @@ test('server failures show the branded 500 canvas page and retry without reloadi
   await expect(errorPage).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: '메시지 입력' })).toBeVisible()
   expect(calls).toBe(3)
+  expect(modelCalls).toBe(0)
+})
+
+
+test('digging rabbit accompanies list and selected conversation loading', async ({ page }, testInfo) => {
+  let finishList!: () => void
+  let finishContent!: () => void
+  const listGate = new Promise<void>((resolve) => { finishList = resolve })
+  const contentGate = new Promise<void>((resolve) => { finishContent = resolve })
+  const saved = {
+    id: 'loading-demo', query: '저장된 대화 열기', updatedAt: 1000, mode: 'live', protocol: 2,
+    sources: [], nodes: [{ id: 'response_loading', type: 'response', width: 300,
+      position: { x: 0, y: 0 }, data: { prompt: '저장된 대화 열기', text: '불러온 대화 내용', status: 'completed' } }],
+    graph: { relations: [], clusters: [] }, answer: null,
+    viewport: { x: 30, y: 160, zoom: 0.9 }, fitted: true, pinned: [], status: 'completed', failedParts: [],
+  }
+  await page.route('**/api/sessions', async (route) => {
+    await listGate
+    await route.fulfill({ json: { sessions: [{ session: saved, revision: 1 }] } })
+  })
+  await page.route('**/api/sessions/loading-demo', async (route) => {
+    if (route.request().method() !== 'GET') return route.fulfill({ json: { revision: 2 } })
+    await contentGate
+    await route.fulfill({ json: { session: saved, revision: 1 } })
+  })
+  let modelCalls = 0
+  await page.route(/\/api\/(agent|title|structure)/, async (route) => {
+    modelCalls++
+    await route.abort()
+  })
+  await page.goto('/')
+  await openHistory(page)
+  const listLoader = page.locator('.history-loading')
+  await expect(listLoader).toContainText('대화 목록을 불러오고 있어요')
+  await expect(listLoader.locator('.rabbit-loader-paw')).toHaveCSS('animation-name', 'rabbit-dig')
+  await expect(page.locator('.history-empty')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('history-loading.png') })
+  finishList()
+  await expect(listLoader).toHaveCount(0)
+  await page.getByRole('button', { name: saved.query, exact: true }).click()
+  const canvasLoader = page.locator('.canvas-loading')
+  await expect(canvasLoader).toContainText('대화를 불러오고 있어요')
+  await expect(canvasLoader.locator('.rabbit-loader-paw')).toHaveCSS('animation-name', 'rabbit-dig')
+  await expect(page.locator('.response-card')).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveCount(0)
+  const bounds = await canvasLoader.boundingBox()
+  const viewport = page.viewportSize()!
+  expect(Math.abs(bounds!.x + bounds!.width / 2 - viewport.width / 2)).toBeLessThan(2)
+  expect(Math.abs(bounds!.y + bounds!.height / 2 - viewport.height / 2)).toBeLessThan(2)
+  if (testInfo.project.name === 'mobile')
+    await expect(page.locator('.history-panel')).toHaveCSS('opacity', '0')
+  await page.screenshot({ path: testInfo.outputPath('content-loading.png') })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect(canvasLoader.locator('.rabbit-loader-paw')).toHaveCSS('animation-name', 'none')
+  finishContent()
+  await expect(canvasLoader).toHaveCount(0)
+  await expect(page.locator('.response-card')).toContainText(saved.nodes[0].data.text)
   expect(modelCalls).toBe(0)
 })

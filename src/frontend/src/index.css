@@ -1984,3 +1984,43 @@ svg {
   min-width: 140px;
   min-height: 44px;
 }
+
+
+.history-loading,
+.canvas-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: #78817c;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.history-loading {
+  min-height: 150px;
+  padding: 22px 8px;
+}
+.history-loading .rabbit-loader {
+  width: 54px;
+  height: 52px;
+  color: #29322e;
+}
+.canvas-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  padding: 24px;
+  background: radial-gradient(ellipse at center, #fafaf8 0%, #fafaf8d9 20%, #fafaf800 65%);
+  font-size: 15px;
+}
+.canvas-loading .rabbit-loader {
+  width: 88px;
+  height: 84px;
+  color: #29322e;
+}
+.is-loading-content > .react-flow {
+  pointer-events: none;
+}

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { openDB } from 'idb'
-import { loadSessions, saveSession, deleteSession } from '../src/lib/db'
+import { loadSessions, loadSession, saveSession, deleteSession } from '../src/lib/db'
 import { makeSample } from './fixtures/legacySamples'
 import { memoryHistoryApi } from './fixtures/historyApi'
 
@@ -20,7 +20,7 @@ function server() {
       const result = init?.method === 'PUT' ? await api.save(id, JSON.parse(init.body as string))
         : init?.method === 'POST' ? await api.import(JSON.parse(init.body as string))
         : init?.method === 'DELETE' ? await api.delete(id, Number(url.searchParams.get('revision')))
-        : await api.list()
+        : id ? await api.get(id) : await api.list()
       return new Response(result === undefined ? null : JSON.stringify(result), { status: result === undefined ? 204 : 200 })
     } catch {
       return new Response('{}', { status: 409 })
@@ -98,4 +98,17 @@ it('loads all server pages before publishing revisions and chronological history
   fetch.mockResolvedValueOnce(new Response(JSON.stringify({ revision: 8 })))
   await saveSession(last)
   expect(JSON.parse(fetch.mock.calls[2][1]!.body as string).revision).toBe(7)
+})
+
+
+it('fetches current content and revision when a conversation is opened', async () => {
+  const { api } = server()
+  await loadSessions()
+  const session = makeSample('vector')
+  await saveSession(session)
+  await api.save(session.id, { session: { ...session, title: '최신 제목' }, revision: 1 })
+  const latest = await loadSession(session.id)
+  expect(latest.title).toBe('최신 제목')
+  await saveSession(latest)
+  expect((await api.get(session.id)).revision).toBe(3)
 })

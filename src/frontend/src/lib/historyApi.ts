@@ -1,12 +1,12 @@
 import type { HistoryList, HistoryWrite, ImportResult, Revision, Session } from '../types'
 
-async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+async function request<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/sessions${path}`, {
     method,
     cache: 'no-store',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(20000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
   })
   if (!response.ok) {
     if (response.status === 409)
@@ -20,6 +20,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown): Promise
 
 export const historyApi = {
   list: (cursor?: string) => request<HistoryList>(cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''),
+  get: (id: string, signal?: AbortSignal) => request<HistoryWrite>(`/${encodeURIComponent(id)}`, 'GET', undefined, signal),
   save: (id: string, body: HistoryWrite) => request<Revision>(`/${encodeURIComponent(id)}`, 'PUT', body),
   import: (session: Session) => request<ImportResult>(`/${encodeURIComponent(session.id)}/import`, 'POST', session),
   delete: (id: string, revision: number) => request<void>(`/${encodeURIComponent(id)}?revision=${revision}`, 'DELETE'),

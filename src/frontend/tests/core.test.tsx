@@ -193,7 +193,7 @@ it('validates and restores tool sources without moving nodes or fetching history
   useStore.setState({ activeRequest: null, session: null })
   const fetchMock = vi.spyOn(globalThis, 'fetch')
   await useStore.getState().initialize()
-  useStore.getState().open(saved.id)
+  await useStore.getState().open(saved.id)
   expect(useStore.getState().session!.nodes[0].data).toMatchObject({ toolSources: sources })
   expect(fetchMock).not.toHaveBeenCalled()
   fetchMock.mockRestore()
@@ -252,7 +252,7 @@ it('generates a title once without replacing another active conversation', async
     expect(useStore.getState().history.find((s) => s.id === session.id)?.title).toBe('인사 나누기'),
   )
   expect(useStore.getState().session?.id).toBe(other.id)
-  useStore.getState().open(session.id)
+  await useStore.getState().open(session.id)
   expect(fetchMock).toHaveBeenCalledTimes(1)
   fetchMock.mockRestore()
 })
@@ -387,4 +387,50 @@ it('shows a server error for failed initialization and coalesces repeated retrie
   expect(useStore.getState().serverError).toBe(false)
   expect(useStore.getState().retryingServer).toBe(false)
   list.mockRestore()
+})
+
+
+it('only opens the latest selection and cancelling to a new chat ignores late content', async () => {
+  const first = { ...makeSample('vector'), id: crypto.randomUUID() }
+  const second = { ...makeSample('vector'), id: crypto.randomUUID() }
+  await saveSession(first)
+  await saveSession(second)
+  let finish!: () => void
+  const get = vi.spyOn(historyApi, 'get').mockImplementationOnce(() => new Promise((resolve) => {
+    finish = () => resolve({ session: first, revision: 1 })
+  }))
+  const old = useStore.getState().open(first.id)
+  await vi.waitFor(() => expect(get).toHaveBeenCalledOnce())
+  const latest = useStore.getState().open(second.id)
+  expect(useStore.getState().loadingSessionId).toBe(second.id)
+  finish()
+  await Promise.all([old, latest])
+  expect(useStore.getState().session?.id).toBe(second.id)
+  expect(useStore.getState().loadingSessionId).toBeNull()
+  get.mockImplementationOnce(() => new Promise((resolve) => {
+    finish = () => resolve({ session: first, revision: 1 })
+  }))
+  const pending = useStore.getState().open(first.id)
+  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3))
+  useStore.getState().newConversation()
+  finish()
+  await pending
+  expect(useStore.getState().session).toBeNull()
+  expect(useStore.getState().loadingSessionId).toBeNull()
+  get.mockRestore()
+})
+
+it('clears the content loader on failure and retries the selected record', async () => {
+  const saved = { ...makeSample('vector'), id: crypto.randomUUID() }
+  await saveSession(saved)
+  const get = vi.spyOn(historyApi, 'get').mockRejectedValueOnce(Error('unavailable'))
+  await useStore.getState().open(saved.id)
+  expect(useStore.getState().loadingSessionId).toBeNull()
+  expect(useStore.getState().serverError).toBe(true)
+  expect(useStore.getState().failedSessionId).toBe(saved.id)
+  await useStore.getState().open(useStore.getState().failedSessionId!)
+  expect(useStore.getState().session?.id).toBe(saved.id)
+  expect(useStore.getState().serverError).toBe(false)
+  expect(useStore.getState().failedSessionId).toBeNull()
+  get.mockRestore()
 })

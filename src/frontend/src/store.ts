@@ -2,7 +2,7 @@ import { nodeContext } from './lib/nodeActions'
 import { create } from 'zustand'
 import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
 import type { CanvasNode, Envelope, Session, ResponseNode, PartError } from './types'
-import { deleteSession, loadSessions, saveSession } from './lib/db'
+import { deleteSession, loadSession, loadSessions, saveSession } from './lib/db'
 import { consumeSSE } from './lib/sse'
 import { parseToolSources } from './lib/toolSources'
 import {
@@ -33,6 +33,7 @@ const emptySession = (query: string): Session => ({
 let controller: AbortController | undefined
 let access: { id: string; token: string } | undefined
 let persistence: Promise<unknown> = Promise.resolve()
+let historyController: AbortController | undefined
 let initialization: Promise<void> | undefined
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 const structureRequests = new Map<string, AbortController>()
@@ -48,6 +49,8 @@ function persist(session: Session) {
 interface State {
   session: Session | null
   history: Session[]
+  loadingSessionId: string | null
+  failedSessionId: string | null
   input: string
   selected: string | null
   selectedEdge: number | null
@@ -68,7 +71,7 @@ interface State {
   initialize: () => Promise<void>
   setInput: (input: string) => void
   newConversation: () => void
-  open: (id: string) => void
+  open: (id: string) => Promise<void>
   remove: (id: string) => Promise<void>
   structure: (responseId: string) => Promise<void>
   cancelStructure: (responseId: string) => void
@@ -180,9 +183,34 @@ function finish(session: Session, status: Session['status']): Session {
     ),
   }
 }
+function restoreSession(session: Session): Session {
+  let restored: Session = {
+    ...session,
+    nodes: session.nodes.map((node) => {
+      const { height: _height, measured: _measured, ...rest } = node
+      if (node.type === 'source')
+        return { ...rest, type: 'source', data: { ...node.data, collapsed: node.data.collapsed ?? true }, width: Math.max(node.width ?? 0, 460) } as CanvasNode
+      return rest
+    }),
+  }
+  if (restored.status === 'running') restored = finish(restored, 'partial')
+  if (restored.contentGraph)
+    restored = { ...restored, contentGraph: { ...restored.contentGraph,
+      jobs: Object.fromEntries(Object.entries(restored.contentGraph.jobs).map(([id, job]) => [
+        id, job.status === 'running' ? { ...job, status: 'cancelled' as const } : job,
+      ])),
+    } }
+  if (restored.protocol === 2)
+    for (const node of restored.nodes)
+      if (node.type === 'response') restored = attachSources(restored, node.id)
+  return restored
+}
+
 export const useStore = create<State>((set, get) => ({
   session: null,
   history: [],
+  loadingSessionId: null,
+  failedSessionId: null,
   input: '',
   navigation: null,
   navigateTo: (id) => set({ navigation: { id }, selected: id, selectedEdge: null }),
@@ -198,7 +226,7 @@ export const useStore = create<State>((set, get) => ({
   error: null,
   storageError: null,
   serverError: false,
-  retryingServer: false,
+  retryingServer: true,
   cancelStructure: (responseId) => {
     const session = get().session
     if (!session) return
@@ -306,42 +334,8 @@ export const useStore = create<State>((set, get) => ({
       try {
         await persistence
         set({ storageError: null })
-        const history = (await loadSessions((storageError) => set({ storageError }))).map((session) => ({
-          ...session,
-          nodes: session.nodes.map((node) => {
-            if (node.type === 'source') {
-              const { height: _height, measured: _measured, ...rest } = node
-              return { ...rest, data: { ...node.data, collapsed: node.data.collapsed ?? true }, width: Math.max(node.width ?? 0, 460) }
-            }
-            // Remeasure expandable content; older records stored a fixed collapsed height.
-            const { height: _height, measured: _measured, ...rest } = node
-            return rest
-          }),
-        }))
-        set({
-          serverError: false,
-          history: history.map((s) => {
-            let restored = s.status === 'running' ? finish(s, 'partial') : s
-            if (restored.contentGraph)
-              restored = {
-                ...restored,
-                contentGraph: {
-                  ...restored.contentGraph,
-                  jobs: Object.fromEntries(
-                    Object.entries(restored.contentGraph.jobs).map(([id, job]) => [
-                      id,
-                      job.status === 'running' ? { ...job, status: 'cancelled' as const } : job,
-                    ]),
-                  ),
-                },
-              }
-            if (restored.protocol === 2)
-              for (const node of restored.nodes) {
-                if (node.type === 'response') restored = attachSources(restored, node.id)
-              }
-            return restored
-          }),
-        })
+        const history = await loadSessions((storageError) => set({ storageError }))
+        set({ serverError: false, history: history.map(restoreSession) })
       } catch {
         set({ serverError: true, storageError: null })
       }
@@ -353,27 +347,41 @@ export const useStore = create<State>((set, get) => ({
   },
   setInput: (input) => set({ input }),
   newConversation: () => {
+    historyController?.abort()
+    historyController = undefined
+    set({ loadingSessionId: null, failedSessionId: null })
     cancelSessionStructures()
     get().stop()
     set({ session: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
   },
-  open: (id) => {
+  open: async (id) => {
+    if (get().loadingSessionId === id) return
+    historyController?.abort()
+    const abort = new AbortController()
+    historyController = abort
     cancelSessionStructures()
     get().stop()
-    const session = get().history.find((s) => s.id === id)
-    if (session)
-      set({
-        session: structuredClone(session),
-        selected: null,
-        selectedEdge: null,
-        input: '',
-        error: null,
-        replyTo: null,
-        navigation: null,
-      })
+    set({ loadingSessionId: id, failedSessionId: null, selected: null, selectedEdge: null, navigation: null })
+    try {
+      await persistence
+      const session = restoreSession(await loadSession(id, abort.signal))
+      if (abort.signal.aborted) return
+      set((state) => ({
+        session,
+        history: [session, ...state.history.filter((item) => item.id !== id)].sort((a, b) => b.updatedAt - a.updatedAt),
+        input: '', error: null, replyTo: null, serverError: false,
+      }))
+    } catch {
+      if (!abort.signal.aborted) set({ serverError: true, failedSessionId: id })
+    } finally {
+      if (historyController === abort) {
+        historyController = undefined
+        set({ loadingSessionId: null })
+      }
+    }
   },
   remove: async (id) => {
-    if (get().session?.id === id) get().newConversation()
+    if (get().session?.id === id || get().loadingSessionId === id) get().newConversation()
     // Remove only after the server confirms deletion; failures keep the history accessible.
     await persistence
     try {

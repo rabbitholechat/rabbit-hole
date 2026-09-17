@@ -87,6 +87,10 @@ class HistoryConflict(Exception):
     pass
 
 
+class HistoryNotFound(Exception):
+    pass
+
+
 class HistoryUnavailable(Exception):
     pass
 
@@ -147,6 +151,16 @@ class HistoryRepository:
             result["next_cursor"] = rows[len(page) - 1]["id"]
         return result
 
+    def get(self, session_id: str):
+        with self.connection() as conn:
+            row = conn.execute("""
+                SELECT payload AS session, revision FROM rabbit_hole_sessions
+                WHERE id = %s AND NOT deleted
+            """, (session_id,)).fetchone()
+        if row is None:
+            raise HistoryNotFound()
+        return row
+
     def save(self, session: HistorySession, revision: int):
         payload = Jsonb(session.model_dump(exclude_unset=True))
         with self.connection() as conn:
@@ -192,6 +206,8 @@ def history_router(repository: HistoryRepository):
             yield
         except HistoryConflict:
             raise HTTPException(409, "기록이 다른 화면에서 변경되거나 삭제되었습니다. 새로고침 후 다시 시도하세요.") from None
+        except HistoryNotFound:
+            raise HTTPException(404, "기록을 찾을 수 없습니다.") from None
         except HistoryUnavailable:
             raise HTTPException(503, "기록 데이터베이스에 연결할 수 없습니다.") from None
 
@@ -200,6 +216,12 @@ def history_router(repository: HistoryRepository):
         response.headers["Cache-Control"] = "no-store"
         with operation():
             return repository.list(cursor or "")
+
+    @router.get("/{session_id}", response_model=StoredSession, response_model_exclude_unset=True)
+    def get_session(response: Response, session_id: SessionId = Path()):
+        response.headers["Cache-Control"] = "no-store"
+        with operation():
+            return repository.get(session_id)
 
     @router.put("/{session_id}", response_model=Revision)
     def save_session(body: SessionWrite, session_id: SessionId = Path()):

@@ -6,6 +6,11 @@ export function memoryHistoryApi() {
   const deleted = new Set<string>()
   return {
     list: async () => ({ sessions: structuredClone([...rows.values()]) }),
+    get: async (id: string) => {
+      const record = rows.get(id)
+      if (!record) throw Error('not_found')
+      return structuredClone(record)
+    },
     save: async (id: string, body: HistoryWrite) => {
       if (deleted.has(id) || (rows.get(id)?.revision ?? 0) !== body.revision) throw Error('conflict')
       const revision = body.revision + 1

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from rabbit_hole.app import create_app
 from rabbit_hole.config import Settings
-from rabbit_hole.history import HistoryConflict
+from rabbit_hole.history import HistoryConflict, HistoryNotFound
 
 
 def session(session_id="shared-session", **changes):
@@ -27,6 +27,11 @@ class MemoryHistory:
 
     def list(self, cursor=""):
         return {"sessions": sorted(deepcopy(list(self.rows.values())), key=lambda r: -r["session"]["updatedAt"])}
+
+    def get(self, session_id):
+        if session_id not in self.rows:
+            raise HistoryNotFound()
+        return deepcopy(self.rows[session_id])
 
     def save(self, session, revision):
         if session.id in self.deleted or self.rows.get(session.id, {}).get("revision", 0) != revision:
@@ -60,12 +65,16 @@ def test_shared_history_contract_without_model_calls():
     response = second.get("/api/sessions")
     assert response.headers["cache-control"] == "no-store"
     assert response.json() == {"sessions": [{"session": original, "revision": 1}]}
+    detail = second.get("/api/sessions/shared-session")
+    assert detail.headers["cache-control"] == "no-store"
+    assert detail.json() == {"session": original, "revision": 1}
     changed = session(title="다른 브라우저")
     assert second.put("/api/sessions/shared-session", json={"session": changed, "revision": 1}).json() == {"revision": 2}
     assert first.put("/api/sessions/shared-session", json={"session": original, "revision": 1}).status_code == 409
     assert first.delete("/api/sessions/shared-session?revision=1").status_code == 409
     assert second.delete("/api/sessions/shared-session?revision=2").status_code == 204
     assert first.get("/api/sessions").json() == {"sessions": []}
+    assert first.get("/api/sessions/shared-session").status_code == 404
     assert first.post("/api/sessions/shared-session/import", json=original).json() == {"imported": False}
     assert first.put("/api/sessions/shared-session", json={"session": original, "revision": 0}).status_code == 409
 

@@ -66,6 +66,15 @@ export function loadSessions(onMigrationError?: (message: string) => void) {
     return records.map((item) => item.session).sort((a, b) => b.updatedAt - a.updatedAt)
   })
 }
+export function loadSession(id: string, signal?: AbortSignal) {
+  return serialize(async () => {
+    signal?.throwIfAborted()
+    const record = await historyApi.get(id, signal)
+    signal?.throwIfAborted()
+    revisions.set(id, record.revision)
+    return record.session
+  })
+}
 export function deleteSession(id: string) {
   return serialize(async () => {
     const revision = revisions.get(id)
