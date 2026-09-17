@@ -823,7 +823,7 @@ test('wheel pans vertically, Control-wheel zooms and sidebar shortcut toggles ou
 
 test('selecting a response focuses it and wheel over selected content still pans the canvas', async ({
   page,
-}) => {
+}, testInfo) => {
   await installStream(page)
   await page.goto('/')
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('노드 포커스')
@@ -833,11 +833,13 @@ test('selecting a response focuses it and wheel over selected content still pans
   await expect(card).toHaveAttribute('aria-busy', 'false')
   const transform = () => page.locator('.react-flow__viewport').getAttribute('style')
   await expect.poll(() => page.locator('.canvas-tools span').innerText()).not.toBe('100%')
-  const zoom = await page.locator('.canvas-tools span').innerText()
+  const beforeFocusZoom = parseInt(await page.locator('.canvas-tools span').innerText())
   await card.locator('h2').click()
   await expect(card).toHaveClass(/is-selected/)
+  await expect.poll(async () => parseInt(await page.locator('.canvas-tools span').innerText())).toBeGreaterThan(beforeFocusZoom)
   // Wait for the focus animation before testing a new independent wheel gesture.
   await page.waitForTimeout(300)
+  const zoom = await page.locator('.canvas-tools span').innerText()
   const focused = await transform()
   await card.locator('.response-content').hover()
   await page.mouse.wheel(0, 100)
@@ -846,6 +848,26 @@ test('selecting a response focuses it and wheel over selected content still pans
   const panned = await transform()
   await card.locator('h2').click()
   await expect.poll(transform).not.toBe(panned)
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('두 번째 포커스 노드')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  await finishStream(page)
+  await expect(page.locator('.response-card')).toHaveCount(2)
+  await page.getByRole('button', { name: '축소', exact: true }).click()
+  await expect.poll(async () => parseInt(await page.locator('.canvas-tools span').innerText())).toBeLessThan(parseInt(zoom))
+  await page.getByRole('button', { name: '다음 노드', exact: true }).click()
+  const second = page.locator('.response-card').last()
+  await expect(second).toHaveClass(/is-selected/)
+  await expect.poll(() => page.locator('.canvas-tools span').innerText()).toBe(zoom)
+  await expect.poll(async () => {
+    const bounds = await second.boundingBox()
+    return bounds!.x >= 0 && bounds!.x + bounds!.width <= page.viewportSize()!.width && bounds!.y >= 80
+  }).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('focused-node.png') })
+  await page.getByRole('button', { name: '축소', exact: true }).click()
+  await expect.poll(async () => parseInt(await page.locator('.canvas-tools span').innerText())).toBeLessThan(parseInt(zoom))
+  await page.keyboard.press('a')
+  await expect(card).toHaveClass(/is-selected/)
+  await expect.poll(() => page.locator('.canvas-tools span').innerText()).toBe(zoom)
 })
 
 test('long information collapses like a response while short sources cannot collapse', async ({ page }) => {

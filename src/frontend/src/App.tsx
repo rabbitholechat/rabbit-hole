@@ -155,14 +155,16 @@ function Workspace() {
     state.markFitted()
   }
   function focusNode(node: CanvasNode) {
-    const zoom = flow.getViewport().zoom
-    const width = node.measured?.width ?? node.width ?? CARD_WIDTH
-    const height = node.measured?.height ?? node.height ?? CARD_HEIGHT
+    const measured = flow.getNode(node.id)
+    const width = measured?.measured?.width ?? node.measured?.width ?? node.width ?? CARD_WIDTH
+    const height = measured?.measured?.height ?? node.measured?.height ?? node.height ?? CARD_HEIGHT
     const mobile = window.innerWidth < 700
     const left = mobile ? 24 : historyOpen ? 250 : 75
     const right = mobile ? 24 : 70
     const top = mobile ? 145 : 120
     const bottom = 160
+    // Focus at reading size, bounded by the visible canvas width on small screens.
+    const zoom = Math.min(1.15, Math.max(100, window.innerWidth - left - right) / width)
     const roomHeight = Math.max(100, window.innerHeight - top - bottom)
     // Keep the heading visible when a long response is taller than the viewport.
     const next = {
