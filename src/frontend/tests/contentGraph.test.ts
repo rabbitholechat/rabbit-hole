@@ -1,3 +1,4 @@
+import { responseParentId } from '../src/lib/nodeActions'
 import { previousNodes } from '../src/components/PreviousNodeButton'
 import { beforeEach, expect, it, vi } from 'vitest'
 import {
@@ -273,6 +274,18 @@ it('selected information is sent as context and linked without replacing the que
   expect(useStore.getState().session!.contentGraph!.relations).toContainEqual({
     id: `uses_context:${id}:${info.id}`, source: id, target: info.id, kind: 'uses_context', responseId: id, spans: [],
   })
+  const created = useStore.getState().session!.nodes.find((n) => n.id === id) as ResponseNode
+  expect(created.data.parentId).toBe(info.id)
+  expect(created.position.x).toBe(info.position.x + info.width! + 64)
+  expect(previousNodes(useStore.getState().session!, id).map((n) => n.id)).toEqual([info.id])
   resolve(new Response(''))
   await pending
+  const saved = useStore.getState().session!
+  // Existing faulty records can recover the selected node from their explicit context edge.
+  created.data.parentId = response.id
+  expect(responseParentId(saved, created)).toBe(info.id)
+  await saveSession({ ...saved, id: 'legacy-followup' })
+  await useStore.getState().initialize()
+  useStore.getState().open('legacy-followup')
+  expect(previousNodes(useStore.getState().session!, id).map((n) => n.id)).toEqual([info.id])
 })

@@ -410,7 +410,7 @@ export const useStore = create<State>((set, get) => ({
     const context = options.retry ? session.lastNodeContext : nodeContext(before.session, before.replyTo)
     const parentId = options.retry
       ? session.lastParentId
-      : ((context ? null : before.replyTo) ??
+      : (before.replyTo ??
         session.nodes.filter((n) => n.type === 'response' && n.data.status === 'completed').at(-1)?.id ??
         null)
     const parent = session.nodes.find((n): n is ResponseNode => n.type === 'response' && n.id === parentId)

@@ -1,4 +1,4 @@
-import type { NodeContext, Session } from '../types'
+import type { NodeContext, ResponseNode, Session } from '../types'
 
 export function nodeLabel(session: Session | null, id: string): string {
   const node = session?.nodes.find((n) => n.id === id)
@@ -20,4 +20,16 @@ export function nodeContext(session: Session | null, id: string | null): NodeCon
   const entity = session.contentGraph?.entities[id]
   if (!entity) return
   return { node_id: id, kind: entity.type, title: nodeLabel(session, id), text: nodeText(session, id) }
+}
+
+// Earlier records kept the visual parent on the last response. Explicit selection records recover it.
+export function responseParentId(session: Session, response: ResponseNode): string | null {
+  const selected = session.contentGraph?.relations.filter((edge) =>
+    edge.kind === 'uses_context' && edge.source === response.id &&
+    session.nodes.some((n) => n.id === edge.target && (n.type === 'information' || n.type === 'source')),
+  ) ?? []
+  if (selected.length === 1) return selected[0].target
+  if (response.data.parentId !== undefined) return response.data.parentId
+  const responses = session.nodes.filter((n) => n.type === 'response')
+  return responses[responses.findIndex((n) => n.id === response.id) - 1]?.id ?? null
 }

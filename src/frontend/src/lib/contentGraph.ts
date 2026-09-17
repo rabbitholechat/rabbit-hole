@@ -150,7 +150,14 @@ export function deduplicateSources(session: Session): Session {
   }
   return {
     ...session,
-    nodes: session.nodes.filter((n) => !aliases.has(n.id)),
+    nodes: session.nodes.filter((n) => !aliases.has(n.id)).map((node) =>
+      node.type === 'response' && node.data.parentId && aliases.has(node.data.parentId)
+        ? { ...node, data: { ...node.data, parentId: aliases.get(node.data.parentId)! } } : node,
+    ),
+    lastParentId: session.lastParentId ? aliases.get(session.lastParentId) ?? session.lastParentId : session.lastParentId,
+    lastNodeContext: session.lastNodeContext
+      ? { ...session.lastNodeContext, node_id: aliases.get(session.lastNodeContext.node_id) ?? session.lastNodeContext.node_id }
+      : undefined,
     pinned: [...new Set(session.pinned.map((id) => aliases.get(id) ?? id))],
     contentGraph: { ...graph, entities, relations: [...edges.values()] },
   }

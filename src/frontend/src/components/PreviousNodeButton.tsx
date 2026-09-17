@@ -1,3 +1,4 @@
+import { responseParentId } from '../lib/nodeActions'
 import { useState } from 'react'
 import { ArrowLeft, ChevronDown } from 'lucide-react'
 import type { CanvasNode, Session } from '../types'
@@ -8,10 +9,7 @@ export function previousNodes(session: Session | null, id: string): CanvasNode[]
   const node = session.nodes.find((n) => n.id === id)
   let ids: string[] = []
   if (node?.type === 'response') {
-    const responses = session.nodes.filter((n) => n.type === 'response')
-    const parent = node.data.parentId === undefined
-      ? responses[responses.findIndex((n) => n.id === id) - 1]?.id
-      : node.data.parentId
+    const parent = responseParentId(session, node)
     if (parent) ids = [parent]
   } else {
     const edges = session.protocol === 2 ? session.contentGraph?.relations ?? [] : session.graph.relations

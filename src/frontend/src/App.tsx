@@ -1,5 +1,5 @@
 import { TooltipLayer } from './components/TooltipLayer'
-import { nodeLabel } from './lib/nodeActions'
+import { nodeLabel, responseParentId } from './lib/nodeActions'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Background,
@@ -233,9 +233,9 @@ function Workspace() {
   const edges: Edge[] = useMemo(() => {
     if (session?.protocol === 2) {
       const responses = session.nodes.filter((n) => n.type === 'response')
-      const conversationEdges: Edge[] = responses.flatMap((node, index) => {
-        const parentId = node.data.parentId === undefined ? responses[index - 1]?.id : node.data.parentId
-        if (!parentId || !responses.some((n) => n.id === parentId)) return []
+      const conversationEdges: Edge[] = responses.flatMap((node) => {
+        const parentId = responseParentId(session, node)
+        if (!parentId || !session.nodes.some((n) => n.id === parentId)) return []
         return [
           {
             id: `conversation-${parentId}-${node.id}`,
@@ -243,7 +243,7 @@ function Workspace() {
             target: node.id,
             type: 'conversation',
             className: 'conversation-edge',
-            ariaLabel: '이전 응답에서 다음 응답으로',
+            ariaLabel: '이전 노드에서 이어진 응답',
             selectable: false,
             focusable: false,
             markerEnd: { type: MarkerType.ArrowClosed, color: '#7fa99c', width: 16, height: 16 },
@@ -251,7 +251,11 @@ function Workspace() {
           },
         ]
       })
-      const contentEdges: Edge[] = (session.contentGraph?.relations ?? []).map((edge) => ({
+      const contentEdges: Edge[] = (session.contentGraph?.relations ?? []).filter((edge) => {
+        // The forward conversation edge already displays this explicit selection.
+        const response = responses.find((n) => n.id === edge.source)
+        return !(edge.kind === 'uses_context' && response && responseParentId(session, response) === edge.target)
+      }).map((edge) => ({
         id: edge.id,
         source: edge.source,
         target: edge.target,

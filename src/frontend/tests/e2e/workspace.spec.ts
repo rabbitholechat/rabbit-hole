@@ -191,6 +191,17 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(page.locator('.information-card')).toHaveCount(1)
   await expect(page.locator('.source-card')).toHaveCount(1)
   expect(structureCalls).toBe(2)
+  const originalId = await page.locator('.react-flow__node-response').getAttribute('data-id')
+  const informationId = await page.locator('.react-flow__node-information').getAttribute('data-id')
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await page.locator('.information-card').getByRole('button', { name: '다음 응답에 사용' }).click()
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('이 정보에서 이어서 설명해줘')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  await expect(page.locator('.react-flow__node-response')).toHaveCount(2)
+  const nextId = await page.locator('.react-flow__node-response').last().getAttribute('data-id')
+  await expect(page.locator(`.react-flow__edge[data-id="conversation-${informationId}-${nextId}"]`)).toHaveCount(1)
+  await expect(page.locator(`.react-flow__edge[data-id="conversation-${originalId}-${nextId}"]`)).toHaveCount(0)
+  await expect(page.locator(`.react-flow__edge[data-id="uses_context:${nextId}:${informationId}"]`)).toHaveCount(0)
 })
 
 test('IME submission and unconfigured agent show an error without sample fallback', async ({ page }) => {
