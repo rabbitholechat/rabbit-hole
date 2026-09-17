@@ -99,6 +99,8 @@ test('completed response becomes three node types and retries do not duplicate o
     '벡터 검색은 의미를 비교합니다. 도메인에 따라 정확도가 달라집니다. [원문](https://example.com/a)'
   const answer = `첫 번째 응답입니다.\n\n${excerpt}\n\n${'나머지 답변을 원래 응답에 그대로 보존합니다. '.repeat(8)}`
   let structureCalls = 0
+  let finishStructure!: () => void
+  const structureReady = new Promise<void>((resolve) => { finishStructure = resolve })
   await page.route('**/api/title', (route) => route.fulfill({ status: 502, body: '{}' }))
   await page.route('**/api/structure', async (route) => {
     structureCalls++
@@ -106,6 +108,7 @@ test('completed response becomes three node types and retries do not duplicate o
       await route.fulfill({ status: 502, body: '{}' })
       return
     }
+    await structureReady
     const request = route.request().postDataJSON()
     const start = Array.from(answer.slice(0, answer.indexOf(excerpt))).length
     await route.fulfill({
@@ -169,6 +172,13 @@ test('completed response becomes three node types and retries do not duplicate o
   await page.locator('.response-card').getByRole('button', { name: '응답 접기' }).click()
   const before = await page.locator('.react-flow__node-response').getAttribute('style')
   await retry.click()
+  const progress = page.locator('.response-card > header .response-status')
+  await expect(progress).toHaveText('정보 정리 중')
+  await expect(progress.locator('.rabbit-loader')).toBeVisible()
+  await expect(progress).toHaveCSS('color', 'rgb(114, 144, 123)')
+  await expect(page.locator('.response-card footer')).toHaveCount(0)
+  finishStructure()
+  await expect(progress).toHaveText('완료')
   await expect(page.locator('.information-card')).toHaveCount(1)
   await expect(page.locator('.react-flow__node-response')).toHaveAttribute('style', before!)
   await expect(page.locator('.response-card')).toHaveCount(1)
@@ -371,7 +381,7 @@ test('streams into a canvas node, retains dragged placement, continues conversat
   await expect(card.locator('.response-status')).toHaveText('응답 중')
   await expect(card.locator('.response-status .rabbit-loader')).toBeVisible()
   await expect(card.locator('.rabbit-loader')).toHaveCount(1)
-  await expect(card.locator('.rabbit-loader > g')).toHaveCSS('fill', 'rgb(37, 99, 166)')
+  await expect(card.locator('.rabbit-loader > g')).toHaveCSS('fill', 'rgb(114, 144, 123)')
   await expect(page.locator('.agent-status .rabbit-loader > g')).toHaveCSS('fill', 'rgb(114, 144, 123)')
   await expect(page.getByRole('button', { name: '응답 중지' })).toBeVisible()
   const node = page.locator('.react-flow__node-response').first()
@@ -549,7 +559,7 @@ test('response actions copy Markdown, collapse content and branch from the chose
   await input.fill('첫 질문')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   const first = page.locator('.response-card').first()
-  await expect(first.locator('.response-status')).toHaveText('완료')
+  await expect(first.locator('.response-status')).toHaveText('정보 정리 실패')
   await first.getByRole('button', { name: '복사하기', exact: true }).click()
   expect(await page.evaluate(() => (window as unknown as { copiedText: string }).copiedText)).toBe(markdown)
   await expect(first.getByRole('button', { name: '복사 완료', exact: true })).toBeVisible()

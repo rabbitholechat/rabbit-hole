@@ -167,7 +167,7 @@ svg {
   display: flex;
   align-items: center;
   border-radius: 7px;
-  margin: 3px 0;
+  margin: 1px 0;
 }
 .history-row.active {
   background: #edf5f1;
@@ -180,7 +180,7 @@ svg {
   min-width: 0;
   flex: 1;
   text-align: left;
-  padding: 9px 12px;
+  padding: 7px 12px;
   font-size: 12px;
 }
 .history-item span {
@@ -1224,8 +1224,9 @@ svg {
 .response-status[data-status='completed'] {
   color: #167350;
 }
-.response-status[data-status='streaming'] {
-  color: #2563a6;
+.response-status[data-status='streaming'],
+.response-status[data-status='structuring'] {
+  color: #72907b;
 }
 .response-status[data-status='failed'],
 .response-status[data-status='partial'] {
@@ -1673,22 +1674,6 @@ svg {
   color: #859589;
   pointer-events: none;
 }
-.structure-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 14px;
-  font-size: 11px;
-  color: #8b978f;
-}
-.structure-status button {
-  color: #0f766e;
-}
-.structure-status button:disabled {
-  opacity: 0.4;
-}
-
 /* Consistent node actions, with navigation kept inside each card. */
 .node-button {
   display: inline-flex;
@@ -1736,7 +1721,6 @@ svg {
   border-radius: 5px;
 }
 
-.structure-indicator { display: inline-flex; align-items: center; gap: 6px; }
 .content-card { animation: node-enter 300ms cubic-bezier(.2,.8,.2,1) backwards; }
 @keyframes node-enter {
   from { opacity: 0; transform: translateY(10px) scale(.98); }
