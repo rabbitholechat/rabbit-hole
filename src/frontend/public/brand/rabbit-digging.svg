@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="80" viewBox="0 0 96 80" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="80" viewBox="0 -12 96 92" fill="none">
   <style>
     .rabbit { animation: lean .9s ease-in-out infinite; transform-origin: 33px 62px; }
     .paw { animation: dig .9s ease-in-out infinite; transform-origin: 57px 48px; }
