@@ -208,6 +208,11 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
             assert expected in str(output["output"])
             assert "PRIVATE" not in str(output["output"])
         if tool_case == "web_search":
+            assert "Absence from one result set is not evidence of absence" in main_calls[0]["instructions"]
+            search_call = next(c for c in captured if not c.get("stream"))
+            assert search_call["tools"][0]["search_context_size"] == "medium"
+            assert "publication/event dates" in search_call["instructions"]
+            assert "not-announced/nonexistent/rumor-only" in search_call["instructions"]
             assert service.sources[0].url == "https://example.com/current"
         elif tool_case == "search_failure":
             assert service.sources == []

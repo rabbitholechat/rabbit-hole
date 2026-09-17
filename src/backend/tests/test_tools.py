@@ -199,3 +199,23 @@ def test_current_date_context_preserves_utc_and_seoul_midnight(monkeypatch, hour
     assert f"Current date (Asia/Seoul, UTC+09:00): {seoul_date}" in context
     assert "+09:00" in context
     assert "unless the user specifies" in context
+
+
+async def test_cited_primary_page_is_not_lost_behind_discovered_sources():
+    cited_url = "https://example.com/official-announcement"
+    payload = {"output": [
+        {"type": "web_search_call", "status": "completed", "action": {"sources": [
+            {"url": f"https://example.com/old-{i}"} for i in range(45)
+        ]}},
+        {"type": "message", "content": [{"annotations": [
+            {"type": "url_citation", "url": cited_url, "title": "Dated official announcement"},
+        ]}]},
+    ]}
+    create = AsyncMock(return_value=SimpleNamespace(status="completed", output_text="Cited result",
+                                                  model_dump=lambda: payload))
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    result = await tools.web_search("current announcement")
+    assert len(result["sources"]) == 40
+    assert result["sources"][0]["url"] == cited_url
+    assert tools.record(cited_url, "", "search_result").title == "Dated official announcement"
+    assert list(tools.sources.values())[0].url == cited_url
