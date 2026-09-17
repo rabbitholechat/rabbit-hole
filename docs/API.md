@@ -24,13 +24,37 @@ SSE envelope: `{version:2, request_id, job_id, seq, type, data}`. `id: seq`, `ev
 | status | stage=responding | 에이전트 응답 진행 |
 | response_delta | id, delta | Markdown 원문 텍스트를 그대로 추가 |
 | response_completed | id, text | 완성된 전체 응답으로 확정, 델타에 다시 추가하지 않음 |
+| response_sources | id, sources | 선택 이벤트. 해당 응답의 실제 도구 조회 메타데이터 전체 스냅샷 |
 | part_error | part=response, code, message | 공개 가능한 실패 정보 |
 | done | status, failed_parts | completed/partial/failed, 실패 시 [response] |
 
 정상 순서: started → checkpoint(이전 이력) → response_started → status → response_delta 반복 → response_completed → checkpoint(이번 턴 포함) → done.
+조회 자료가 있으면 마지막 checkpoint 직전에 `response_sources`를 보냅니다. 응답 실패 시에도 확보한 조회 자료가 있으면 전송합니다. 취소/연결 종료 뒤에는 전송하지 않습니다. 자료가 없으면 이벤트를 생략합니다. 델타와 동일한 요청/응답 ID·seq 검증을 적용하며, 기존 클라이언트는 모르는 이벤트를 무시할 수 있습니다.
 실패 시 response_completed 없음. 받은 텍스트가 있으면 partial, 없으면 failed. checkpoint는 이전 완료 대화만 유지합니다. 취소 시 연결 종료, 클라이언트가 노드 상태를 cancelled로 확정합니다.
 
-에이전트 응답 1개 = 응답 태그·아이콘을 가진 캔버스 노드 1개. 높이는 Markdown 내용에 맞춰 증가합니다. 이어지는 응답은 오른쪽에 배치하고 클라이언트에서 대화 순서 화살표로 연결합니다. 이는 내용 근거 관계가 아닙니다. 별도 요약·노드 분해·출처 등록·관계 생성 모델 호출 없음. SDK의 공개 output_text/refusal delta만 전달하고 내부 추론/도구 이벤트는 전달하지 않습니다. 현재 등록 도구는 없습니다.
+에이전트 응답 1개 = 응답 태그·아이콘을 가진 캔버스 노드 1개. 높이는 Markdown 내용에 맞춰 증가합니다. 이어지는 응답은 오른쪽에 배치하고 클라이언트에서 대화 순서 화살표로 연결합니다. 이는 내용 근거 관계가 아닙니다. 별도 노드 분해·근거 검증·관계 생성 호출은 없습니다. SDK의 공개 output_text/refusal delta와 제한된 조회 메타데이터만 전달하고 내부 추론·도구 인자·전체 본문·원시 도구 이벤트는 전달하지 않습니다.
+
+## 에이전트 도구
+
+- `calculator(expression)`: 최대 256자, AST 노드 64개. 십진수 +, -, *, /, 괄호, 절댓값 100 이하 정수 지수의 ** 연산. 유효숫자 40자리, 값의 절댓값 1e100 이하. 코드 실행·함수·속성 접근 금지. 비율은 /100으로 표현.
+- `web_search(query)`: 최대 2000자. `OPENAI_SEARCH_MODEL`로 OpenAI Responses 내장 `web_search`를 한 번 호출하며 검색 요약과 실제 응답 메타데이터의 URL만 반환. 요약은 모델 생성 요약이며 본문 인용문이 아님. 출처 메타데이터가 없으면 요약도 사용하지 않음.
+- `read_page(url)`: 공개 HTTP(S) HTML/일반 텍스트 읽기. 기본 포트만 허용. DNS 전체 주소 검사 및 연결 IP 고정, Host/TLS 호스트 보존, 리디렉션 최대 3회 재검사, 쿠키·인증·환경 프록시 미사용. PDF·JS 렌더링·로그인·압축 응답은 미지원. 실패는 안전한 코드로 반환하며 샘플 대체 없음.
+- 도구는 일반 에이전트가 필요할 때 선택. 별도 키워드 분기나 매 요청 강제 검색 없음. 도구 출력은 신뢰할 수 없는 데이터로 취급하며 그 안의 명령은 수행하지 않음.
+- 기본 예산: SDK 최대 6턴, 요청당 도구 최대 8회(실패 포함), 검색 최대 2회, 도구 20초, 페이지 1MB/본문 16,000자. 잘린 본문에는 `truncated=true`. 검색 호출별 출력 최대 1,500토큰. 기존 전체 요청 시간·동시 실행·출력 제한 및 취소 유지. MAX_OUTPUT_TOKENS는 본문 모델 호출별 제한이며 도구 후속 턴/검색 호출은 추가 비용이 발생할 수 있음. 자동 재시도 없음.
+
+`response_sources.data` 예시:
+
+```json
+{"id":"response_요청UUID","sources":[{"id":"src_0123456789abcdef01234567","url":"https://example.com/page","title":"응답 메타데이터 또는 페이지의 제목","access":"search_result","accessed_at":"2026-09-17T00:00:00+00:00","verification":"unverified"}]}
+```
+
+위 URL은 계약 설명용 예시이며 실제 조회 기록이 아닙니다. `ToolSource`는 백엔드 모델과 프런트 타입에서 같은 필드를 사용합니다. `access`는 `search_result`(검색으로 확보) 또는 `page_read`(앱의 read_page 성공), `verification`은 항상 `unverified`. OpenAI 검색 내부의 페이지 접근을 앱의 본문 읽기 성공으로 승격하지 않습니다. `accessed_at`은 해당 도구 실행 시각이며 문서 발행일이 아닙니다.
+
+ID는 정규화된 페이지 URL의 SHA-256 앞 24자리입니다. fragment만 제외하고 경로·쿼리를 유지하며 도메인 병합하지 않습니다. read_page는 리디렉션의 최종 URL을 사용합니다. 동일 URL의 검색→읽기는 같은 ID로 갱신하고 읽기→검색은 상태를 낮추지 않습니다. 조회 목록은 인용 관계가 아닙니다. 응답에 생성된 임의 링크는 이 목록에 등록하지 않습니다.
+
+프런트는 응답의 `toolSources`에 저장하고 접을 수 있는 ‘조회 자료 · 사실 검증 아님’ 목록으로 표시합니다. 별도 출처 노드·관계는 생성하지 않습니다. 과거 검색용 Source 타입과 분리하며 기록 복원은 조회를 재실행하지 않습니다. 도구 본문·조회 목록은 서명 continuation에 추가하지 않고 완료 질문/공개 답변만 유지합니다.
+
+공식 API 참고: [OpenAI 웹 검색 도구와 출처 메타데이터](https://developers.openai.com/api/docs/guides/tools-web-search).
 
 ## 제한과 보존
 

@@ -162,7 +162,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                     model=settings.openai_model,
                     context_turns=len(inputs),
                     context_chars=sum(len(t.content) for t in inputs),
-                    tools=0,
+                    tools=3,
                     max_turns=settings.max_model_turns,
                 )
                 async with asyncio.timeout(settings.job_timeout_seconds):
@@ -211,6 +211,10 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
             finally:
                 try:
                     if not job.cancel.is_set():
+                        sources = getattr(service, "sources", []) if service else []
+                        if sources:
+                            await emit("response_sources", {"id": response_id,
+                                                           "sources": [s.model_dump() for s in sources]})
                         await checkpoint()
                         await emit("done", {"status": status, "failed_parts": failed})
                 finally:

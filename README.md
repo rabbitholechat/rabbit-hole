@@ -2,7 +2,7 @@
 
 질문에서 아이디어로, 대화에서 다음 단계로.
 
-일반 에이전트의 Markdown 응답을 React Flow 캔버스 노드에 실시간으로 표시합니다. 요청 하나당 응답 노드 하나를 만들며, 후속 대화는 완료된 이전 대화를 이어받습니다. 현재 에이전트에는 도구가 없습니다.
+일반 에이전트의 Markdown 응답을 React Flow 캔버스 노드에 실시간으로 표시합니다. 요청 하나당 응답 노드 하나를 만들며, 후속 대화는 완료된 이전 대화를 이어받습니다. 에이전트는 필요한 경우 계산기·웹 검색·페이지 본문 읽기 도구를 사용합니다.
 
 ## 실행
 
@@ -29,18 +29,23 @@ make dev
 
 | 파일 | 책임 |
 | --- | --- |
-| backend/rabbit_hole/agent.py | 도구 없는 Agent 정의, SDK 스트림 어댑터, 취소·클라이언트 종료 |
+| backend/rabbit_hole/agent.py | 도구를 가진 Agent 정의, SDK 스트림 어댑터, 취소·클라이언트 종료 |
+| backend/rabbit_hole/tools.py | 제한된 계산, 웹 검색, 공개 페이지 읽기, 페이지별 조회 기록 |
 | backend/rabbit_hole/app.py | /api/agent SSE, 작업 수명·예산·서명 문맥·오류 |
 | backend/rabbit_hole/security.py | 완료 대화의 HMAC continuation |
 | backend/rabbit_hole/diagnostics.py | INFO/DEBUG/WARNING/ERROR 구조화 진단 |
 | frontend/src/store.ts | 요청 격리, 델타 누적, 취소, IndexedDB 저장 |
 | frontend/src/components/ResponseCard.tsx | 공개 Markdown 응답 노드 |
 
-표의 경로는 `src/` 기준입니다. 추상 팩토리나 다중 에이전트 없이 단일 서비스 어댑터와 주입 가능한 service_factory로 구성하며, 실제 API 없이 테스트할 수 있습니다. 나중에 검토한 도구를 에이전트 정의에 추가할 수 있습니다.
+표의 경로는 `src/` 기준입니다. 단일 서비스 어댑터와 주입 가능한 service_factory로 구성하며, 실제 API 없이 테스트할 수 있습니다.
 
 첫 응답부터 캔버스에 표시하며 받은 텍스트는 취소·실패 시에도 유지합니다. 부분 응답을 완료된 문맥에 섞지 않고 명시적 재시도 시 이전 완료 문맥으로 다시 요청합니다. 스트리밍 중 500ms 간격으로 로컬 저장하며, 기록 복원은 API를 호출하지 않습니다. 위치·viewport는 보존하고 후속 응답은 오른쪽에 추가합니다.
 
-기존 페이지 카드·관계 기록과 디자인 예시는 로컬 열람만 지원합니다. 그 기록에서 메시지를 보내면 새 대화가 시작됩니다. 샘플을 실제 응답으로 대체하거나 가상 근거를 서버로 보내지 않습니다. 새 응답에는 검색·근거 검증·관계 생성·노드 자동 분해 단계가 없습니다.
+기존 페이지 카드·관계 기록과 디자인 예시는 로컬 열람만 지원합니다. 그 기록에서 메시지를 보내면 새 대화가 시작됩니다. 샘플을 실제 응답으로 대체하거나 가상 근거를 서버로 보내지 않습니다. 새 응답에는 근거 검증·관계 생성·노드 자동 분해 단계가 없습니다.
+
+웹 검색은 기존 OPENAI_API_KEY와 OPENAI_SEARCH_MODEL(기본 gpt-4.1-mini)을 사용하며 별도 검색 업체 키가 필요하지 않습니다. 도구 이후 답변을 위한 MAX_MODEL_TURNS 기본값은 6입니다. 기존 .env에 1로 고정했다면 6 이상으로 조정하세요. 요청당 MAX_TOOL_CALLS=8, MAX_WEB_SEARCHES=2, TOOL_TIMEOUT_SECONDS=20을 기본 제한으로 적용합니다. 검색은 추가 OpenAI 호출과 내장 검색 비용이 발생할 수 있으며 자동 재시도하지 않습니다.
+
+계산기는 십진수 사칙연산·괄호·제한된 정수 거듭제곱을 지원합니다. 페이지 읽기는 공개 HTML/텍스트를 최대 1MB 내려받아 본문 16,000자까지 반환하며, PDF·JS 렌더링·로그인·압축 응답은 지원하지 않습니다. 실제 조회한 자료는 응답 카드에 검색/본문 조회 상태로 저장하며, 조회 성공을 사실 검증으로 표시하지 않습니다. 자세한 안전 제한과 데이터 구조는 [API 계약](docs/API.md)을 따릅니다.
 
 ## 디버깅과 계약
 
@@ -52,7 +57,7 @@ VS Code 실행 및 디버그에서 `Rabbit Hole: Full Stack` 또는 `Rabbit Hole
 - [검증 기록](docs/VALIDATION.md)
 - [공식 OpenAI Agents SDK 실행 문서](https://developers.openai.com/api/docs/guides/agents/running-agents)
 
-실제 유료 API 통합과 원격 배포는 별도 실행 대상입니다. 도구가 없는 현재 에이전트는 실시간 웹 사실 확인이나 외부 작업 실행을 하지 않습니다.
+실제 유료 API 통합과 원격 배포는 별도 실행 대상입니다. 도구는 산술 계산과 공개 웹 자료 조회만 수행하며 외부 사이트의 상태를 변경하지 않습니다.
 
 첫 답변이 완료되면 별도 요청으로 대화 제목을 생성합니다. 백엔드 `.env`의
 `OPENAI_BACKGROUND_MODEL` (기본 `gpt-4o-mini`)로 작업 모델을,

@@ -7,7 +7,7 @@ VS Code Python 디버거에서 자동 활성화됩니다. 일반 터미널에서
 | 레벨 | 이벤트 | 내용 |
 | --- | --- | --- |
 | INFO | request_started | request_id, job_id |
-| DEBUG | agent_start | 모델, 문맥 메시지/문자 수, 도구 수(현재 0), 턴 제한 |
+| DEBUG | agent_start | 모델, 문맥 메시지/문자 수, 도구 수(현재 3), 턴 제한 |
 | DEBUG | response_delta | seq, 이번 델타 문자 수, 누적 문자 수 |
 | ERROR | request_failed | part, code, 예외 클래스, 파일·줄·함수 위치 |
 | WARNING | cleanup_failed | 클라이언트 종료 실패 예외 클래스 |
@@ -15,7 +15,7 @@ VS Code Python 디버거에서 자동 활성화됩니다. 일반 터미널에서
 
 ```text
 INFO: {"request_id":"…","event":"request_started","job_id":"…"}
-DEBUG: {"request_id":"…","event":"agent_start","model":"gpt-4.1-mini","context_turns":1,"context_chars":18,"tools":0,"max_turns":1}
+DEBUG: {"request_id":"…","event":"agent_start","model":"gpt-4.1-mini","context_turns":1,"context_chars":18,"tools":3,"max_turns":6}
 DEBUG: {"request_id":"…","event":"response_delta","seq":5,"delta_chars":8,"total_chars":8}
 INFO: {"request_id":"…","event":"request_finished","status":"completed","output_chars":120,"elapsed_ms":1500}
 ```

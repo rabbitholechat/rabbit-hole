@@ -38,3 +38,13 @@ class TitleRequest(BaseModel):
 
 class TitleResponse(BaseModel):
     title: str = Field(min_length=1, max_length=60)
+
+
+class ToolSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    url: str
+    title: str
+    access: Literal["search_result", "page_read"]
+    accessed_at: str
+    verification: Literal["unverified"] = "unverified"

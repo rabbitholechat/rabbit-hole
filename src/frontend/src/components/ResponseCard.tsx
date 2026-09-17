@@ -147,6 +147,31 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
             </p>
           )}
         </div>
+        {!!data.toolSources?.length && (
+          <details className="response-sources nodrag nopan">
+            <summary>조회 자료 {data.toolSources.length}개 · 사실 검증 아님</summary>
+            <ul>
+              {data.toolSources.map((source) => {
+                const url = safeUrl(source.url)
+                return (
+                  <li key={source.id}>
+                    {url ? (
+                      <a href={url} target="_blank" rel="noopener noreferrer">
+                        {source.title}
+                      </a>
+                    ) : (
+                      source.title
+                    )}
+                    <small>
+                      {source.access === 'page_read' ? '본문 조회' : '검색 결과'} ·{' '}
+                      {new Date(source.accessed_at).toLocaleString()}
+                    </small>
+                  </li>
+                )
+              })}
+            </ul>
+          </details>
+        )}
       </article>
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </>

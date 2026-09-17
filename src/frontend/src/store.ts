@@ -4,6 +4,7 @@ import type { CanvasNode, Envelope, Session, ResponseNode, PartError } from './t
 import { deleteSession, loadSessions, saveSession } from './lib/db'
 import { consumeSSE } from './lib/sse'
 import { makeSample, type SampleKind } from './lib/samples'
+import { parseToolSources } from './lib/toolSources'
 
 const emptySession = (query: string): Session => ({
   id: crypto.randomUUID(),
@@ -385,6 +386,18 @@ export const useStore = create<State>((set, get) => ({
               if (current?.id === session.id) commit(current)
             }, 500)
         }
+        break
+      }
+      case 'response_sources': {
+        if (event.data.id !== state.responseId) break
+        const sources = parseToolSources(event.data.sources)
+        if (!sources) break
+        session.nodes = session.nodes.map((n) =>
+          n.type === 'response' && n.id === state.responseId
+            ? { ...n, data: { ...n.data, toolSources: sources } }
+            : n,
+        )
+        commit(session)
         break
       }
       case 'part_error': {

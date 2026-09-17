@@ -26,6 +26,14 @@ export type Relation = {
 }
 export type Graph = { relations: Relation[]; clusters: { id: string; label: string; source_ids: string[] }[] }
 export type PageNode = Node<{ source: Source; related?: boolean; dimmed?: boolean }, 'page'>
+export type ToolSource = {
+  id: string
+  url: string
+  title: string
+  access: 'search_result' | 'page_read'
+  accessed_at: string
+  verification: 'unverified'
+}
 export type ResponseNode = Node<
   {
     parentId?: string | null
@@ -33,6 +41,7 @@ export type ResponseNode = Node<
     collapsed?: boolean
     prompt: string
     text: string
+    toolSources?: ToolSource[]
     status: 'streaming' | 'completed' | 'partial' | 'failed' | 'cancelled'
   },
   'response'

@@ -11,11 +11,17 @@ class Settings(BaseSettings):
     debug_diagnostics: bool = False
     openai_model: str = "gpt-4.1-mini"
     openai_background_model: str = "gpt-4o-mini"
+    openai_search_model: str = "gpt-4.1-mini"
     background_timeout_seconds: float = Field(15, ge=1, le=60)
     job_timeout_seconds: float = Field(90, ge=1, le=300)
     request_timeout_seconds: float = Field(20, ge=1, le=60)
     max_context_turns: int = Field(12, ge=4, le=24)
-    max_model_turns: int = Field(1, ge=1, le=20)
+    max_model_turns: int = Field(6, ge=1, le=20)
+    max_tool_calls: int = Field(8, ge=1, le=20)
+    max_web_searches: int = Field(2, ge=1, le=5)
+    tool_timeout_seconds: float = Field(20, ge=1, le=60)
+    max_page_bytes: int = Field(1_000_000, ge=1024, le=2_000_000)
+    max_page_chars: int = Field(16_000, ge=100, le=32_000)
     max_output_tokens: int = Field(4000, ge=256, le=16000)
     max_request_bytes: int = Field(2_100_000, ge=10000, le=4_000_000)
     max_concurrent_jobs: int = Field(4, ge=1, le=32)

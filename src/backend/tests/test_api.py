@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from rabbit_hole import diagnostics
 from rabbit_hole.app import create_app
 from rabbit_hole.config import Settings
-from rabbit_hole.models import ConversationTurn, Snapshot
+from rabbit_hole.models import ConversationTurn, Snapshot, ToolSource
 from rabbit_hole.security import SnapshotSigner
 
 
@@ -89,6 +89,24 @@ def test_configuration_limits_and_incompatible_requests():
     assert client.post("/api/agent", json=body()).status_code == 200
     assert client.post("/api/agent", json=body()).status_code == 429
     assert client.post("/api/search", json=body()).status_code == 404
+
+
+def test_tool_sources_contract_without_page_body_or_invented_sources():
+    source = ToolSource(id="src_" + "a" * 24, url="https://example.com/page", title="Page",
+                        access="page_read", accessed_at="2026-09-17T00:00:00+00:00")
+
+    class SourcedService(FakeService):
+        sources = [source]
+
+    client = TestClient(create_app(settings(), SourcedService))
+    result = events(client.post("/api/agent", json=body()))
+    record = next(e for e in result if e["type"] == "response_sources")
+    completed = next(e for e in result if e["type"] == "response_completed")
+    assert record["data"] == {"id": completed["data"]["id"], "sources": [source.model_dump()]}
+    assert completed["seq"] < record["seq"] < result[-1]["seq"]
+    assert result[-1]["data"]["status"] == "completed"
+    plain = events(TestClient(create_app(settings(), FakeService)).post("/api/agent", json=body()))
+    assert not any(e["type"] == "response_sources" for e in plain)
 
 
 def test_body_limit():

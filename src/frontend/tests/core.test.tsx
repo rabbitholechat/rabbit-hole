@@ -9,6 +9,7 @@ import { useStore } from '../src/store'
 import { canvasBounds } from '../src/lib/canvasBounds'
 import { safeUrl } from '../src/lib/utils'
 import type { Envelope, PageNode } from '../src/types'
+import { parseToolSources } from '../src/lib/toolSources'
 
 beforeEach(() => {
   useStore.getState().stop()
@@ -153,6 +154,44 @@ it('appends deltas exactly once and preserves node placement on completion and i
   const done = useStore.getState().session!.nodes[0]
   expect(done.position).toEqual({ x: 123, y: 234 })
   expect(done.type === 'response' && done.data.status).toBe('partial')
+})
+
+it('validates and restores tool sources without moving nodes or fetching history', async () => {
+  const sources = [
+    {
+      id: `src_${'a'.repeat(24)}`,
+      url: 'https://example.com/page',
+      title: 'Page',
+      access: 'search_result' as const,
+      verification: 'unverified' as const,
+      accessed_at: '2026-09-17T00:00:00+00:00',
+    },
+  ]
+  expect(parseToolSources([{ ...sources[0], verification: 'verified' }])).toBeUndefined()
+  expect(parseToolSources([{ ...sources[0], url: 'javascript:alert(1)' }])).toBeUndefined()
+  const session = { ...makeSample('vector'), protocol: 2 as const, mode: 'live' as const, nodes: [] }
+  useStore.setState({ session, activeRequest: 'r', responseId: null, pendingQuery: 'hello', lastSeq: 0 })
+  const send = (seq: number, type: string, data: Record<string, unknown>) =>
+    useStore.getState().receive({ version: 2, request_id: 'r', job_id: 'j', seq, type, data })
+  send(1, 'response_started', { id: 'response_r' })
+  send(2, 'response_completed', { id: 'response_r', text: 'Answer' })
+  useStore.getState().nodesChange([{ type: 'position', id: 'response_r', position: { x: 123, y: 234 } }])
+  send(3, 'response_sources', { id: 'wrong', sources })
+  expect(useStore.getState().session!.nodes[0].data).not.toHaveProperty('toolSources')
+  send(4, 'response_sources', { id: 'response_r', sources })
+  send(5, 'done', { status: 'completed', failed_parts: [] })
+  const saved = useStore.getState().session!
+  expect(saved.nodes).toHaveLength(1)
+  expect(saved.nodes[0].data).toMatchObject({ text: 'Answer', toolSources: sources })
+  expect(saved.nodes[0].position).toEqual({ x: 123, y: 234 })
+  await saveSession(saved)
+  useStore.setState({ activeRequest: null, session: null })
+  const fetchMock = vi.spyOn(globalThis, 'fetch')
+  await useStore.getState().initialize()
+  useStore.getState().open(saved.id)
+  expect(useStore.getState().session!.nodes[0].data).toMatchObject({ toolSources: sources })
+  expect(fetchMock).not.toHaveBeenCalled()
+  fetchMock.mockRestore()
 })
 
 it('retries the latest failed request even when no response node was created', async () => {

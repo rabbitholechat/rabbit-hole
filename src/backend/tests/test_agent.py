@@ -23,7 +23,7 @@ class StreamResult:
             yield self.events.pop(0)
 
 
-async def test_sdk_adapter_no_tools_only_public_text(monkeypatch):
+async def test_sdk_adapter_tools_only_public_text(monkeypatch):
     client = SimpleNamespace(close=AsyncMock())
     monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: client)
     result = StreamResult(
@@ -41,9 +41,9 @@ async def test_sdk_adapter_no_tools_only_public_text(monkeypatch):
         "**답변**",
         " 거절 설명",
     ]
-    assert service.agent.tools == []
+    assert [t.name for t in service.agent.tools] == ["calculator", "web_search", "read_page"]
     assert run.call_args.kwargs["run_config"].tracing_disabled
-    assert run.call_args.kwargs["max_turns"] == 1
+    assert run.call_args.kwargs["max_turns"] == 6
     result.cancel.assert_called_once()
     await service.close()
     client.close.assert_awaited_once()
@@ -67,7 +67,8 @@ async def test_sdk_incomplete_response_and_generator_close_cancel_runner(monkeyp
     result.cancel.assert_called_once()
 
 
-async def test_real_sdk_with_mock_http_stream(monkeypatch):
+@pytest.mark.parametrize("with_calculator", [False, True])
+async def test_real_sdk_with_mock_http_stream(monkeypatch, with_calculator):
     """Exercise installed Agents + OpenAI SDK, without a paid/network request."""
     import json
 
@@ -122,7 +123,24 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch):
 
     async def transport(request):
         captured.append(json.loads(request.content))
-        payload = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in wire_events)
+        batch = wire_events
+        if with_calculator and len(captured) == 1:
+            call = {"id": "fc_test", "type": "function_call", "call_id": "call_calc",
+                    "name": "calculator", "arguments": '{"expression":"0.1 + 0.2"}', "status": "completed"}
+            batch = [
+                {"type": "response.created", "sequence_number": 0,
+                 "response": {**response, "status": "in_progress", "output": []}},
+                {"type": "response.output_item.added", "sequence_number": 1, "output_index": 0,
+                 "item": {**call, "arguments": "", "status": "in_progress"}},
+                {"type": "response.function_call_arguments.delta", "sequence_number": 2,
+                 "item_id": "fc_test", "output_index": 0, "delta": call["arguments"]},
+                {"type": "response.function_call_arguments.done", "sequence_number": 3,
+                 "item_id": "fc_test", "output_index": 0, "arguments": call["arguments"]},
+                {"type": "response.output_item.done", "sequence_number": 4, "output_index": 0, "item": call},
+                {"type": "response.completed", "sequence_number": 5,
+                 "response": {**response, "output": [call]}},
+            ]
+        payload = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in batch)
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=payload)
 
     client = AsyncOpenAI(
@@ -136,10 +154,15 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch):
         assert [delta async for delta in service.stream([ConversationTurn(role="user", content="안녕")])] == [
             "**응답**"
         ]
-        assert len(captured) == 1
+        assert len(captured) == (2 if with_calculator else 1)
+        if with_calculator:
+            output = next(i for i in captured[1]["input"] if i.get("type") == "function_call_output")
+            assert output["call_id"] == "call_calc"
+            assert "0.3" in str(output["output"])
         assert captured[0]["stream"] is True
         assert captured[0]["store"] is False
-        assert captured[0].get("tools", []) == []
+        assert [t["name"] for t in captured[0]["tools"]] == ["calculator", "web_search", "read_page"]
+        assert captured[0]["parallel_tool_calls"] is False
         assert captured[0]["max_output_tokens"] == 4000
     finally:
         await service.close()

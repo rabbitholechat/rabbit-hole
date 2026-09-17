@@ -113,6 +113,73 @@ const calls = (page: Page) =>
     () => (window as unknown as { agentHarness: { calls: Record<string, unknown>[] } }).agentHarness.calls,
   )
 
+test('tool retrieval history distinguishes access and restores without new requests', async ({
+  page,
+}, testInfo) => {
+  let requests = 0
+  await page.route('**/api/title', (route) => route.fulfill({ status: 502, body: '{}' }))
+  await page.route('**/api/agent', async (route) => {
+    requests++
+    const request = route.request().postDataJSON()
+    const id = `response_${request.request_id}`
+    const sources = [
+      {
+        id: `src_${'a'.repeat(24)}`,
+        url: 'https://example.com/a',
+        title: '검색으로 찾은 페이지',
+        access: 'search_result',
+        accessed_at: '2026-09-17T00:00:00+00:00',
+        verification: 'unverified',
+      },
+      {
+        id: `src_${'b'.repeat(24)}`,
+        url: 'https://example.com/b',
+        title: '본문을 읽은 페이지',
+        access: 'page_read',
+        accessed_at: '2026-09-17T00:00:01+00:00',
+        verification: 'unverified',
+      },
+    ]
+    const events = [
+      ['started', { access_token: 'test-token' }],
+      ['response_started', { id }],
+      ['response_completed', { id, text: '계산 결과는 0.3입니다. [참고 페이지](https://example.com/b)' }],
+      ['response_sources', { id, sources }],
+      ['checkpoint', { continuation: 'completed-turn' }],
+      ['done', { status: 'completed', failed_parts: [] }],
+    ]
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: events
+        .map(
+          ([type, data], index) =>
+            `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: index + 1, type, data })}\n\n`,
+        )
+        .join(''),
+    })
+  })
+  await page.goto('/')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('계산과 자료 확인')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  const summary = page.locator('.response-sources summary')
+  await expect(summary).toHaveText('조회 자료 2개 · 사실 검증 아님')
+  await summary.click()
+  await expect(page.locator('.response-sources')).toContainText('검색 결과')
+  await expect(page.locator('.response-sources')).toContainText('본문 조회')
+  await expect(page.getByRole('link', { name: '본문을 읽은 페이지' })).toHaveAttribute(
+    'href',
+    'https://example.com/b',
+  )
+  await expect(page.locator('.response-card')).toHaveCount(1)
+  await expect(page.locator('.page-card')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('tool-sources.png') })
+  await page.reload()
+  await openHistory(page)
+  await page.getByRole('button', { name: '계산과 자료 확인', exact: true }).click()
+  await expect(page.locator('.response-sources summary')).toHaveText('조회 자료 2개 · 사실 검증 아님')
+  expect(requests).toBe(1)
+})
+
 test('streams into a canvas node, retains dragged placement, continues conversation and restores offline', async ({
   page,
 }) => {
