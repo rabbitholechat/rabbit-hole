@@ -24,6 +24,8 @@ INFO: {"request_id":"…","event":"request_finished","status":"completed","outpu
 
 공급자 API 오류는 디버그 설정과 무관하게 `provider` 객체를 기록합니다. 예: `{"code":"unsupported_parameter","type":"invalid_request_error","param":"temperature","http_status":400}`. 정상 HTTP 연결 후 SSE 오류가 발생하면 `http_status`는 `null`입니다. 공급자가 생략한 항목은 `null`, 허용 목록 밖의 항목은 `redacted`로 표시합니다. 오류 message/body/요청 헤더는 기록하지 않습니다. 제목·구조화 실패에도 같은 진단 정보를 기록합니다. 이미 발생한 오류의 상세는 복원할 수 없으며 변경 후 새 요청부터 적용됩니다.
 
+`type: insufficient_quota`는 공급자가 요청을 수신한 뒤 결제·한도로 거절한 경우입니다. `code`의 `credit_balance_exhausted`는 선불 잔액 소진, `organization_spend_limit_exceeded`/`project_spend_limit_exceeded`는 조직/프로젝트 지출 한도, `organization_usage_limit_exceeded`는 조직 사용 한도입니다. [공식 오류 문서](https://developers.openai.com/api/docs/guides/error-codes)에 따라 해당 잔액/한도를 해결해야 하며 반복 재시도만으로 복구되지 않습니다.
+
 추천 중단점:
 
 - `agent.py:AgentService.stream`: `event.data`에서 SDK 실제 응답 확인. `response.output_text.delta`와 `response.refusal.delta`만 화면으로 전달.

@@ -17,6 +17,8 @@ class StageFailure(ValueError):
 _PROVIDER_CODES = frozenset({
     "server_error", "internal_error", "server_is_overloaded", "service_unavailable",
     "rate_limit_exceeded", "insufficient_quota", "billing_hard_limit_reached",
+    "credit_balance_exhausted", "organization_spend_limit_exceeded",
+    "project_spend_limit_exceeded", "organization_usage_limit_exceeded",
     "invalid_api_key", "invalid_organization", "organization_deactivated",
     "permission_denied", "model_not_found", "model_not_available",
     "unsupported_parameter", "unsupported_value", "invalid_parameter", "invalid_value",

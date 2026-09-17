@@ -5,6 +5,18 @@ from openai import APIError, BadRequestError
 from rabbit_hole.errors import provider_diagnostics
 
 
+@pytest.mark.parametrize("code", [
+    "credit_balance_exhausted", "organization_spend_limit_exceeded",
+    "project_spend_limit_exceeded", "organization_usage_limit_exceeded",
+])
+def test_quota_error_keeps_specific_billing_cause(code):
+    error = APIError("SECRET", request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
+                     body={"code": code, "type": "insufficient_quota"})
+    assert provider_diagnostics(error) == {"provider": {
+        "code": code, "type": "insufficient_quota", "param": None, "http_status": None,
+    }}
+
+
 def test_provider_status_and_setting_are_logged_without_body():
     response = httpx.Response(400, request=httpx.Request("POST", "https://api.openai.com/v1/responses"))
     error = BadRequestError("SECRET", response=response, body={
