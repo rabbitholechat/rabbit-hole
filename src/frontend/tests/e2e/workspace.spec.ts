@@ -491,6 +491,17 @@ test('composer and canvas tools stay separate while resizing with sidebar open o
           }),
         )
         .toBe(true)
+      if (width > 700) {
+        await expect.poll(() => page.evaluate(() => {
+          const brand = document.querySelector('.sidebar-header .brand')!.getBoundingClientRect()
+          const heading = document.querySelector('.canvas-heading')!.getBoundingClientRect()
+          const navigation = document.querySelector('.node-navigation')!.getBoundingClientRect()
+          const center = (rect: DOMRect) => rect.top + rect.height / 2
+          return Math.abs(center(brand) - center(heading)) < 1 &&
+            Math.abs(center(brand) - center(navigation)) < 1 &&
+            heading.right + 12 <= navigation.left && brand.right <= heading.left
+        })).toBe(true)
+      }
     }
   }
 })

@@ -180,7 +180,7 @@ svg {
   min-width: 0;
   flex: 1;
   text-align: left;
-  padding: 15px 12px;
+  padding: 9px 12px;
   font-size: 12px;
 }
 .history-item span {
@@ -194,7 +194,7 @@ svg {
   color: #8b928e;
 }
 .history-delete {
-  padding: 10px;
+  padding: 8px;
   margin-right: 4px;
   color: #9fa69f;
   opacity: 0;
@@ -1807,4 +1807,39 @@ svg {
 .history-row:hover .history-delete,
 .history-delete:focus-visible {
   pointer-events: auto;
+}
+
+/* Align the desktop header on one center line and reserve room for navigation. */
+@media (min-width: 701px) {
+  .workspace {
+    --header-center: 53px;
+  }
+  .sidebar-header {
+    top: calc(var(--header-center) - 18px);
+  }
+  .canvas-heading {
+    top: calc(var(--header-center) - 18px);
+    right: 170px;
+    height: 36px;
+    flex-wrap: nowrap;
+  }
+  .canvas-heading > div {
+    min-width: 0;
+  }
+  .canvas-heading h1 {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .canvas-heading > span {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .node-navigation {
+    top: var(--header-center);
+    left: auto;
+    right: var(--right-space);
+    transform: translateY(-50%);
+  }
 }
