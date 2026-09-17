@@ -1,3 +1,4 @@
+import { parseToolSources } from '../src/lib/toolSources'
 import { responseParentId } from '../src/lib/nodeActions'
 import { previousNodes } from '../src/components/PreviousNodeButton'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -307,4 +308,24 @@ it('restoring an interrupted source lookup clears its spinner without fetching a
   const source = restored.contentGraph!.entities[node.data.toolSources[0].id]
   expect(source.type === 'source' && source.source.content?.status).toBe('cancelled')
   expect(request).not.toHaveBeenCalled()
+})
+
+it('page images remain separate from summaries and connect beside their source on replay', () => {
+  const original = session()
+  const responseNode = original.nodes[0] as ResponseNode
+  const source = responseNode.data.toolSources![0]
+  source.page_image = { thumbnail_url: 'https://example.com/photo.jpg' }
+  responseNode.data.toolSources = parseToolSources(responseNode.data.toolSources)!
+  const next = attachSources(original, responseNode.id)
+  const page = next.nodes.find((n) => n.id === source.id)!
+  const image = next.nodes.find((n) => n.id === `image_${source.id}`)!
+  expect(image.position.x).toBeGreaterThan(page.position.x + page.width!)
+  expect(image.position.y).toBe(page.position.y)
+  expect(next.contentGraph!.relations).toContainEqual(expect.objectContaining({
+    source: page.id, target: image.id, kind: 'related_image',
+  }))
+  const restored = attachSources(deduplicateSources(next), responseNode.id)
+  expect(restored.nodes).toEqual(next.nodes)
+  expect(restored.contentGraph!.entities[page.id]).toBeDefined()
+  expect(restored.contentGraph!.entities[image.id]).toBeDefined()
 })

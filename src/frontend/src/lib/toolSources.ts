@@ -21,13 +21,14 @@ export function parseToolSources(value: unknown): ToolSource[] | undefined {
       item.verification !== 'unverified'
     )
       return
-    let image: ToolSource['image']
-    if (item.image != null) {
-      const raw = item.image.thumbnail_url
+    const previews: Pick<ToolSource, 'image' | 'page_image'> = {}
+    for (const key of ['image', 'page_image'] as const) {
+      if (item[key] == null) continue
+      const raw = item[key].thumbnail_url
       if (typeof raw !== 'string' || raw.length > 4096 || !safeUrl(raw)) return
       const thumbnail = new URL(raw)
       if (thumbnail.protocol !== 'https:') return
-      image = { thumbnail_url: thumbnail.href }
+      previews[key] = { thumbnail_url: thumbnail.href }
     }
     let content: SourceContent | undefined
     if (item.content != null) {
@@ -55,7 +56,7 @@ export function parseToolSources(value: unknown): ToolSource[] | undefined {
       accessed_at: item.accessed_at,
       verification: 'unverified',
       ...(content ? { content } : {}),
-      ...(image ? { image } : {}),
+      ...previews,
     })
   }
   return [...new Map(sources.map((s) => [s.id, s])).values()]

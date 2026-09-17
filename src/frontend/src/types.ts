@@ -44,6 +44,7 @@ export type ToolSource = {
   accessed_at: string
   verification: 'unverified'
   image?: { thumbnail_url: string } | null
+  page_image?: { thumbnail_url: string } | null
   content?: SourceContent | null
 }
 export type ResponseNode = Node<
@@ -84,7 +85,7 @@ export type ContentRelation = {
   id: string
   source: string
   target: string
-  kind: 'has_extract' | 'consulted' | 'cites' | 'uses_context'
+  kind: 'has_extract' | 'consulted' | 'cites' | 'uses_context' | 'related_image'
   responseId: string
   spans: TextSpan[]
 }

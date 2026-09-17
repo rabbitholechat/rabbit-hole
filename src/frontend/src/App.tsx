@@ -258,8 +258,9 @@ function Workspace() {
         source: edge.source,
         target: edge.target,
         type: 'content',
-        label: isImage ? '관련 이미지' : { has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고' }[edge.kind],
+        label: isImage ? '관련 이미지' : { has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고', related_image: '관련 이미지' }[edge.kind],
         ariaLabel: isImage ? '관련 이미지' : {
+          related_image: '출처 페이지의 관련 이미지',
           has_extract: '응답에서 정보 추출',
           consulted: '응답에서 자료 조회',
           cites: '원문에 출처 표기',

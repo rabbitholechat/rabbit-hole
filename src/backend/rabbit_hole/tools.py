@@ -269,7 +269,7 @@ class AgentTools:
         self.calls = 0
         self.searches = 0
         self.image_searches = 0
-        self.page_images_attempted = False
+        self.page_image_urls: dict[str, str] = {}
         self.sources: dict[str, ToolSource] = {}
         self.page_contents: dict[str, SourceContent] = {}
 
@@ -308,46 +308,6 @@ class AgentTools:
         return pages[:limit - image_count] + images[:image_count]
 
     async def web_search(self, query: str) -> dict:
-        result = await self._web_search(query)
-        # Automatic visual supplement is bounded once per request and cannot fail the web result.
-        if result["status"] == "ok" and self.image_searches < self.settings.max_image_searches:
-            try:
-                images = await self.image_search(query)
-                result["images"] = images["sources"]
-            except Exception:
-                result["images"] = []
-        if result["status"] == "ok" and not any(s.image for s in self.sources.values()) and not self.page_images_attempted:
-            self.page_images_attempted = True
-            await self.page_images(result["sources"])
-            result["images"] = [s.model_dump(exclude={"content"}) for s in self.displayed_sources() if s.image]
-        return result
-
-    async def page_images(self, sources):
-        """Use actual publisher image metadata when the image index has no matching result."""
-        async def read(item):
-            try:
-                self.consume()
-                page = await fetch_page(item["url"], self.settings)
-                source = self.sources.get(item["id"])
-                if not source:
-                    return
-                source.content = SourceContent(status="read", text=page["text"],
-                                               truncated=page["truncated"], final_url=page["url"])
-                source.access = "page_read"
-                source.accessed_at = datetime.now(UTC).isoformat()
-                if not page.get("image_url"):
-                    return
-                image_url = public_url(page["image_url"])
-                await public_address(image_url)
-                source.image = ImagePreview(thumbnail_url=str(image_url))
-            except Exception:
-                return
-
-        async with asyncio.TaskGroup() as group:
-            for item in sources[:min(2, self.settings.max_source_concurrency)]:
-                group.create_task(read(item))
-
-    async def _web_search(self, query: str) -> dict:
         self.consume(search=True)
         if not query.strip() or len(query) > 2000:
             raise ToolFailure("invalid_query")
@@ -449,6 +409,8 @@ class AgentTools:
         source = self.record(page["url"], page["title"], "page_read")
         source.content = SourceContent(status="read", text=page["text"], truncated=page["truncated"],
                                        final_url=page["url"])
+        if page.get("image_url"):
+            self.page_image_urls[source.id] = page["image_url"]
         self.page_contents[str(public_url(url))] = source.content
         self.page_contents[page["url"]] = source.content
         return {"status": "ok", "source": source.model_dump(exclude={"content"}), "text": page["text"],
@@ -526,6 +488,8 @@ class AgentTools:
                             page = await fetch_page(source.url, self.settings)
                             source.content = SourceContent(status="summarizing", text=page["text"],
                                                            truncated=page["truncated"], final_url=page["url"])
+                            if page.get("image_url"):
+                                self.page_image_urls[source.id] = page["image_url"]
                             source.access = "page_read"
                             source.accessed_at = datetime.now(UTC).isoformat()
                             source.title = page["title"] or source.title
@@ -568,6 +532,16 @@ class AgentTools:
                     source.content = SourceContent(status="failed", error_code="page_timeout")
                 raise
             finally:
+                if (source.content.status == "read" and source.content.summary
+                        and not source.content.summary_error and source.id in self.page_image_urls):
+                    try:
+                        image_url = public_url(self.page_image_urls[source.id])
+                        if image_url.scheme == "https":
+                            async with asyncio.timeout(self.settings.tool_timeout_seconds):
+                                await public_address(image_url)
+                            source.page_image = ImagePreview(thumbnail_url=str(image_url))
+                    except Exception:
+                        pass
                 await publish()
 
         async with asyncio.TaskGroup() as group:

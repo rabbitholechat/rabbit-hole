@@ -102,7 +102,6 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
     from openai import AsyncOpenAI
 
     monkeypatch.setattr("rabbit_hole.tools.AgentTools.image_search", AsyncMock(return_value={"sources": []}))
-    monkeypatch.setattr("rabbit_hole.tools.AgentTools.page_images", AsyncMock())
     captured = []
     message = {
         "id": "msg_test",

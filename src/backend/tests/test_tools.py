@@ -111,7 +111,6 @@ async def test_page_truncation_and_redirect_limit(monkeypatch):
 
 async def test_search_real_metadata_only_and_page_identity(monkeypatch):
     monkeypatch.setattr(AgentTools, "image_search", AsyncMock(return_value={"sources": []}))
-    monkeypatch.setattr(AgentTools, "page_images", AsyncMock())
     payload = {"output": [
         {"type": "web_search_call", "status": "completed", "action": {"sources": [
             {"url": "https://example.com/a"}, {"url": "https://example.com/b"},
@@ -204,7 +203,6 @@ def test_current_date_context_preserves_utc_and_seoul_midnight(monkeypatch, hour
 
 async def test_cited_primary_page_is_not_lost_behind_discovered_sources(monkeypatch):
     monkeypatch.setattr(AgentTools, "image_search", AsyncMock(return_value={"sources": []}))
-    monkeypatch.setattr(AgentTools, "page_images", AsyncMock())
     cited_url = "https://example.com/official-announcement"
     payload = {"output": [
         {"type": "web_search_call", "status": "completed", "action": {"sources": [
@@ -489,71 +487,27 @@ async def test_image_search_empty_results_do_not_invent_cards(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_web_search_automatically_adds_images_once_without_losing_page_slots(monkeypatch):
-    tools = AgentTools(settings(), None)
-    for i in range(8):
-        tools.record(f"https://example.com/{i}", str(i), "search_result")
-    monkeypatch.setattr(tools, "_web_search", AsyncMock(return_value={"status": "ok", "sources": [], "summary": "web"}))
-
-    async def images(query):
-        from rabbit_hole.models import ImagePreview
-        tools.image_searches += 1
-        for i in range(3):
-            source = tools.record(f"https://commons.wikimedia.org/wiki/File:{i}.jpg", str(i), "search_result")
-            source.image = ImagePreview(thumbnail_url=f"https://thumb.wikimedia.org/{i}.jpg")
-        return {"sources": [s.model_dump() for s in tools.sources.values() if s.image]}
-
-    search = AsyncMock(side_effect=images)
-    monkeypatch.setattr(tools, "image_search", search)
-    assert len((await tools.web_search("landscape"))["images"]) == 3
-    await tools.web_search("refined landscape")
-    assert search.await_count == 1
-    displayed = tools.displayed_sources()
-    assert len(displayed) == 5
-    assert sum(bool(s.image) for s in displayed) == 2
-    assert displayed[0].url == "https://example.com/0"
-
-
-@pytest.mark.asyncio
-async def test_automatic_images_failure_does_not_fail_web_result(monkeypatch):
-    tools = AgentTools(settings(), None)
-    monkeypatch.setattr(tools, "_web_search", AsyncMock(return_value={"status": "ok", "sources": [], "summary": "web"}))
-    monkeypatch.setattr(tools, "image_search", AsyncMock(side_effect=ToolFailure("tool_call_limit")))
-    result = await tools.web_search("query")
-    assert result["status"] == "ok" and result["summary"] == "web" and result["images"] == []
-
-
-@pytest.mark.asyncio
-async def test_empty_image_index_uses_real_publisher_metadata(monkeypatch):
-    tools = AgentTools(settings(), None)
-    source = tools.record("https://example.com/news", "Product", "search_result")
-    monkeypatch.setattr(tools, "_web_search", AsyncMock(return_value={
-        "status": "ok", "sources": [source.model_dump()], "summary": "web",
-    }))
-    monkeypatch.setattr(tools, "image_search", AsyncMock(return_value={"sources": []}))
-    mock_pages(monkeypatch, lambda request: httpx.Response(
-        200, headers={"content-type": "text/html"}, stream=httpx.ByteStream(
-            b'<meta property="og:image" content="https://images.example.com/product.jpg">'
-            b'<article><p>Actual product information.</p></article>')))
-    result = await tools.web_search("latest product")
-    assert len(result["images"]) == 1
-    assert source.image.thumbnail_url == "https://images.example.com/product.jpg"
-    assert source.url == "https://example.com/news"
-    assert source.content.text == "Actual product information."
-    assert tools.calls == 1
-    await tools.web_search("latest product again")
-    assert tools.calls == 1
-
-
-@pytest.mark.asyncio
-async def test_publisher_image_cannot_point_to_private_network(monkeypatch):
+@pytest.mark.parametrize("unsafe", [False, True])
+async def test_page_image_is_published_only_after_summary(monkeypatch, unsafe):
     tools = AgentTools(settings(), None)
     source = tools.record("https://example.com/news", "Product", "search_result")
     monkeypatch.setattr("rabbit_hole.tools.fetch_page", AsyncMock(return_value={
         "url": source.url, "title": source.title, "text": "Actual body",
         "truncated": False, "image_url": "https://images.example.com/a.jpg",
     }))
-    monkeypatch.setattr("rabbit_hole.tools.public_address", AsyncMock(side_effect=ToolFailure("unsafe_url")))
-    await tools.page_images([source.model_dump()])
+    monkeypatch.setattr("rabbit_hole.tools.public_address", AsyncMock(
+        side_effect=ToolFailure("unsafe_url") if unsafe else None))
+
+    async def summarize(item, publish):
+        assert item.page_image is None
+        assert item.image is None
+        return "페이지 요약"
+
+    monkeypatch.setattr(tools, "summarize_source", summarize)
+    await tools.enrich_sources()
+    assert source.content.summary == "페이지 요약"
     assert source.image is None
-    assert source.content.text == "Actual body"
+    assert (source.page_image is None) == unsafe
+    if not unsafe:
+        assert source.page_image.thumbnail_url == "https://images.example.com/a.jpg"
+    assert tools.calls == 1

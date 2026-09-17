@@ -90,12 +90,14 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
     const entity = session.contentGraph!.entities[id]
     const width = entity.type === 'information' ? 340 : 460
     const height = entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
-    const x =
+    const imageParentId = session.contentGraph!.relations.find((r) => r.kind === 'related_image' && r.target === id)?.source
+    const imageParent = nodes.find((n) => n.id === imageParentId)
+    const x = imageParent ? imageParent.position.x + (imageParent.measured?.width ?? imageParent.width ?? 460) + 88 :
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
       88 +
       (entity.type === 'source' ? 428 + (entity.source.image ? 460 + 88 : 0) : 0)
-    let y = response.position.y
+    let y = imageParent?.position.y ?? response.position.y
     while (true) {
       const collisions = nodes.filter(
         (n) =>
@@ -137,8 +139,9 @@ export function deduplicateSources(session: Session): Session {
   for (const id of ids) {
     const entity = entities[id]
     if (entity?.type !== 'source') continue
-    const url = normalizeUrl(entity.source.url)
-    if (!url) continue
+    const normalized = normalizeUrl(entity.source.url)
+    if (!normalized) continue
+    const url = normalized + (entity.source.image ? ":image" : ":page")
     const keptId = byUrl.get(url)
     if (!keptId) { byUrl.set(url, id); continue }
     entities[keptId] = mergeSource(entities[keptId] as SourceEntity, entity)
@@ -150,7 +153,7 @@ export function deduplicateSources(session: Session): Session {
   for (const edge of graph.relations) {
     const source = aliases.get(edge.source) ?? edge.source
     const target = aliases.get(edge.target) ?? edge.target
-    const key = `${source}:${target}:${['has_extract', 'uses_context'].includes(edge.kind) ? edge.kind : 'source'}`
+    const key = `${source}:${target}:${['has_extract', 'uses_context', 'related_image'].includes(edge.kind) ? edge.kind : 'source'}`
     const old = edges.get(key)
     const spans = [...new Map([...(old?.spans ?? []), ...edge.spans].map((s) => [`${s.start}:${s.end}`, s])).values()]
     const kind = old?.kind === 'cites' || edge.kind === 'cites' ? 'cites' : edge.kind
@@ -185,7 +188,7 @@ export function attachSources(session: Session, responseId: string): Session {
     if (!normalizeUrl(source.url)) continue
     const spans = links.filter((link) => link.url === normalizeUrl(source.url)).map((link) => link.span)
     const existing = Object.values(entities).find(
-      (e) => e.type === 'source' && normalizeUrl(e.source.url) === normalizeUrl(source.url),
+      (e) => e.type === 'source' && !!e.source.image === !!source.image && normalizeUrl(e.source.url) === normalizeUrl(source.url),
     )
     const id = existing?.id ?? source.id
     const old = entities[id]
@@ -200,6 +203,18 @@ export function attachSources(session: Session, responseId: string): Session {
     entities[id] = old ? mergeSource(old, incoming) : incoming
     ids.push(id)
     extra.push(relation(responseId, id, spans.length ? 'cites' : 'consulted', responseId, spans))
+    if (source.page_image && !source.image) {
+      const imageId = `image_${id}`
+      const imageEntity: SourceEntity = {
+        id: imageId, type: 'source',
+        source: { ...source, id: imageId, image: source.page_image, page_image: undefined, content: undefined },
+        observations: [{ ...observation, spans: [] }],
+      }
+      const previous = entities[imageId]
+      entities[imageId] = previous?.type === 'source' ? mergeSource(previous, imageEntity) : imageEntity
+      ids.push(imageId)
+      extra.push(relation(id, imageId, 'related_image', responseId, []))
+    }
   }
   const next = {
     ...session,
@@ -284,7 +299,7 @@ export function attachInformation(session: Session, responseId: string, result: 
       (link) => link.span.start >= item.excerpt.start && link.span.end <= item.excerpt.end,
     )
     for (const entity of Object.values(entities)) {
-      if (entity.type !== 'source') continue
+      if (entity.type !== 'source' || entity.id.startsWith('image_')) continue
       const spans = links
         .filter((l) => l.url === normalizeUrl(entity.source.url))
         .map((l) => l.span)

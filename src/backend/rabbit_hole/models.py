@@ -77,3 +77,4 @@ class ToolSource(BaseModel):
     verification: Literal["unverified"] = "unverified"
     content: SourceContent | None = None
     image: ImagePreview | None = None
+    page_image: ImagePreview | None = None

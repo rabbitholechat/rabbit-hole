@@ -383,3 +383,28 @@ def test_image_sources_sse_contract():
     assert snapshot["data"]["sources"] == [ImageService.sources[0].model_dump()]
     assert result[-1]["data"]["status"] == "completed"
     assert not any(e["type"] == "status" and e["data"]["stage"] == "reading_sources" for e in result)
+
+
+def test_summarized_page_image_sse_contract():
+    from rabbit_hole.models import ImagePreview, SourceContent
+
+    class PageImageService(FakeService):
+        sources = [ToolSource(
+            id="src_" + "b" * 24, title="Page", url="https://example.com/page",
+            access="search_result", accessed_at="2026-09-17T00:00:00Z",
+        )]
+
+        async def enrich_sources(self, on_update=None):
+            await on_update()
+            source = self.sources[0]
+            source.access = "page_read"
+            source.content = SourceContent(status="read", text="Page body", summary="페이지 요약", final_url=source.url)
+            source.page_image = ImagePreview(thumbnail_url="https://example.com/photo.jpg")
+            await on_update()
+
+    result = events(TestClient(create_app(settings(), PageImageService)).post("/api/agent", json=body()))
+    snapshots = [e["data"]["sources"][0] for e in result if e["type"] == "response_sources"]
+    assert snapshots[0]["page_image"] is None
+    assert snapshots[-1]["page_image"] == {"thumbnail_url": "https://example.com/photo.jpg"}
+    assert snapshots[-1]["content"]["summary"] == "페이지 요약"
+    assert snapshots[-1]["image"] is None
