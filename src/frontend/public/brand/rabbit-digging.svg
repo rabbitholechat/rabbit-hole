@@ -1,23 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="96" height="80" viewBox="0 -12 96 92" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="80" viewBox="0 -8 96 88" fill="none">
   <style>
-    .rabbit { animation: lean .9s ease-in-out infinite; transform-origin: 33px 62px; }
-    .paw { animation: dig .9s ease-in-out infinite; transform-origin: 57px 48px; }
-    .paw-back { animation-delay: -.45s; }
-    @keyframes lean { 0%, 100% { transform: rotate(-2deg); } 50% { transform: translateY(1px) rotate(3deg); } }
-    @keyframes dig { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(18deg); } }
-    @media (prefers-reduced-motion: reduce) { .rabbit, .paw { animation: none; } }
+    .rabbit { animation: dig-bob .7s ease-in-out infinite; transform-origin: 50px 59px; }
+    .paw { animation: dig-paw .7s ease-in-out infinite; transform-origin: 57px 56px; }
+    .paw-back { animation-delay: -.35s; }
+    .soil { animation: dig-soil .7s ease-out infinite; }
+    .soil-back { animation-delay: -.35s; }
+    @keyframes dig-bob { 0%, 100% { transform: rotate(-3deg); } 50% { transform: translateY(2px) rotate(4deg); } }
+    @keyframes dig-paw { 0%, 100% { transform: rotate(-18deg); } 50% { transform: rotate(24deg); } }
+    @keyframes dig-soil { 0%, 25% { opacity: 0; transform: translate(0, 0); } 35% { opacity: 1; } 100% { opacity: 0; transform: translate(-18px, -9px); } }
+    @media (prefers-reduced-motion: reduce) { .rabbit, .paw, .soil { animation: none; } .soil { opacity: .45; } }
   </style>
+  <ellipse cx="65" cy="71" rx="23" ry="4" fill="#263d32" opacity=".12"/>
   <g stroke="#263d32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
     <g class="rabbit">
-      <path d="M39 42C27 31 11 41 13 55q1 12 22 11l13-5"/>
-      <path d="M13 47C4 43 3 55 12 54"/>
-      <g transform="translate(32 0) rotate(25 25 40) scale(.72)">
+      <path d="M28 64C12 62 13 46 23 43c9-3 19 4 21 13"/>
+      <path d="M17 49c-8-7-13 3-5 7"/>
+      <g transform="translate(34 3) rotate(18 25 40) scale(.8)">
         <path d="M13 39C4 30 0 7 6 2c8 1 18 22 20 34C24 23 31 7 39 2c7 5 5 24-2 35 7 2 9 8 10 11l3 3c0 5-4 8-10 12H8C3 53 4 45 13 39Z" transform="translate(1 0) scale(.93)"/>
         <circle cx="35" cy="45" r="2" fill="#263d32" stroke="none"/>
       </g>
-      <path class="paw paw-back" d="M55 48q8 5 13 11l-5 2" opacity=".5"/>
-      <path class="paw" d="M48 49q6 10 15 13q3 3-3 3l-12-7"/>
+      <path class="paw paw-back" d="M53 55q11 4 17 10q-1 4-7 2" opacity=".5"/>
+      <path class="paw" d="M48 57q8 9 19 11q3 4-4 4l-15-7"/>
+      <path d="M29 55q-9 3-5 10h14"/>
     </g>
-    <path d="M5 70h38q7 0 11-5l8-8q4-4 8-1l7 5q4 3 14 3"/>
+    <path class="soil" d="m44 70-3-1m-5 3-2 1"/>
+    <path class="soil soil-back" d="m48 71-2 1"/>
   </g>
 </svg>
