@@ -1843,3 +1843,18 @@ svg {
     transform: translateY(-50%);
   }
 }
+
+.rabbit-loader-body { animation: rabbit-lean 1.1s ease-in-out infinite; transform-origin: 490px 970px; }
+.rabbit-loader-paw { animation: rabbit-dig 1.1s ease-in-out infinite; transform-origin: 742px 744px; }
+@keyframes rabbit-lean {
+  0%, 100% { transform: rotate(-1deg); }
+  45% { transform: translateY(7px) rotate(1.5deg); }
+}
+@keyframes rabbit-dig {
+  0%, 100% { transform: rotate(-7deg); }
+  45% { transform: rotate(9deg); }
+  70% { transform: rotate(5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rabbit-loader-body, .rabbit-loader-paw { animation: none; }
+}

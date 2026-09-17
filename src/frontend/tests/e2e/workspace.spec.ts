@@ -371,6 +371,8 @@ test('streams into a canvas node, retains dragged placement, continues conversat
   await expect(card.locator('.response-status')).toHaveText('응답 중')
   await expect(card.locator('.response-status .rabbit-loader')).toBeVisible()
   await expect(card.locator('.rabbit-loader')).toHaveCount(1)
+  await expect(card.locator('.rabbit-loader > g')).toHaveCSS('fill', 'rgb(37, 99, 166)')
+  await expect(page.locator('.agent-status .rabbit-loader > g')).toHaveCSS('fill', 'rgb(114, 144, 123)')
   await expect(page.getByRole('button', { name: '응답 중지' })).toBeVisible()
   const node = page.locator('.react-flow__node-response').first()
   await expect.poll(() => page.locator('.canvas-tools span').innerText()).not.toBe('100%')
