@@ -697,53 +697,37 @@ svg {
   flex: 1;
   min-width: 65%;
 }
-.flight-form {
+.clarification-panel {
   padding: 16px;
   margin-bottom: 12px;
+  max-height: 40vh;
+  overflow: auto;
+  overflow-wrap: anywhere;
 }
-.flight-form h2 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+.clarification-panel h2 {
   font-size: 13px;
   font-weight: 600;
-  margin: 0 0 15px;
+  margin: 0 0 10px;
 }
-.flight-fields {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+.clarification-panel ul {
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.7;
 }
-.flight-fields label {
-  font-size: 10px;
-  color: #798a75;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.flight-fields input,
-.flight-fields select {
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  border: 1px solid #e0e7da;
-  border-radius: 6px;
-  padding: 0 7px;
+.clarification-panel p {
   font-size: 11px;
-  color: #53684f;
-  background: white;
+  color: #798a75;
+  margin: 10px 0 0;
 }
-.flight-footer {
+.clarification-suggestions {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-  margin-top: 15px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.flight-footer p {
-  font-size: 9px;
-  color: #99a48f;
-  max-width: 70%;
+.clarification-suggestions button {
+  white-space: normal;
+  height: auto;
+  max-width: 100%;
 }
 @media (min-width: 1600px) {
   .composer-area {
@@ -904,19 +888,8 @@ svg {
     width: min(298px, calc(100% - 28px));
     max-height: 46vh;
   }
-  .flight-form {
-    padding: 12px;
-    max-height: 58vh;
-    overflow: auto;
-  }
-  .flight-fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .search-status > span {
     display: none;
-  }
-  .flight-footer {
-    align-items: flex-end;
   }
   .error-banner {
     font-size: 10px;

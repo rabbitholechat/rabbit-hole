@@ -65,24 +65,65 @@ test('IME Enter does not submit, failed API never silently loads a sample', asyn
   await expect(page.locator('.page-card')).toHaveCount(0)
   await expect(page.locator('.sample-badge')).toHaveCount(0)
 })
-test('flight conditions collected before search and no horizontal document overflow', async ({ page }) => {
-  await page.route('**/api/search', async (route) => {
-    const body = route.request().postDataJSON()
-    const ev = (type: string, data: object, seq: number) =>
-      `data: ${JSON.stringify({ version: 1, request_id: body.request_id, job_id: 'j', seq, type, data })}\n\n`
-    await route.fulfill({
-      contentType: 'text/event-stream',
-      body:
-        ev('clarification', { kind: 'flight' }, 1) + ev('done', { status: 'completed', failed_parts: [] }, 2),
+for (const query of ['오사카 항공권 비교', '팀에 맞는 검색 시스템 비교']) {
+  test(`model clarification uses the same UI and resumes without extra calls: ${query}`, async ({ page }) => {
+    let calls = 0
+    await page.route('**/api/search', async (route) => {
+      const body = route.request().postDataJSON()
+      calls++
+      expect(body).not.toHaveProperty('flight')
+      let seq = 0
+      const ev = (type: string, data: object) =>
+        `data: ${JSON.stringify({ version: 1, request_id: body.request_id, job_id: 'j', seq: ++seq, type, data })}\n\n`
+      if (calls === 1) {
+        expect(body.query).toBe(query)
+        await route.fulfill({
+          contentType: 'text/event-stream',
+          body:
+            ev('clarification', {
+              message: '비교 기준을 알려주세요.',
+              questions: ['가장 중요한 조건은 무엇인가요?'],
+              suggestions: ['비용을 우선해 주세요', '특별한 선호는 없어요'],
+            }) +
+            ev('checkpoint', { continuation: 'signed-clarification' }) +
+            ev('done', { status: 'awaiting_input', failed_parts: [] }),
+        })
+      } else {
+        expect(body.query).toBe('비용을 우선하고 다른 조건은 자유롭게 비교해 주세요')
+        expect(body.continuation).toBe('signed-clarification')
+        await route.fulfill({
+          contentType: 'text/event-stream',
+          body:
+            ev('answer', { claims: [], limitation: '조건을 반영했습니다.' }) +
+            ev('done', { status: 'completed', failed_parts: [] }),
+        })
+      }
     })
+    await page.goto('/')
+    await page.getByRole('textbox', { name: '검색 질문' }).fill(query)
+    await page.getByRole('button', { name: '검색 실행' }).click()
+    await expect(page.getByRole('region', { name: '추가 질문' })).toContainText(
+      '가장 중요한 조건은 무엇인가요?',
+    )
+    await expect(page.getByText('추가 답변을 기다리고 있어요')).toBeVisible()
+    await expect(page.locator('input[type="date"], select')).toHaveCount(0)
+    await page.getByRole('button', { name: '비용을 우선해 주세요', exact: true }).click()
+    await expect(page.getByRole('textbox', { name: '검색 질문' })).toHaveValue('비용을 우선해 주세요')
+    expect(calls).toBe(1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.reload()
+    await openHistory(page)
+    await page.getByRole('button', { name: query, exact: true }).click()
+    await expect(page.getByRole('region', { name: '추가 질문' })).toBeVisible()
+    expect(calls).toBe(1)
+    await page
+      .getByRole('textbox', { name: '검색 질문' })
+      .fill('비용을 우선하고 다른 조건은 자유롭게 비교해 주세요')
+    await page.getByRole('button', { name: '검색 실행' }).click()
+    await expect(page.getByRole('region', { name: '추가 질문' })).toHaveCount(0)
+    expect(calls).toBe(2)
   })
-  await page.goto('/')
-  await page.getByRole('button', { name: '오사카 최저가 항공권', exact: true }).click()
-  await page.getByRole('button', { name: '검색 실행' }).click()
-  await expect(page.getByRole('form', { name: '항공권 검색 조건' })).toBeVisible()
-  await expect(page.getByLabel('출발 공항')).toHaveValue('')
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-})
+}
 
 test('live SSE cards, original link and expansion preserve positions and viewport', async ({ page }) => {
   const sources = [1, 2, 3].map((i) => ({

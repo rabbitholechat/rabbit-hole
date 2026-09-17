@@ -38,7 +38,13 @@ export function PageCard({ data, selected }: NodeProps<PageNode>) {
       <p>{source.summary || '검색 요약이 제공되지 않은 페이지입니다.'}</p>
       <footer>
         <span className="tag">{source.tag}</span>
-        <span>{source.read_status === 'read' ? '원문 확인' : '요약 기반'}</span>
+        <span>
+          {source.content_origin === 'web_search_summary'
+            ? 'AI 검색 요약'
+            : source.read_status === 'read'
+              ? '원문 확인'
+              : '요약 기반'}
+        </span>
       </footer>
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </article>

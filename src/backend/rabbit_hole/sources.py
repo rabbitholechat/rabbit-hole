@@ -4,6 +4,8 @@ import ipaddress
 import socket
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .diagnostics import write as debug_write
+from .errors import EvidenceValidationError
 from .models import Answer, Evidence, Relationships, Source, utc_now
 
 TRACKING = {"fbclid", "gclid", "msclkid", "mc_cid", "mc_eid"}
@@ -50,7 +52,9 @@ async def public_url(raw: str) -> str:
 
 
 class Registry:
-    def __init__(self, sources: list[Source] | None = None):
+    def __init__(self, sources: list[Source] | None = None, *, debug: bool = False, request_id: str = ""):
+        self.debug = debug
+        self.request_id = request_id
         self.sources = {s.id: s for s in sources or []}
 
     def add(self, raw: dict) -> Source:
@@ -65,51 +69,107 @@ class Registry:
                 domain=urlsplit(url).hostname or "",
                 title=str(raw.get("title") or url)[:400],
                 summary=str(raw.get("content") or "")[:2500],
+                content_origin=raw.get("content_origin", "search_snippet"),
                 # Search does not guarantee publication dates. Never infer them.
                 published_at=raw.get("published_date"),
                 retrieved_at=utc_now(),
             )
+        elif not self.sources[sid].summary and raw.get("content"):
+            # A consulted URL may receive its first attributable summary on a follow-up.
+            # Never overwrite existing evidence referenced by a saved answer/graph.
+            source = self.sources[sid]
+            source.summary = str(raw["content"])[:2500]
+            source.content_origin = raw.get("content_origin", "search_snippet")
+            source.title = str(raw.get("title") or source.title)[:400]
         return self.sources[sid]
 
-    def evidence(self, evidence: Evidence) -> bool:
+    def diagnostic(self, event: str, **data):
+        debug_write(self.debug, self.request_id, event, **data)
+
+    def evidence_reason(self, evidence: Evidence) -> str | None:
         source = self.sources.get(evidence.source_id)
-        if not source or not evidence.quote.strip():
-            return False
-        if evidence.basis == "excerpt" and source.read_status != "read":
-            return False
+        if not source:
+            return "unknown_source_id"
+        if not evidence.quote.strip():
+            return "empty_quote"
+        if evidence.basis == "excerpt":
+            if source.content_origin == "web_search_summary":
+                return "ai_summary_as_excerpt"
+            if source.read_status != "read":
+                return "original_not_read"
         text = source.excerpt if evidence.basis == "excerpt" else source.summary
-        return " ".join(evidence.quote.split()) in " ".join(text.split())
+        if not text.strip():
+            return "empty_source_text"
+        if " ".join(evidence.quote.split()) not in " ".join(text.split()):
+            return "quote_not_found"
+        return None
+
+    def evidence(self, evidence: Evidence, **context) -> bool:
+        reason = self.evidence_reason(evidence)
+        if reason:
+            self.diagnostic("evidence_rejected", reason=reason, evidence=evidence.model_dump(), **context)
+        return reason is None
+
+    def reject(self, reason: str, **context) -> bool:
+        self.diagnostic("validation_rejected", reason=reason, **context)
+        return True
 
     def validate_answer(self, answer: Answer) -> Answer:
-        for claim in answer.claims:
-            if not claim.evidence or not all(self.evidence(e) for e in claim.evidence):
-                raise ValueError("Unsupported citation")
+        invalid = False
+        for index, claim in enumerate(answer.claims):
+            if not claim.evidence:
+                invalid |= self.reject("missing_evidence", stage="answer", claim_index=index)
+            for ei, evidence in enumerate(claim.evidence):
+                # Evaluate every item for diagnostics; do not short-circuit at the first failure.
+                invalid |= not self.evidence(evidence, stage="answer", claim_index=index, evidence_index=ei)
+        if invalid:
+            raise EvidenceValidationError("Unsupported citation")
         return answer
 
     def validate_relationships(self, graph: Relationships) -> Relationships:
+        invalid = False
         pairs = set()
-        for edge in graph.relations:
-            if (
-                edge.source == edge.target
-                or edge.source not in self.sources
-                or edge.target not in self.sources
-            ):
-                raise ValueError("Unknown graph endpoint")
-            if not edge.evidence or not all(self.evidence(e) for e in edge.evidence):
-                raise ValueError("Unsupported edge evidence")
+        for index, edge in enumerate(graph.relations):
+            ctx = {
+                "stage": "relationships",
+                "edge_index": index,
+                "source_id": edge.source,
+                "target_id": edge.target,
+            }
+            if edge.source == edge.target:
+                invalid |= self.reject("self_edge", **ctx)
+            if edge.source not in self.sources or edge.target not in self.sources:
+                invalid |= self.reject("unknown_endpoint", **ctx)
+            if not edge.evidence:
+                invalid |= self.reject("missing_evidence", **ctx)
+            for ei, evidence in enumerate(edge.evidence):
+                invalid |= not self.evidence(evidence, evidence_index=ei, **ctx)
             if not {edge.source, edge.target}.issubset({e.source_id for e in edge.evidence}):
-                raise ValueError("Both pages need evidence")
+                invalid |= self.reject("missing_endpoint_evidence", **ctx)
             pair = tuple(sorted([edge.source, edge.target]))
             if pair in pairs:
-                raise ValueError("Duplicate relationship")
+                invalid |= self.reject("duplicate_edge", **ctx)
             pairs.add(pair)
-        for label in graph.page_types:
+        for index, label in enumerate(graph.page_types):
             if label.source_id not in self.sources:
-                raise ValueError("Unknown page classification")
+                invalid |= self.reject(
+                    "unknown_page_type_source",
+                    stage="relationships",
+                    page_type_index=index,
+                    source_id=label.source_id,
+                )
         assigned = set()
-        for cluster in graph.clusters:
+        for index, cluster in enumerate(graph.clusters):
             for sid in cluster.source_ids:
-                if sid not in self.sources or sid in assigned:
-                    raise ValueError("Invalid cluster source")
+                if sid not in self.sources:
+                    invalid |= self.reject(
+                        "unknown_cluster_source", stage="relationships", cluster_index=index, source_id=sid
+                    )
+                if sid in assigned:
+                    invalid |= self.reject(
+                        "duplicate_cluster_source", stage="relationships", cluster_index=index, source_id=sid
+                    )
                 assigned.add(sid)
+        if invalid:
+            raise EvidenceValidationError("Unsupported graph evidence or structure")
         return graph

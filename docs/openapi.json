@@ -116,56 +116,6 @@
   },
   "components": {
     "schemas": {
-      "Flight": {
-        "properties": {
-          "origin": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 2,
-            "title": "Origin"
-          },
-          "departure": {
-            "type": "string",
-            "format": "date",
-            "title": "Departure"
-          },
-          "return_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Return Date"
-          },
-          "trip": {
-            "type": "string",
-            "enum": ["one_way", "round_trip"],
-            "title": "Trip"
-          },
-          "passengers": {
-            "type": "integer",
-            "maximum": 9.0,
-            "minimum": 1.0,
-            "title": "Passengers"
-          },
-          "direct": {
-            "type": "boolean",
-            "title": "Direct"
-          },
-          "baggage": {
-            "type": "string",
-            "enum": ["none", "cabin", "checked"],
-            "title": "Baggage"
-          }
-        },
-        "type": "object",
-        "required": ["origin", "departure", "trip", "passengers", "direct", "baggage"],
-        "title": "Flight"
-      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -220,28 +170,25 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": ["answer", "relationships"]
+                "enum": [
+                  "intent",
+                  "answer",
+                  "relationships"
+                ]
               },
               {
                 "type": "null"
               }
             ],
             "title": "Retry Part"
-          },
-          "flight": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Flight"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "additionalProperties": false,
         "type": "object",
-        "required": ["query", "request_id"],
+        "required": [
+          "query",
+          "request_id"
+        ],
         "title": "SearchRequest"
       },
       "ValidationError": {
@@ -277,7 +224,11 @@
           }
         },
         "type": "object",
-        "required": ["loc", "msg", "type"],
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
         "title": "ValidationError"
       }
     }

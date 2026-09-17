@@ -13,7 +13,7 @@
 ```sh
 make install
 cp src/backend/.env.example src/backend/.env  # .env가 없을 때만 실행
-# src/backend/.env에서 OPENAI_API_KEY, TAVILY_API_KEY 설정
+# src/backend/.env에서 OPENAI_API_KEY 설정
 make dev
 ```
 
@@ -35,18 +35,34 @@ make dev
 
 모든 런타임 설정은 `src/backend/.env`에 모읍니다. Vite 개발 프록시도 여기의 포트를 읽습니다. 브라우저에 환경변수나 API 키를 주입하지 않으며, 배포에서는 같은 origin의 `/api`로 호출합니다.
 
+## VS Code 디버깅
+
+프로젝트 루트 폴더를 VS Code로 열고 `make install`을 실행한 뒤, 권장 확장 **Python / Python Debugger**를 설치합니다. 프런트 디버깅에는 Chrome이 필요합니다.
+
+실행 및 디버그에서 다음 구성을 선택하고 `F5`를 누르세요.
+
+- **Rabbit Hole: Full Stack**: 백엔드와 Vite를 함께 실행하고 Chrome 디버거 연결.
+- **Rabbit Hole: Backend**: FastAPI만 실행. `.venv` Python을 사용하며 reload 자식 프로세스에도 중단점 연결.
+- **Rabbit Hole: Frontend + Chrome**: `make frontend` 실행 후 출력된 실제 URL로 Chrome 디버거 연결. API가 필요하면 백엔드도 실행.
+
+설정은 [.vscode/launch.json](.vscode/launch.json)에 있습니다. 포트와 API 키는 기존 `src/backend/.env`를 사용하며 프런트 URL은 Vite 출력에서 읽습니다. 기존 `make dev`가 실행 중이면 포트 충돌을 피하도록 먼저 종료하세요. 디버깅 중에도 요청·작업 시간 제한은 유지됩니다. 잡힌 예외의 원인을 확인하려면 Python 디버거의 **Raised Exceptions** 중단점을 켜세요.
+
+추천 중단점: 백엔드 `app.py`의 검색 요청/예외 처리, `search.py`의 `search_web`/`web_sources`/`relationships`, 프런트 `store.ts`의 `run`/`receive`.
+
+구성 기준: [VS Code 실행 설정](https://code.visualstudio.com/docs/debugtest/debugging-configuration), [Python 디버깅](https://code.visualstudio.com/docs/python/debugging).
+
 ## 구현 범위
 
 - React Flow 전체 화면 캔버스, 가로 군집 d3-force 배치와 사각형 충돌 방지
 - 동일 도메인의 다른 페이지 보존, 정규 URL 기반 안정 ID, 추적 파라미터 제거와 중복 재사용
 - 페이지 카드·원문·발췌·문서 유형·인용 선택·관계 근거 상세
-- SearchAgent + Tavily Search/Extract 함수 도구, 도구 없는 RelationshipBuilder
+- SearchAgent + OpenAI web_search 함수 어댑터, 도구 없는 RelationshipBuilder
 - 검색/원문/모델 턴/출력 토큰/시간/재시도 예산, SSE 진행 상태와 점진적 카드
 - 출처·노드·발췌 검증, 답변 핵심 주장에 대한 별도 의미 검증
 - 부분 성공, 실패 부문만 재시도, 작업 중지 및 이전 화면 이벤트 무시
 - 관련 자료 추가 검색 시 기존 ID·드래그 위치·viewport 보존
 - IndexedDB 기록 저장·복원·삭제, 복원 시 API 자동 재호출 없음
-- 항공권 조건 확인, 실제 운임 공급자 미연결 명시, 가상 가격 미사용
+- 주제별 전용 폼 없이 SDK가 반환한 추가 질문·답변 예시를 공통 UI로 표시, 서명된 대화 문맥으로 후속 검색
 - 접이식 모바일 패널, 키보드 노드 선택, 한국어 IME Enter 처리
 - 검색과 분리된 벡터·폴드·항공권 디자인 예시
 
@@ -61,7 +77,7 @@ flowchart LR
     U <-->|기록 · 위치 · viewport| D[(브라우저 IndexedDB)]
     F --> A[SearchAgent / Agents SDK]
     A --> O[OpenAI API]
-    A --> T[Tavily Search · Extract]
+    A --> T[OpenAI web_search]
     T --> R[서버 출처 레지스트리]
     R --> B[RelationshipBuilder / 도구 없음]
     B --> O
@@ -76,7 +92,7 @@ flowchart LR
 | `src/frontend/src/store.ts`           | 세션·작업 상태, SSE 세대 격리, 검색·재시도·기록                  |
 | `src/frontend/src/lib`                | 레이아웃, IndexedDB, SSE 파서, 분리된 디자인 예시                |
 | `src/backend/rabbit_hole/app.py`      | API/SSE, 작업 격리·제한, 부분 성공·체크포인트                    |
-| `src/backend/rabbit_hole/search.py`   | SDK 에이전트, Tavily 도구, 강제 예산, 의미 검증                  |
+| `src/backend/rabbit_hole/search.py`   | SDK 에이전트, OpenAI 검색, 강제 예산, 의미 검증                  |
 | `src/backend/rabbit_hole/sources.py`  | URL·출처 레지스트리·인용·관계 검증                               |
 | `src/backend/rabbit_hole/security.py` | 서버 확보 출처의 서명 스냅샷                                     |
 | `api/index.py` / `vercel.json`        | Vercel Python Function / 정적 화면                               |
@@ -89,12 +105,11 @@ flowchart LR
 
 | 변수                                            | 기본값 / 의미                                               |
 | ----------------------------------------------- | ----------------------------------------------------------- |
-| `OPENAI_API_KEY`, `TAVILY_API_KEY`              | 서버 전용 API 키. 미설정 시 실제 검색 503                   |
+| `OPENAI_API_KEY`              | 서버 전용 API 키. 미설정 시 실제 검색 503                   |
 | `OPENAI_MODEL`                                  | `gpt-4.1-mini`; 도구 호출·구조화 출력 지원 모델로 변경 가능 |
 | `MAX_SEARCH_CALLS`                              | 작업당 3회, 실제 재시도도 차감                              |
 | `MAX_SOURCES`                                   | 작업당 새 페이지 최대 10개                                  |
 | `MAX_SESSION_SOURCES`                           | 누적 탐색 40개, 이후 새 검색 필요                           |
-| `MAX_EXTRACT_SOURCES`                           | 작업당 원문 최대 5개, 재시도 포함                           |
 | `JOB_TIMEOUT_SECONDS`                           | 전체 작업 90초                                              |
 | `REQUEST_TIMEOUT_SECONDS`                       | 외부 요청 20초                                              |
 | `EXTERNAL_RETRIES`                              | 외부 요청 재시도 최대 1회                                   |
@@ -107,8 +122,14 @@ flowchart LR
 | `SESSION_SIGNING_KEY`                           | 배포 필수, 32자 이상 무작위 비밀값. 모든 인스턴스에 동일 값 |
 | `BACKEND_HOST`, `BACKEND_PORT`, `FRONTEND_PORT` | `127.0.0.1`, `8018`, `5178`                                 |
 
-SDK tracing은 코드에서 비활성화합니다. 모델 응답 저장도 `store=False`입니다. 검색어·원문은 기능 수행에 필요한 OpenAI/Tavily 요청으로 전송됩니다. 추적 기능이 꺼져 있어도 두 공급자의 데이터 정책은 각각 적용됩니다.
+SDK tracing은 코드에서 비활성화합니다. 모델 응답 저장도 `store=False`입니다. 검색어·원문은 기능 수행에 필요한 OpenAI 요청으로 전송됩니다. 추적 기능이 꺼져 있어도 OpenAI의 데이터 정책은 적용됩니다.
 
 ## Git 규칙
 
 `main`은 검증된 통합 브랜치입니다. 작업은 `feat/<kebab-case>`, `fix/<kebab-case>`, `docs/<kebab-case>`, `test/<kebab-case>`에서 진행하고 검증 후 fast-forward로 통합합니다. 커밋 형식과 제품 불변 조건은 [AGENTS.md](AGENTS.md)에 있습니다. 원격 저장소 연결·push·실제 배포는 수행하지 않았습니다.
+
+검색은 Responses API `web_search`로 통일합니다. 각 요청은 `max_tool_calls=1`이며 재시도도 검색 예산에 포함합니다. 출처 URL은 도구의 sources/인용 annotation에서만 등록합니다. 페이지 요약은 AI 생성 요약으로 표시하며 원문 발췌가 아닙니다. 여러 URL이 함께 인용된 문단은 특정 페이지의 근거로 사용하지 않습니다. `OPENAI_MODEL`은 web_search 지원 모델이어야 합니다.
+
+실패 진단: SSE의 `part_error.code`와 서버 로그의 `request_failed request_id=... part=... code=...`를 확인하세요. 검색 도구의 실제 예외를 로컬에서 확인하려면 `search.py`의 `sdk_tools()` 안 `except Exception as error`에 중단점을 두고 `error`를 확인합니다. 공급자 오류 원문은 로그나 브라우저로 전송하지 않습니다.
+
+출처별 DEBUG 로그와 근거 거부 조건, 요청 처리 흐름은 [검색 디버깅 안내](docs/DEBUGGING.md)를 참고하세요. Python 디버거 실행 시 자동 활성화되며 일반 실행에서는 `.env`의 `DEBUG_DIAGNOSTICS=true`로 켤 수 있습니다.

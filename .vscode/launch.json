@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Rabbit Hole: Backend",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "rabbit_hole",
+      "python": "${workspaceFolder}/src/backend/.venv/bin/python",
+      "cwd": "${workspaceFolder}/src/backend",
+      "envFile": "${workspaceFolder}/src/backend/.env",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "subProcess": true
+    },
+    {
+      "name": "Rabbit Hole: Frontend + Chrome",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "make frontend",
+      "cwd": "${workspaceFolder}",
+      "serverReadyAction": {
+        "pattern": "Local:\\s+(https?://[^\\s]+)",
+        "uriFormat": "%s",
+        "action": "debugWithChrome",
+        "webRoot": "${workspaceFolder}/src/frontend",
+        "killOnServerStop": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Rabbit Hole: Full Stack",
+      "configurations": ["Rabbit Hole: Backend", "Rabbit Hole: Frontend + Chrome"],
+      "stopAll": true
+    }
+  ]
+}

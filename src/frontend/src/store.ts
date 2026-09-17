@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
-import type { Answer, Envelope, Flight, Graph, PageNode, Session, Source } from './types'
+import type { Answer, Clarification, Envelope, Graph, PageNode, Session, Source, PartError } from './types'
 import { deleteSession, loadSessions, saveSession } from './lib/db'
 import { layoutPages } from './lib/layout'
 import { consumeSSE } from './lib/sse'
@@ -44,7 +44,6 @@ interface State {
   stage: string
   error: string | null
   storageError: string | null
-  needsFlight: boolean
   baseline: PageNode[]
   focusId?: string
   initialize: () => Promise<void>
@@ -57,8 +56,7 @@ interface State {
   selectEdge: (index: number | null) => void
   run: (options?: {
     focusId?: string
-    retry?: 'answer' | 'relationships'
-    flight?: Flight
+    retry?: 'intent' | 'answer' | 'relationships'
     fresh?: boolean
   }) => Promise<void>
   stop: () => void
@@ -87,7 +85,6 @@ export const useStore = create<State>((set, get) => ({
   stage: '',
   error: null,
   storageError: null,
-  needsFlight: false,
   baseline: [],
   initialize: async () => {
     try {
@@ -105,7 +102,6 @@ export const useStore = create<State>((set, get) => ({
       selected: null,
       selectedEdge: null,
       input: '',
-      needsFlight: false,
       error: null,
       stage: '',
     })
@@ -119,7 +115,6 @@ export const useStore = create<State>((set, get) => ({
         selected: null,
         selectedEdge: null,
         input: '',
-        needsFlight: false,
         error: null,
         stage: '',
       })
@@ -137,7 +132,7 @@ export const useStore = create<State>((set, get) => ({
   sample: (kind) => {
     get().stop()
     commit(makeSample(kind))
-    set({ input: '', selected: null, selectedEdge: null, needsFlight: false, error: null, stage: '' })
+    set({ input: '', selected: null, selectedEdge: null, error: null, stage: '' })
   },
   select: (selected) => set({ selected, selectedEdge: null }),
   selectEdge: (selectedEdge) => set({ selectedEdge, selected: null }),
@@ -164,9 +159,12 @@ export const useStore = create<State>((set, get) => ({
         ? before.session?.query || before.input
         : before.input.trim()
     if (!query) return
+    if (before.session?.clarification && !before.session.continuation && !options.fresh) {
+      set({ error: '이어서 검색할 정보가 없습니다. 새로 조회해 주세요.' })
+      return
+    }
     const reusable = before.session?.mode === 'live' && before.session.continuation && !options.fresh
     const session = reusable ? { ...before.session! } : emptySession(query)
-    if (options.flight) session.flight = options.flight
     session.status = 'running'
     session.updatedAt = Date.now()
     const requestId = crypto.randomUUID()
@@ -178,7 +176,6 @@ export const useStore = create<State>((set, get) => ({
       lastSeq: 0,
       stage: '검색 중',
       error: null,
-      needsFlight: false,
       baseline: session.nodes,
       focusId: options.focusId,
       selectedEdge: null,
@@ -195,7 +192,6 @@ export const useStore = create<State>((set, get) => ({
           continuation: reusable ? session.continuation : undefined,
           focus_source_id: options.focusId,
           retry_part: options.retry,
-          flight: session.flight,
         }),
       })
       await consumeSSE(response, get().receive, abort.signal)
@@ -225,10 +221,12 @@ export const useStore = create<State>((set, get) => ({
         set({
           stage:
             (
-              { searching: '검색 중', reading: '자료 확인 중', relating: '관련성 정리 중' } as Record<
-                string,
-                string
-              >
+              {
+                understanding: '질문 확인 중',
+                searching: '검색 중',
+                reading: '자료 확인 중',
+                relating: '관련성 정리 중',
+              } as Record<string, string>
             )[String(event.data.stage)] || '검색 중',
         })
         break
@@ -241,6 +239,7 @@ export const useStore = create<State>((set, get) => ({
         break
       }
       case 'answer':
+        session.clarification = null
         session.answer = event.data as unknown as Answer
         session.failedParts = session.failedParts.filter((p) => p !== 'answer')
         set({ session })
@@ -261,18 +260,23 @@ export const useStore = create<State>((set, get) => ({
         set({ session })
         break
       }
-      case 'part_error':
+      case 'part_error': {
+        const failure = event.data as unknown as PartError
         session.failedParts = [...new Set([...session.failedParts, String(event.data.part)])]
-        set({ session, error: String(event.data.message) })
+        set({ session, error: failure.code ? `${failure.message} [${failure.code}]` : failure.message })
         break
+      }
       case 'clarification':
-        set({ needsFlight: true, input: session.query })
+        session.clarification = event.data as unknown as Clarification
+        session.failedParts = session.failedParts.filter((p) => p !== 'intent')
+        set({ session })
         break
       case 'checkpoint':
         session.continuation = String(event.data.continuation)
         set({ session })
         break
       case 'done':
+        if (event.data.status === 'completed') session.clarification = null
         session.status = event.data.status as Session['status']
         commit(session)
         break

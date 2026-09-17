@@ -53,7 +53,6 @@ httpx==0.28.1
     # via
     #   openai
     #   rabbit-hole-backend
-    #   tavily-python
 httpx2==2.13.0
     # via mcp
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
@@ -112,13 +111,8 @@ referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
-regex==2026.9.10
-    # via tiktoken
 requests==2.34.2
-    # via
-    #   openai-agents
-    #   tavily-python
-    #   tiktoken
+    # via openai-agents
 rpds-py==2026.6.3
     # via
     #   jsonschema
@@ -132,10 +126,6 @@ starlette==1.6.0
     #   fastapi
     #   mcp
     #   sse-starlette
-tavily-python==0.8.3
-    # via rabbit-hole-backend
-tiktoken==0.14.0
-    # via tavily-python
 tqdm==4.70.1
     # via openai
 truststore==0.10.4 ; sys_platform != 'emscripten'

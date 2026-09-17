@@ -6,6 +6,7 @@ export type Source = {
   title: string
   domain: string
   summary: string
+  content_origin?: 'search_snippet' | 'web_search_summary'
   excerpt: string
   published_at: string | null
   retrieved_at: string
@@ -25,14 +26,10 @@ export type Relation = {
 }
 export type Graph = { relations: Relation[]; clusters: { id: string; label: string; source_ids: string[] }[] }
 export type PageNode = Node<{ source: Source; related?: boolean; dimmed?: boolean }, 'page'>
-export type Flight = {
-  origin: string
-  departure: string
-  return_date: string | null
-  trip: 'one_way' | 'round_trip'
-  passengers: number
-  direct: boolean
-  baggage: 'none' | 'cabin' | 'checked'
+export type Clarification = {
+  message: string
+  questions: string[]
+  suggestions: string[]
 }
 export type Session = {
   id: string
@@ -47,9 +44,9 @@ export type Session = {
   fitted: boolean
   pinned: string[]
   continuation?: string
-  status: 'idle' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
+  status: 'idle' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled' | 'awaiting_input'
   failedParts: string[]
-  flight?: Flight
+  clarification?: Clarification | null
 }
 export type Envelope = {
   version: 1
@@ -58,4 +55,25 @@ export type Envelope = {
   seq: number
   type: string
   data: Record<string, unknown>
+}
+
+export type PartError = {
+  part: 'intent' | 'search' | 'answer' | 'relationships'
+  code?:
+    | 'timeout'
+    | 'connection_error'
+    | 'provider_auth_error'
+    | 'provider_rate_limit'
+    | 'provider_request_error'
+    | 'provider_error'
+    | 'invalid_evidence'
+    | 'invalid_output'
+    | 'turn_limit'
+    | 'search_budget_exhausted'
+    | 'invalid_tool_input'
+    | 'search_incomplete'
+    | 'search_tool_failed'
+    | 'no_sources'
+    | 'internal_error'
+  message: string
 }

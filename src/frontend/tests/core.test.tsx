@@ -64,55 +64,47 @@ it('ignores stale stream events from a previous search', () => {
 it('rejects nonexistent graph endpoints and deduplicates source events', () => {
   const session = makeSample('vector')
   useStore.setState({ session, activeRequest: 'current', lastSeq: 0 })
-  useStore
-    .getState()
-    .receive({
-      version: 1,
-      request_id: 'current',
-      job_id: 'job',
-      seq: 1,
-      type: 'sources',
-      data: { sources: session.sources },
-    })
+  useStore.getState().receive({
+    version: 1,
+    request_id: 'current',
+    job_id: 'job',
+    seq: 1,
+    type: 'sources',
+    data: { sources: session.sources },
+  })
   expect(useStore.getState().session?.sources).toHaveLength(6)
-  useStore
-    .getState()
-    .receive({
-      version: 1,
-      request_id: 'current',
-      job_id: 'job',
-      seq: 2,
-      type: 'relationships',
-      data: { clusters: [], relations: [{ ...session.graph.relations[0], target: 'does_not_exist' }] },
-    })
+  useStore.getState().receive({
+    version: 1,
+    request_id: 'current',
+    job_id: 'job',
+    seq: 2,
+    type: 'relationships',
+    data: { clusters: [], relations: [{ ...session.graph.relations[0], target: 'does_not_exist' }] },
+  })
   expect(useStore.getState().session?.graph.relations).toHaveLength(0)
 })
 it('preserves cards when relation generation fails', () => {
   const session = makeSample('vector')
   useStore.setState({ session, activeRequest: 'current' })
-  useStore
-    .getState()
-    .receive({
-      version: 1,
-      request_id: 'current',
-      job_id: 'job',
-      seq: 1,
-      type: 'part_error',
-      data: { part: 'relationships', message: 'failed' },
-    })
+  useStore.getState().receive({
+    version: 1,
+    request_id: 'current',
+    job_id: 'job',
+    seq: 1,
+    type: 'part_error',
+    data: { part: 'relationships', message: 'failed' },
+  })
   expect(useStore.getState().session?.nodes).toHaveLength(6)
 })
 it('never sends sample sources, prices or continuation into real requests', async () => {
   const sample = makeSample('flight')
   useStore.setState({ session: sample, input: 'new real query' })
-  const fetchMock = vi
-    .spyOn(globalThis, 'fetch')
-    .mockResolvedValue(
-      new Response(JSON.stringify({ detail: 'keys missing' }), {
-        status: 503,
-        headers: { 'content-type': 'application/json' },
-      }),
-    )
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    new Response(JSON.stringify({ detail: 'keys missing' }), {
+      status: 503,
+      headers: { 'content-type': 'application/json' },
+    }),
+  )
   await useStore.getState().run()
   const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
   expect(body.continuation).toBeUndefined()
@@ -124,8 +116,12 @@ it('never sends sample sources, prices or continuation into real requests', asyn
 it('restores positions and viewport from IndexedDB and deletes history', async () => {
   const sample = makeSample('vector')
   sample.viewport = { x: 345, y: -122, zoom: 0.7 }
+  sample.sources[0].content_origin = 'web_search_summary'
   await saveSession(sample)
   expect((await loadSessions()).find((s) => s.id === sample.id)?.viewport).toEqual(sample.viewport)
+  expect((await loadSessions()).find((s) => s.id === sample.id)?.sources[0].content_origin).toBe(
+    'web_search_summary',
+  )
   await deleteSession(sample.id)
   expect((await loadSessions()).find((s) => s.id === sample.id)).toBeUndefined()
 })
@@ -133,4 +129,45 @@ it('blocks unsafe link schemes', () => {
   expect(safeUrl('javascript:alert(1)')).toBeUndefined()
   expect(safeUrl('http://127.0.0.1')).toBeUndefined()
   expect(safeUrl('https://example.com/page')).toBe('https://example.com/page')
+})
+
+it('never forwards legacy topic fields when continuing a saved session', async () => {
+  const session = {
+    ...makeSample('vector'),
+    mode: 'live' as const,
+    continuation: 'signed-old-session',
+    flight: { origin: 'legacy', passengers: 1 },
+  }
+  useStore.setState({ session, input: '조건 없이 비교해 주세요' })
+  const fetchMock = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response(JSON.stringify({ detail: 'test' }), { status: 503 }))
+  try {
+    await useStore.getState().run()
+    const body = JSON.parse(fetchMock.mock.calls[0][1]?.body as string)
+    expect(body).not.toHaveProperty('flight')
+    expect(body.continuation).toBe('signed-old-session')
+    expect(body.query).toBe('조건 없이 비교해 주세요')
+  } finally {
+    fetchMock.mockRestore()
+  }
+})
+
+it('shows a diagnostic code when a search tool fails', () => {
+  useStore.setState({
+    session: { ...makeSample('vector'), mode: 'live' },
+    activeRequest: 'current',
+    lastSeq: 0,
+  })
+  useStore
+    .getState()
+    .receive({
+      version: 1,
+      request_id: 'current',
+      job_id: 'job',
+      seq: 1,
+      type: 'part_error',
+      data: { part: 'search', code: 'timeout', message: '응답 시간이 초과되었습니다.' },
+    })
+  expect(useStore.getState().error).toBe('응답 시간이 초과되었습니다. [timeout]')
 })

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -12,6 +12,7 @@ class Source(BaseModel):
     title: str
     domain: str
     summary: str
+    content_origin: Literal["search_snippet", "web_search_summary"] = "search_snippet"
     excerpt: str = ""
     published_at: str | None = None
     retrieved_at: str
@@ -76,22 +77,35 @@ class Verification(BaseModel):
     supported_claim_indices: list[int]
 
 
-class Flight(BaseModel):
-    origin: str = Field(min_length=2, max_length=100)
-    departure: date
-    return_date: date | None = None
-    trip: Literal["one_way", "round_trip"]
-    passengers: int = Field(ge=1, le=9)
-    direct: bool
-    baggage: Literal["none", "cabin", "checked"]
+class Clarification(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    questions: list[str] = Field(min_length=1, max_length=3)
+    suggestions: list[str] = Field(max_length=4)
 
     @model_validator(mode="after")
-    def dates(self):
-        if self.departure < date.today():
-            raise ValueError("출발일은 오늘 이후여야 합니다.")
-        if self.trip == "round_trip" and (not self.return_date or self.return_date < self.departure):
-            raise ValueError("왕복 귀국일을 확인하세요.")
+    def bounded_text(self):
+        if any(not text.strip() or len(text) > 500 for text in self.questions + self.suggestions):
+            raise ValueError("Clarification text must be nonempty and bounded")
         return self
+
+
+class SearchPlan(BaseModel):
+    action: Literal["search", "clarify"]
+    query: str = Field(max_length=2000)
+    clarification: Clarification | None
+
+    @model_validator(mode="after")
+    def consistent_action(self):
+        if self.action == "search" and (not self.query.strip() or self.clarification is not None):
+            raise ValueError("Search requires a query and no clarification")
+        if self.action == "clarify" and self.clarification is None:
+            raise ValueError("Clarify requires questions")
+        return self
+
+
+class ConversationTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
 
 
 class SearchRequest(BaseModel):
@@ -100,8 +114,7 @@ class SearchRequest(BaseModel):
     request_id: UUID
     continuation: str | None = Field(None, max_length=2_000_000)
     focus_source_id: str | None = Field(None, max_length=80)
-    retry_part: Literal["answer", "relationships"] | None = None
-    flight: Flight | None = None
+    retry_part: Literal["intent", "answer", "relationships"] | None = None
 
     @model_validator(mode="after")
     def nonempty(self):
@@ -118,7 +131,9 @@ class Snapshot(BaseModel):
     sources: list[Source]
     answer: Answer | None = None
     relationships: Relationships | None = None
-    flight: Flight | None = None
+    conversation: list[ConversationTurn] = Field(default_factory=list, max_length=24)
+    clarification: Clarification | None = None
+    search_query: str = ""
     issued_at: float
     mode: Literal["live"] = "live"
 

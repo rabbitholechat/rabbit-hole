@@ -8,15 +8,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=Path(__file__).parents[1] / ".env", extra="ignore")
     openai_api_key: SecretStr = SecretStr("")
-    tavily_api_key: SecretStr = SecretStr("")
+    debug_diagnostics: bool = False
     openai_model: str = "gpt-4.1-mini"
     max_search_calls: int = Field(3, ge=1, le=10)
     max_sources: int = Field(10, ge=1, le=20)
     max_session_sources: int = Field(40, ge=10, le=60)
-    max_extract_sources: int = Field(5, ge=0, le=10)
     job_timeout_seconds: float = Field(90, ge=1, le=300)
     request_timeout_seconds: float = Field(20, ge=1, le=60)
     external_retries: int = Field(1, ge=0, le=2)
+    max_context_turns: int = Field(12, ge=4, le=24)
     max_model_turns: int = Field(8, ge=1, le=20)
     max_output_tokens: int = Field(4000, ge=256, le=16000)
     max_request_bytes: int = Field(2_100_000, ge=10000, le=4_000_000)
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     @property
     def configured(self) -> bool:
-        return bool(self.openai_api_key.get_secret_value() and self.tavily_api_key.get_secret_value())
+        return bool(self.openai_api_key.get_secret_value())
 
 
 @lru_cache

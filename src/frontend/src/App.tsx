@@ -32,7 +32,7 @@ import { RabbitIcon } from './components/RabbitIcon'
 import { PageCard } from './components/PageCard'
 import { RelationEdge } from './components/RelationEdge'
 import { AnswerPanel } from './components/AnswerPanel'
-import { FlightForm } from './components/FlightForm'
+import { ClarificationPanel } from './components/ClarificationPanel'
 import { Button } from './components/ui/button'
 import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
@@ -309,7 +309,11 @@ function Workspace() {
                 <small>{selectedSource.domain}</small>
                 <h2>{selectedSource.title}</h2>
                 <span className="tag">
-                  {selectedSource.read_status === 'read' ? '원문 확인 기반' : '검색 요약 기반 · 원문 미확인'}
+                  {selectedSource.content_origin === 'web_search_summary'
+                    ? 'AI 검색 요약 · 원문 미확인'
+                    : selectedSource.read_status === 'read'
+                      ? '원문 확인 기반'
+                      : '검색 요약 기반 · 원문 미확인'}
                 </span>
                 <blockquote>
                   {selectedSource.excerpt || selectedSource.summary || '확보한 발췌가 없습니다.'}
@@ -358,7 +362,14 @@ function Workspace() {
                         {session?.sources.find((s) => s.id === e.source_id)?.domain}
                       </button>
                       <blockquote>{e.quote}</blockquote>
-                      <small>{e.basis === 'excerpt' ? '원문 확인 기반' : '검색 요약 기반'}</small>
+                      <small>
+                        {session?.sources.find((s) => s.id === e.source_id)?.content_origin ===
+                        'web_search_summary'
+                          ? 'AI 검색 요약 · 원문 미확인'
+                          : e.basis === 'excerpt'
+                            ? '원문 확인 기반'
+                            : '검색 요약 기반'}
+                      </small>
                     </div>
                   ))}
                   <p className="timestamp">연결은 내용의 관련성이며 사실의 신뢰도를 뜻하지 않습니다.</p>
@@ -369,7 +380,7 @@ function Workspace() {
         </section>
       )}
       <div className="composer-area">
-        {state.needsFlight && <FlightForm />}
+        {!busy && session?.clarification && <ClarificationPanel clarification={session.clarification} />}
         {(state.error || state.storageError) && (
           <div className="error-banner panel" role="alert">
             <span>{state.error || state.storageError}</span>
@@ -402,6 +413,7 @@ function Workspace() {
               {
                 {
                   completed: '탐색을 이어가 보세요',
+                  awaiting_input: '추가 답변을 기다리고 있어요',
                   partial: '부분 완료 · 확보한 결과 유지',
                   failed: '검색을 완료하지 못했어요',
                   cancelled: '검색 중지 · 확보한 결과 유지',
@@ -415,16 +427,16 @@ function Workspace() {
               새로 조회
             </button>
             {session.failedParts
-              .filter((p) => p === 'answer' || p === 'relationships')
+              .filter((p) => p === 'intent' || p === 'answer' || p === 'relationships')
               .map((part) => (
                 <Button
                   key={part}
                   size="sm"
                   variant="outline"
                   disabled={!session.continuation}
-                  onClick={() => void state.run({ retry: part as 'answer' | 'relationships' })}
+                  onClick={() => void state.run({ retry: part as 'intent' | 'answer' | 'relationships' })}
                 >
-                  {part === 'answer' ? '답변' : '관계'} 재시도
+                  {part === 'intent' ? '질문 확인' : part === 'answer' ? '답변' : '관계'} 재시도
                 </Button>
               ))}
           </div>
@@ -435,7 +447,13 @@ function Workspace() {
             ref={inputRef}
             rows={1}
             aria-label="검색 질문"
-            placeholder={session ? '더 궁금한 내용을 이어서 물어보세요' : '무엇이 궁금한가요?'}
+            placeholder={
+              session?.clarification
+                ? '추가 질문에 답변해 주세요'
+                : session
+                  ? '더 궁금한 내용을 이어서 물어보세요'
+                  : '무엇이 궁금한가요?'
+            }
             value={state.input}
             maxLength={2000}
             onChange={(e) => state.setInput(e.target.value)}

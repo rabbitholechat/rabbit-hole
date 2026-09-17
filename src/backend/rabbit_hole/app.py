@@ -1,8 +1,8 @@
 import asyncio
 import contextlib
 import json
+import logging
 import os
-import re
 import secrets
 import time
 from collections import defaultdict, deque
@@ -12,11 +12,15 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .config import Settings, get_settings
+from .diagnostics import enabled as diagnostics_enabled
+from .errors import MESSAGES, StageFailure, error_code, error_location
 from .middleware import BodyLimitMiddleware
-from .models import SearchRequest, Snapshot
+from .models import ConversationTurn, SearchRequest, Snapshot
 from .search import AgentService, Budget
 from .security import SnapshotSigner
 from .sources import Registry
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -110,10 +114,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
             raise HTTPException(422, "등록된 출처를 선택하세요.")
         if snapshot and len(snapshot.sources) >= settings.max_session_sources and not body.retry_part:
             raise HTTPException(409, "이 지도의 탐색 한도에 도달했습니다. 새 검색으로 이어가세요.")
-        if snapshot and not body.flight:
-            body.flight = snapshot.flight
-        needs_flight = bool(re.search(r"항공|비행기|flight|airfare", body.query, re.I)) and not body.flight
-        if not needs_flight and not settings.configured:
+        if not settings.configured:
             raise HTTPException(
                 503,
                 "검색 API가 설정되지 않았습니다. 백엔드 .env의 키를 설정하세요. 디자인 예시는 별도로 열 수 있습니다.",
@@ -122,9 +123,19 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
         job = store.create(request.client.host if request.client else "unknown")
         queue: asyncio.Queue = asyncio.Queue()
         seq = 0
-        registry = Registry(snapshot.sources if snapshot else [])
+        registry = Registry(
+            snapshot.sources if snapshot else [],
+            debug=diagnostics_enabled(settings.debug_diagnostics),
+            request_id=str(body.request_id),
+        )
         original_query = snapshot.query if snapshot else body.query
         budget = Budget(settings, cancelled=job.cancel)
+        conversation = list(snapshot.conversation) if snapshot else []
+        if not body.retry_part:
+            conversation.append(ConversationTurn(role="user", content=body.query))
+        conversation = conversation[-settings.max_context_turns :]
+        clarification = snapshot.clarification if snapshot else None
+        search_query = snapshot.search_query if snapshot else ""
 
         async def emit(kind: str, data: dict):
             nonlocal seq
@@ -145,59 +156,78 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                     sources=list(registry.sources.values()),
                     answer=snapshot.answer if snapshot else None,
                     relationships=snapshot.relationships if snapshot else None,
-                    flight=body.flight,
+                    conversation=conversation,
+                    clarification=clarification,
+                    search_query=search_query,
                     issued_at=time.time(),
                 )
                 await emit("checkpoint", {"continuation": signer.sign(checkpoint)})
 
         async def produce():
+            nonlocal clarification, search_query, conversation
             failed = []
             answer = snapshot.answer if snapshot else None
             graph = snapshot.relationships if snapshot else None
             service = None
             active_part = "search"
+
+            async def report_failure(part: str, error: Exception):
+                code = error_code(error)
+                failed.append(part)
+                logger.warning(
+                    "request_failed request_id=%s part=%s code=%s exception=%s location=%s",
+                    body.request_id,
+                    part,
+                    code,
+                    type(error).__name__,
+                    error_location(error),
+                )
+                await emit("part_error", {"part": part, "code": code, "message": MESSAGES[code]})
+
             try:
                 await emit("started", {"access_token": job.token, "status": "running"})
-                if needs_flight:
-                    await emit(
-                        "clarification",
-                        {
-                            "kind": "flight",
-                            "message": "같은 조건으로 비교할 수 있도록 여행 조건을 알려주세요.",
-                        },
-                    )
-                    await emit("done", {"status": "completed", "failed_parts": []})
-                    return
                 if snapshot:
                     await emit("sources", {"sources": [s.model_dump() for s in registry.sources.values()]})
                 service = service_factory(settings, registry, budget, emit)
                 service.previous_answer = answer
+                service.conversation = conversation
+                service.search_query = search_query
                 async with asyncio.timeout(settings.job_timeout_seconds):
+                    if body.retry_part in {None, "intent"}:
+                        active_part = "intent"
+                        try:
+                            plan = await service.prepare(body, original_query)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as error:
+                            await report_failure("intent", error)
+                            return
+                        clarification = plan.clarification
+                        if plan.action == "clarify":
+                            conversation.append(
+                                ConversationTurn(role="assistant", content=clarification.model_dump_json())
+                            )
+                            conversation = conversation[-settings.max_context_turns :]
+                            await emit("clarification", clarification.model_dump())
+                            return
+                        search_query = plan.query
+                        service.search_query = search_query
+                    else:
+                        clarification = None
                     if body.retry_part != "relationships":
                         active_part = "answer"
                         try:
-                            answer = await service.answer(body, original_query, search=not body.retry_part)
+                            answer = await service.answer(
+                                body, original_query, search=body.retry_part in {None, "intent"}
+                            )
                             await emit("answer", answer.model_dump())
                         except asyncio.CancelledError:
                             raise
-                        except Exception:
-                            failed.append("answer")
-                            await emit(
-                                "part_error",
-                                {
-                                    "part": "answer",
-                                    "message": "답변을 확인하지 못했습니다. 확보한 페이지는 계속 탐색할 수 있습니다.",
-                                },
-                            )
-                    if not registry.sources:
-                        failed.append("search")
-                        await emit(
-                            "part_error",
-                            {
-                                "part": "search",
-                                "message": "조건에 맞는 공개 페이지를 확보하지 못했습니다. 질문을 바꿔 다시 검색하세요.",
-                            },
-                        )
+                        except Exception as error:
+                            part = error.part if isinstance(error, StageFailure) else "answer"
+                            await report_failure(part, error)
+                    if not registry.sources and not failed:
+                        await report_failure("search", StageFailure("search", "no_sources"))
                     if body.retry_part != "answer" and registry.sources:
                         active_part = "relationships"
                         try:
@@ -205,45 +235,28 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                             await emit("relationships", graph.model_dump())
                         except asyncio.CancelledError:
                             raise
-                        except Exception:
-                            failed.append("relationships")
-                            await emit(
-                                "part_error",
-                                {
-                                    "part": "relationships",
-                                    "message": "관계 정리를 완료하지 못했습니다. 페이지 카드는 보존했습니다.",
-                                },
-                            )
-            except TimeoutError:
-                failed.append(active_part)
-                await emit(
-                    "part_error",
-                    {
-                        "part": active_part,
-                        "message": "작업 시간이 초과되었습니다. 확보한 결과는 보존했습니다.",
-                    },
-                )
+                        except Exception as error:
+                            await report_failure("relationships", error)
+            except TimeoutError as error:
+                await report_failure(active_part, error)
                 if active_part == "answer" and not body.retry_part and registry.sources:
-                    failed.append("relationships")
-                    await emit(
-                        "part_error",
-                        {
-                            "part": "relationships",
-                            "message": "시간 제한으로 관계 정리를 시작하지 못했습니다. 이 부분만 재시도할 수 있습니다.",
-                        },
-                    )
+                    await report_failure("relationships", error)
             except asyncio.CancelledError:
                 job.cancel.set()
                 raise
+            except Exception as error:
+                await report_failure(active_part, error)
             finally:
                 try:
-                    if not job.cancel.is_set() and not needs_flight:
+                    if not job.cancel.is_set():
                         state = Snapshot(
                             query=original_query,
                             sources=list(registry.sources.values()),
                             answer=answer,
                             relationships=graph,
-                            flight=body.flight,
+                            conversation=conversation,
+                            clarification=clarification,
+                            search_query=search_query,
                             issued_at=time.time(),
                         )
                         await emit("checkpoint", {"continuation": signer.sign(state)})
@@ -252,6 +265,8 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                             {
                                 "status": ("partial" if registry.sources else "failed")
                                 if failed
+                                else "awaiting_input"
+                                if clarification
                                 else "completed",
                                 "failed_parts": list(dict.fromkeys(failed)),
                             },
