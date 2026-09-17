@@ -2066,3 +2066,87 @@ svg {
   border-color: color-mix(in srgb, var(--edge-color, #91a69d) 32%, white);
   background: color-mix(in srgb, var(--edge-color, #91a69d) 7%, white);
 }
+
+/* One header row keeps the title, counts and navigation beside the brand. */
+.canvas-topbar {
+  position: absolute;
+  inset: 35px var(--right-space) auto 35px;
+  z-index: 14;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  pointer-events: none;
+}
+.canvas-topbar .sidebar-header {
+  position: static;
+  width: 205px;
+  pointer-events: auto;
+}
+.sidebar-closed .canvas-topbar .sidebar-header { width: 160px; }
+.sidebar-closed .canvas-topbar .sidebar-collapse { display: none; }
+.canvas-topbar .canvas-heading {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 3px;
+  height: 36px;
+  min-width: 0;
+  max-height: none;
+  overflow: hidden;
+}
+.canvas-topbar .canvas-heading > div { min-width: 0; max-width: 100%; }
+.canvas-topbar .canvas-heading h1 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.canvas-topbar .canvas-heading > span { white-space: nowrap; line-height: 1.3; }
+.canvas-topbar .node-navigation {
+  position: static;
+  grid-column: 3;
+  transform: none;
+  pointer-events: auto;
+}
+.composer-area .canvas-tools { position: fixed; }
+.is-empty .composer-area { right: var(--right-space); }
+@media (max-width: 1100px) {
+  .workspace .composer-area {
+    right: var(--right-space);
+    width: auto;
+    max-width: none;
+  }
+  .composer-area .canvas-tools {
+    position: static;
+    display: flex;
+    flex-direction: row;
+    width: fit-content;
+    margin: 0 0 10px auto;
+    padding: 3px 5px;
+    gap: 3px;
+  }
+  .composer-area .canvas-tools i { width: 1px; height: 18px; margin: 0 3px; }
+}
+@media (max-width: 700px) {
+  .canvas-topbar { inset: 22px 14px auto; gap: 12px; }
+  .canvas-topbar .sidebar-header,
+  .sidebar-closed .canvas-topbar .sidebar-header { width: auto; }
+  .has-session.sidebar-closed .canvas-topbar .brand span { display: none; }
+  .canvas-topbar .canvas-heading h1 { font-size: 13px; }
+  .canvas-topbar .canvas-heading > span { font-size: 10px; }
+  .canvas-topbar .node-navigation { gap: 2px; padding: 3px; }
+  .canvas-topbar .node-navigation button { width: 26px; height: 28px; }
+  .canvas-topbar .node-navigation span { min-width: 30px; font-size: 11px; }
+  .sidebar-open .canvas-topbar {
+    top: 31px;
+    left: 31px;
+    grid-template-columns: 216px minmax(140px, 1fr) auto;
+    column-gap: 29px;
+  }
+  .sidebar-open .canvas-topbar .sidebar-header { width: 216px; }
+}

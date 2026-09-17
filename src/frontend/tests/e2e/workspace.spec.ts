@@ -554,11 +554,21 @@ test('partial error keeps response text and retry uses the prior checkpoint', as
 
 test('composer and canvas tools stay separate while resizing with sidebar open or closed', async ({
   page,
-}) => {
+}, testInfo) => {
   await installStream(page)
   await page.goto('/')
+  for (const width of [320, 390, 768, 1024]) {
+    await page.setViewportSize({ width, height: 844 })
+    await expect.poll(() => page.evaluate(() => {
+      const input = document.querySelector('.composer')!.getBoundingClientRect()
+      const tools = document.querySelector('.canvas-tools')!.getBoundingClientRect()
+      return Math.abs(input.right - (innerWidth - (innerWidth <= 700 ? 14 : 20))) < 2 &&
+        tools.bottom + 8 <= input.top && tools.right <= input.right + 1
+    })).toBe(true)
+    if (width === 390) await page.screenshot({ path: testInfo.outputPath('responsive-start.png') })
+  }
   await expect(page.getByText('질문에서 아이디어로, 대화에서 다음 단계로.')).toHaveCount(0)
-  await page.getByRole('textbox', { name: '메시지 입력' }).fill('레이아웃 확인')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('레이아웃 확인을 위한 길고 자연스러운 대화 제목입니다')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.response-card')).toBeVisible()
   await finishStream(page)
@@ -577,23 +587,52 @@ test('composer and canvas tools stay separate while resizing with sidebar open o
               input.right <= innerWidth &&
               tools.left >= 0 &&
               tools.right <= innerWidth &&
-              (input.bottom + 8 <= tools.top ||
+              (tools.bottom + 8 <= input.top || input.bottom + 8 <= tools.top ||
                 input.right + 8 <= tools.left ||
                 tools.right + 8 <= input.left)
             )
           }),
         )
         .toBe(true)
-      if (width > 700) {
+      if (width <= 1100) {
+        await expect.poll(() => page.evaluate(() => {
+          const input = document.querySelector('.composer')!.getBoundingClientRect()
+          const tools = document.querySelector('.canvas-tools')!.getBoundingClientRect()
+          return Math.abs(input.right - (innerWidth - (innerWidth <= 700 ? 14 : 20))) < 2 &&
+            tools.bottom + 8 <= input.top
+        })).toBe(true)
+      }
+      {
         await expect.poll(() => page.evaluate(() => {
           const brand = document.querySelector('.sidebar-header .brand')!.getBoundingClientRect()
           const heading = document.querySelector('.canvas-heading')!.getBoundingClientRect()
           const navigation = document.querySelector('.node-navigation')!.getBoundingClientRect()
+          const title = document.querySelector('.canvas-heading h1')!.getBoundingClientRect()
+          const counts = document.querySelector('.canvas-heading > span')!.getBoundingClientRect()
+          const sidebarOpen = document.querySelector('.workspace')!.classList.contains('sidebar-open')
+          const sidebar = document.querySelector('.history-panel')!.getBoundingClientRect()
+          const header = document.querySelector('.sidebar-header')!.getBoundingClientRect()
           const center = (rect: DOMRect) => rect.top + rect.height / 2
           return Math.abs(center(brand) - center(heading)) < 1 &&
             Math.abs(center(brand) - center(navigation)) < 1 &&
-            heading.right + 12 <= navigation.left && brand.right <= heading.left
+            heading.right + 11 <= navigation.left && brand.right <= heading.left &&
+            counts.top >= title.bottom && counts.right <= heading.right + 1 &&
+            (sidebarOpen
+              ? header.left >= sidebar.left + 12 && header.right <= sidebar.right &&
+                heading.left >= sidebar.right + 12
+              : navigation.right <= innerWidth - 13)
         })).toBe(true)
+      }
+      if (open && [390, 700].includes(width)) {
+        await expect(page.locator('.history-panel')).toHaveCSS('opacity', '1')
+        await expect(page.locator('.sidebar-header .brand span')).toBeVisible()
+        await page.mouse.move(0, 400)
+        await page.screenshot({ path: testInfo.outputPath(`responsive-sidebar-${width}.png`) })
+      }
+      if (!open && [390, 768, 1440].includes(width)) {
+        await expect(page.locator('.history-panel')).toHaveCSS('visibility', 'hidden')
+        await page.mouse.move(0, 400)
+        await page.screenshot({ path: testInfo.outputPath(`responsive-chat-${width}.png`) })
       }
     }
   }

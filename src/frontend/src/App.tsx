@@ -379,37 +379,7 @@ function Workspace() {
         <ServerErrorPage retrying={state.retryingServer || opening} onRetry={() => void (state.failedSessionId ? state.open(state.failedSessionId) : state.initialize())} />
       ) : (
       <>
-      {!opening && Boolean(session?.nodes.length) && (
-        <nav className="node-navigation panel" aria-label="노드 탐색">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="이전 노드"
-            data-tooltip="이전 노드 · A"
-            data-tooltip-position="bottom"
-            aria-keyshortcuts="a"
-            disabled={navigationIndex === 0}
-            onClick={() => navigateNode(-1)}
-          >
-            <ArrowLeft size={16} />
-          </Button>
-          <span aria-live="polite" aria-atomic="true">
-            {navigationIndex + 1}/{session!.nodes.length}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="다음 노드"
-            data-tooltip="다음 노드 · D"
-            data-tooltip-position="bottom"
-            aria-keyshortcuts="d"
-            disabled={navigationIndex >= session!.nodes.length - 1}
-            onClick={() => navigateNode(1)}
-          >
-            <ArrowRight size={16} />
-          </Button>
-        </nav>
-      )}
+      <div className="canvas-topbar">
       <header className="sidebar-header">
         <button
           className="brand"
@@ -447,6 +417,51 @@ function Workspace() {
           <PanelLeftClose size={18} />
         </Button>
       </header>
+      {!opening && session && (
+        <div className="canvas-heading">
+          <div>
+            <h1>{(session.title || session.query).split('\n')[0]}</h1>
+          </div>
+          <span>
+            {session.protocol === 2
+              ? `${session.nodes.filter((n) => n.type === 'response').length} 응답 · ${session.nodes.filter((n) => n.type === 'information').length} 정보 · ${session.nodes.filter((n) => n.type === 'source').length} 출처`
+              : `${session.sources.length}개의 페이지`}
+          </span>
+          {session.mode === 'sample' && <span className="sample-badge">이전 가상 데이터 기록</span>}
+        </div>
+      )}
+      {!opening && Boolean(session?.nodes.length) && (
+        <nav className="node-navigation panel" aria-label="노드 탐색">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="이전 노드"
+            data-tooltip="이전 노드 · A"
+            data-tooltip-position="bottom"
+            aria-keyshortcuts="a"
+            disabled={navigationIndex === 0}
+            onClick={() => navigateNode(-1)}
+          >
+            <ArrowLeft size={16} />
+          </Button>
+          <span aria-live="polite" aria-atomic="true">
+            {navigationIndex + 1}/{session!.nodes.length}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="다음 노드"
+            data-tooltip="다음 노드 · D"
+            data-tooltip-position="bottom"
+            aria-keyshortcuts="d"
+            disabled={navigationIndex >= session!.nodes.length - 1}
+            onClick={() => navigateNode(1)}
+          >
+            <ArrowRight size={16} />
+          </Button>
+        </nav>
+      )}
+      </div>
       <aside
         className="history-panel panel"
         aria-label="대화 기록"
@@ -493,19 +508,6 @@ function Workspace() {
         </div>
       </aside>
       {opening && <HistoryLoading canvas />}
-      {!opening && session && (
-        <div className="canvas-heading">
-          <div>
-            <h1>{(session.title || session.query).split('\n')[0]}</h1>
-          </div>
-          <span>
-            {session.protocol === 2
-              ? `${session.nodes.filter((n) => n.type === 'response').length}개의 응답 · ${session.nodes.filter((n) => n.type === 'information').length}개 정보 · ${session.nodes.filter((n) => n.type === 'source').length}개 출처`
-              : `${session.sources.length}개의 페이지`}
-          </span>
-          {session.mode === 'sample' && <span className="sample-badge">이전 가상 데이터 기록</span>}
-        </div>
-      )}
       {!opening && session?.protocol !== 2 && <AnswerPanel />}
       {(selectedSource || selectedRelation) && (
         <section className="detail-panel panel" aria-label={selectedSource ? '출처 상세' : '관계 상세'}>
@@ -631,6 +633,45 @@ function Workspace() {
             <h1>호기심이 이어지는 곳</h1>
           </section>
         )}
+      {!opening && <nav className="canvas-tools panel" aria-label="캔버스 도구">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="화면 맞춤"
+          data-tooltip="화면 맞춤 · Ctrl/⌘+0"
+          aria-keyshortcuts="Control+0 Meta+0"
+          onClick={() => fit()}
+        >
+          <Maximize />
+        </Button>
+        <i />
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="축소"
+          data-tooltip="축소 · S · Ctrl/⌘+− · Ctrl+휠 아래"
+          aria-keyshortcuts="s Control+- Meta+-"
+          onClick={() => void flow.zoomOut({ duration: 150 })}
+        >
+          <Minus />
+        </Button>
+        <span
+          aria-label="현재 배율"
+          data-tooltip="휠: 상하 · Shift+휠: 좌우 · 트랙패드: 자유 이동 · Ctrl+휠: 확대·축소"
+        >
+          {Math.round(viewport.zoom * 100)}%
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="확대"
+          data-tooltip="확대 · W · Ctrl/⌘++ · Ctrl+휠 위"
+          aria-keyshortcuts="w Control++ Meta++"
+          onClick={() => void flow.zoomIn({ duration: 150 })}
+        >
+          <Plus />
+        </Button>
+      </nav>}
         <form className={`composer panel ${state.replyTo ? 'has-reply' : ''}`} onSubmit={submit}>
           {state.replyTo && (
             <div className="reply-slot">
@@ -713,45 +754,7 @@ function Workspace() {
           )}
         </div>
       ) : null}
-      {!opening && <nav className="canvas-tools panel" aria-label="캔버스 도구">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="화면 맞춤"
-          data-tooltip="화면 맞춤 · Ctrl/⌘+0"
-          aria-keyshortcuts="Control+0 Meta+0"
-          onClick={() => fit()}
-        >
-          <Maximize />
-        </Button>
-        <i />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="축소"
-          data-tooltip="축소 · S · Ctrl/⌘+− · Ctrl+휠 아래"
-          aria-keyshortcuts="s Control+- Meta+-"
-          onClick={() => void flow.zoomOut({ duration: 150 })}
-        >
-          <Minus />
-        </Button>
-        <span
-          aria-label="현재 배율"
-          data-tooltip="휠: 상하 · Shift+휠: 좌우 · 트랙패드: 자유 이동 · Ctrl+휠: 확대·축소"
-        >
-          {Math.round(viewport.zoom * 100)}%
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="확대"
-          data-tooltip="확대 · W · Ctrl/⌘++ · Ctrl+휠 위"
-          aria-keyshortcuts="w Control++ Meta++"
-          onClick={() => void flow.zoomIn({ duration: 150 })}
-        >
-          <Plus />
-        </Button>
-      </nav>}
+
       </>
       )}
     </main>
