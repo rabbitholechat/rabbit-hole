@@ -1,3 +1,5 @@
+import { TooltipLayer } from './components/TooltipLayer'
+import { nodeLabel } from './lib/nodeActions'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Background,
@@ -187,10 +189,9 @@ function Workspace() {
     focusNode(next)
   }
   useEffect(() => {
-    if (!state.origin) return
-    const node = useStore.getState().session?.nodes.find((n) => n.id === state.origin!.responseId)
+    const node = useStore.getState().session?.nodes.find((n) => n.id === state.navigation?.id)
     if (node) focusNode(node)
-  }, [state.origin])
+  }, [state.navigation])
   navigateRef.current = navigateNode
   fitRef.current = fit
   useEffect(() => {
@@ -255,11 +256,12 @@ function Workspace() {
         source: edge.source,
         target: edge.target,
         type: 'content',
-        label: { has_extract: '정보 추출', consulted: '조회', cites: '출처 표기' }[edge.kind],
+        label: { has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고' }[edge.kind],
         ariaLabel: {
           has_extract: '응답에서 정보 추출',
           consulted: '응답에서 자료 조회',
           cites: '원문에 출처 표기',
+          uses_context: '새 응답에서 선택한 노드를 맥락으로 참고',
         }[edge.kind],
         markerEnd: { type: MarkerType.ArrowClosed, color: '#91a69d', width: 14, height: 14 },
         style: {
@@ -631,8 +633,7 @@ function Workspace() {
                   <strong>이어서 질문하기</strong>
                   <span>
                     {
-                      session?.nodes.filter((n) => n.type === 'response').find((n) => n.id === state.replyTo)
-                        ?.data.prompt
+                      nodeLabel(session ?? null, state.replyTo)
                     }
                   </span>
                 </div>
@@ -761,6 +762,7 @@ export default function App() {
   return (
     <ReactFlowProvider>
       <Workspace />
+      <TooltipLayer />
     </ReactFlowProvider>
   )
 }

@@ -1,6 +1,8 @@
+import { previousNodes } from '../src/components/PreviousNodeButton'
 import { beforeEach, expect, it, vi } from 'vitest'
 import {
   attachSources,
+  deduplicateSources,
   attachInformation,
   hashText,
   markdownLinks,
@@ -195,4 +197,82 @@ it('switching records cancels structuring and late results cannot resurrect dele
   await pending
   expect(useStore.getState().session).toBeNull()
   expect(useStore.getState().history).toHaveLength(0)
+})
+
+it('same page variants reuse one card across responses while real query values remain distinct', () => {
+  const initial = session()
+  const first = initial.nodes[0] as ResponseNode
+  const a = first.data.toolSources![0]
+  first.data.toolSources = [a, { ...a, id: 'alias_a', url: `${a.url}?utm_source=test#part`, access: 'page_read' },
+    { ...a, id: 'different', url: `${a.url}?id=2&lang=ko` },
+    { ...a, id: 'same_query', url: `${a.url}?lang=ko&id=2&utm_source=chatgpt` }]
+  let next = attachSources(initial, first.id)
+  expect(next.nodes.filter((n) => n.type === 'source')).toHaveLength(2)
+  next.nodes[1].position = { x: 3333, y: 4444 }
+  const followup: ResponseNode = { ...structuredClone(first), id: 'response_next', data: {
+    ...first.data, parentId: first.id, toolSources: [{ ...a, id: 'alias_b', url: `${a.url}?gclid=abc&srsltid=xyz` }],
+  } }
+  next = attachSources({ ...next, nodes: [...next.nodes, followup] }, followup.id)
+  expect(next.nodes.filter((n) => n.type === 'source')).toHaveLength(2)
+  expect(next.nodes[1].position).toEqual({ x: 3333, y: 4444 })
+  const entity = next.contentGraph!.entities[a.id]
+  expect(entity.type === 'source' && entity.source.access).toBe('page_read')
+  expect(entity.type === 'source' && entity.observations).toHaveLength(2)
+  expect(previousNodes(next, followup.id).map((n) => n.id)).toEqual([first.id])
+  expect(previousNodes(next, a.id).map((n) => n.id)).toEqual([first.id, followup.id])
+  expect(previousNodes(next, first.id)).toEqual([])
+})
+
+it('saved duplicate cards merge observations and incoming edges without moving the survivor', async () => {
+  const next = attachInformation(attachSources(session(), response.id), response.id, await result())
+  const id = response.data.toolSources![0].id
+  const source = next.contentGraph!.entities[id]
+  if (source.type !== 'source') throw Error('fixture')
+  const alias = 'duplicate_source'
+  next.contentGraph!.entities[alias] = { ...source, id: alias, source: { ...source.source, id: alias, url: source.source.url + '?utm_campaign=test' } }
+  next.nodes.push({ id: alias, type: 'source', position: { x: 9999, y: 8888 }, data: { entityId: alias } })
+  next.contentGraph!.relations.push({ id: 'old_edge', source: response.id, target: alias, kind: 'consulted', responseId: response.id, spans: [] })
+  next.pinned.push(alias)
+  const merged = deduplicateSources(next)
+  expect(merged.nodes).toEqual(next.nodes.filter((n) => n.id !== alias))
+  expect(merged.pinned).toContain(id)
+  expect(merged.contentGraph!.entities[alias]).toBeUndefined()
+  expect(merged.contentGraph!.relations.filter((e) => e.source === response.id && e.target === id)).toHaveLength(1)
+  expect(merged.contentGraph!.relations.some((e) => e.target === alias)).toBe(false)
+  expect(deduplicateSources(merged)).toEqual(merged)
+  await saveSession(next)
+  const fetch = vi.spyOn(globalThis, 'fetch')
+  await useStore.getState().initialize()
+  useStore.getState().open(next.id)
+  expect(useStore.getState().session!.nodes.some((n) => n.id === alias)).toBe(false)
+  fetch.mock.calls.forEach(() => { throw Error('restore must not call API') })
+})
+
+it('selected information is sent as context and linked without replacing the question', async () => {
+  const next = attachInformation(attachSources(session(), response.id), response.id, await result())
+  next.continuation = 'signed'
+  useStore.setState({ session: next, history: [next] })
+  const info = next.nodes.find((n) => n.type === 'information')!
+  useStore.getState().toggleNode(info.id)
+  expect(useStore.getState().session!.nodes.find((n) => n.id === info.id)?.height).toBe(130)
+  useStore.getState().toggleNode(info.id)
+  expect(useStore.getState().session!.nodes.find((n) => n.id === info.id)?.height).toBe(280)
+  useStore.getState().reply(info.id)
+  useStore.getState().setInput('자세히 설명해줘')
+  let resolve!: (response: Response) => void
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise((done) => { resolve = done }))
+  const pending = useStore.getState().run()
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+  const payload = JSON.parse(fetch.mock.calls[0][1]!.body as string)
+  expect(payload.query).toBe('자세히 설명해줘')
+  expect(payload.node_context.text).toBe(excerpt)
+  expect(payload.continuation).toBe('signed')
+  const id = `response_${payload.request_id}`
+  useStore.getState().receive({ version: 2, request_id: payload.request_id, job_id: 'j', seq: 1,
+    type: 'response_started', data: { id } })
+  expect(useStore.getState().session!.contentGraph!.relations).toContainEqual({
+    id: `uses_context:${id}:${info.id}`, source: id, target: info.id, kind: 'uses_context', responseId: id, spans: [],
+  })
+  resolve(new Response(''))
+  await pending
 })

@@ -194,6 +194,16 @@
     "schemas": {
       "AgentRequest": {
         "properties": {
+          "node_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NodeContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "query": {
             "type": "string",
             "maxLength": 2000,
@@ -272,6 +282,44 @@
           "excerpt"
         ],
         "title": "InformationExtract"
+      },
+      "NodeContext": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Node Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "information",
+              "source"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Title"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 12000,
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "node_id",
+          "kind",
+          "title",
+          "text"
+        ],
+        "title": "NodeContext"
       },
       "StructureRequest": {
         "properties": {

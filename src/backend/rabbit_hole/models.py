@@ -9,7 +9,16 @@ class ConversationTurn(BaseModel):
     content: str = Field(min_length=1, max_length=64000)
 
 
+class NodeContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    node_id: str = Field(min_length=1, max_length=200)
+    kind: Literal["information", "source"]
+    title: str = Field(max_length=500)
+    text: str = Field(min_length=1, max_length=12000)
+
+
 class AgentRequest(BaseModel):
+    node_context: NodeContext | None = None
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)
     request_id: UUID

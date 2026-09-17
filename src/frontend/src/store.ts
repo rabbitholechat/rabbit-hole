@@ -1,3 +1,4 @@
+import { nodeContext } from './lib/nodeActions'
 import { create } from 'zustand'
 import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
 import type { CanvasNode, Envelope, Session, ResponseNode, PartError } from './types'
@@ -55,6 +56,7 @@ interface State {
   pendingParentId: string | null
   reply: (id: string | null) => void
   toggleResponse: (id: string) => void
+  toggleNode: (id: string) => void
   pendingQuery: string
   lastSeq: number
   stage: string
@@ -67,8 +69,8 @@ interface State {
   remove: (id: string) => Promise<void>
   structure: (responseId: string) => Promise<void>
   cancelStructure: (responseId: string) => void
-  revealOrigin: (responseId: string, quote?: string) => void
-  origin: { responseId: string; quote: string } | null
+  navigation: { id: string } | null
+  navigateTo: (id: string) => void
   select: (id: string | null) => void
   selectEdge: (index: number | null) => void
   run: (options?: { retry?: boolean }) => Promise<void>
@@ -164,6 +166,8 @@ export const useStore = create<State>((set, get) => ({
   session: null,
   history: [],
   input: '',
+  navigation: null,
+  navigateTo: (id) => set({ navigation: { id }, selected: id, selectedEdge: null }),
   selected: null,
   selectedEdge: null,
   activeRequest: null,
@@ -175,9 +179,6 @@ export const useStore = create<State>((set, get) => ({
   stage: '',
   error: null,
   storageError: null,
-  origin: null,
-  revealOrigin: (responseId, quote = '') =>
-    set({ selected: responseId, selectedEdge: null, origin: { responseId, quote } }),
   cancelStructure: (responseId) => {
     const session = get().session
     if (!session) return
@@ -285,7 +286,7 @@ export const useStore = create<State>((set, get) => ({
         nodes: session.nodes.map((node) => {
           if (node.type === 'source') {
             const { measured: _measured, ...rest } = node
-            return { ...rest, width: Math.max(node.width ?? 0, 460), height: Math.max(node.height ?? 0, 280) }
+            return { ...rest, width: Math.max(node.width ?? 0, 460), height: node.data.collapsed ? 130 : (node.height === 280 || !node.height ? 260 : node.height) }
           }
           if (node.type !== 'response') return node
           // Older response cards stored a fixed height; remeasure content on restore.
@@ -324,7 +325,7 @@ export const useStore = create<State>((set, get) => ({
   newConversation: () => {
     cancelSessionStructures()
     get().stop()
-    set({ session: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, origin: null })
+    set({ session: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
   },
   open: (id) => {
     cancelSessionStructures()
@@ -338,7 +339,7 @@ export const useStore = create<State>((set, get) => ({
         input: '',
         error: null,
         replyTo: null,
-        origin: null,
+        navigation: null,
       })
   },
   remove: async (id) => {
@@ -352,6 +353,17 @@ export const useStore = create<State>((set, get) => ({
   reply: (id) => {
     if (get().activeRequest) return
     set({ replyTo: get().replyTo === id ? null : id })
+  },
+  toggleNode: (id) => {
+    const session = get().session
+    if (!session) return
+    commit({ ...session, nodes: session.nodes.map((node) => {
+      if (node.id !== id || node.type === 'response') return node
+      const collapsed = !node.data.collapsed
+      const expandedHeight = node.data.expandedHeight ?? node.height ?? 280
+      return { ...node, height: collapsed ? 130 : expandedHeight,
+        data: { ...node.data, collapsed, expandedHeight } } as CanvasNode
+    }) })
   },
   toggleResponse: (id) => {
     const session = get().session
@@ -397,22 +409,24 @@ export const useStore = create<State>((set, get) => ({
       return
     }
     const session = reusable ? { ...before.session! } : emptySession(query)
+    const context = options.retry ? session.lastNodeContext : nodeContext(before.session, before.replyTo)
     const parentId = options.retry
       ? session.lastParentId
-      : (before.replyTo ??
+      : ((context ? null : before.replyTo) ??
         session.nodes.filter((n) => n.type === 'response' && n.data.status === 'completed').at(-1)?.id ??
         null)
     const parent = session.nodes.find((n): n is ResponseNode => n.type === 'response' && n.id === parentId)
     const continuation = options.retry
       ? session.continuation
       : (parent?.data.continuation ?? session.continuation)
-    if (before.replyTo && (!parent?.data.continuation || parent.data.status !== 'completed')) {
+    if (before.replyTo && !context && (!parent?.data.continuation || parent.data.status !== 'completed')) {
       set({ error: '이 응답의 대화 문맥이 없습니다. 새 응답에서 이어서 질문해 주세요.' })
       return
     }
     session.continuation = continuation
     session.lastParentId = parentId
 
+    session.lastNodeContext = context
     session.lastQuery = query
     session.status = 'running'
     session.updatedAt = Date.now()
@@ -441,6 +455,7 @@ export const useStore = create<State>((set, get) => ({
         signal: abort.signal,
         body: JSON.stringify({
           query,
+          node_context: context,
           request_id: requestId,
           continuation: reusable ? continuation : undefined,
         }),
@@ -510,6 +525,13 @@ export const useStore = create<State>((set, get) => ({
           },
         }
         session.nodes = [...session.nodes, node]
+        if (session.lastNodeContext && session.nodes.some((n) => n.id === session.lastNodeContext!.node_id)) {
+          const graph = session.contentGraph ?? emptyContentGraph()
+          const target = session.lastNodeContext.node_id
+          session.contentGraph = { ...graph, relations: [...graph.relations, {
+            id: `uses_context:${id}:${target}`, source: id, target, kind: 'uses_context', responseId: id, spans: [],
+          }] }
+        }
         set({ responseId: id })
         commit(session)
         break

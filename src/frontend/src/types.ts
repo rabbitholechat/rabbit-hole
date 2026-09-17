@@ -25,7 +25,7 @@ export type Relation = {
   strength: 'core' | 'weak'
 }
 export type Graph = { relations: Relation[]; clusters: { id: string; label: string; source_ids: string[] }[] }
-export type PageNode = Node<{ source: Source; related?: boolean; dimmed?: boolean }, 'page'>
+export type PageNode = Node<{ source: Source; related?: boolean; dimmed?: boolean; collapsed?: boolean; expandedHeight?: number }, 'page'>
 export type ToolSource = {
   id: string
   url: string
@@ -72,7 +72,7 @@ export type ContentRelation = {
   id: string
   source: string
   target: string
-  kind: 'has_extract' | 'consulted' | 'cites'
+  kind: 'has_extract' | 'consulted' | 'cites' | 'uses_context'
   responseId: string
   spans: TextSpan[]
 }
@@ -88,10 +88,12 @@ export type ContentGraph = {
   relations: ContentRelation[]
   jobs: Record<string, StructureJob>
 }
-export type InformationNode = Node<{ entityId: string }, 'information'>
-export type SourceNode = Node<{ entityId: string }, 'source'>
+export type InformationNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'information'>
+export type SourceNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'source'>
 export type CanvasNode = PageNode | ResponseNode | InformationNode | SourceNode
+export type NodeContext = { node_id: string; kind: 'information' | 'source'; title: string; text: string }
 export type Session = {
+  lastNodeContext?: NodeContext
   id: string
   query: string
   title?: string

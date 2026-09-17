@@ -1,8 +1,10 @@
+import { NodeActions } from './NodeActions'
+import { PreviousNodeButton } from './PreviousNodeButton'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { ExternalLink, Globe2 } from 'lucide-react'
 import type { PageNode } from '../types'
 import { cn, safeUrl } from '../lib/utils'
-export function PageCard({ data, selected }: NodeProps<PageNode>) {
+export function PageCard({ id, data, selected }: NodeProps<PageNode>) {
   const source = data.source,
     href = safeUrl(source.url)
   return (
@@ -11,6 +13,7 @@ export function PageCard({ data, selected }: NodeProps<PageNode>) {
       <article
         className={cn(
           'page-card',
+          data.collapsed && 'is-collapsed',
           selected && 'is-selected',
           data.related && 'is-related',
           data.dimmed && 'is-dimmed',
@@ -36,6 +39,7 @@ export function PageCard({ data, selected }: NodeProps<PageNode>) {
             </a>
           )}
         </div>
+        <NodeActions id={id} collapsed={data.collapsed} />
         <h2>{source.title}</h2>
         <p>{source.summary || '요약이 제공되지 않은 자료입니다.'}</p>
         <footer>
@@ -48,6 +52,7 @@ export function PageCard({ data, selected }: NodeProps<PageNode>) {
                 : '요약 기반'}
           </span>
         </footer>
+        <PreviousNodeButton id={id} />
       </article>
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </>

@@ -1,3 +1,4 @@
+import { PreviousNodeButton } from './PreviousNodeButton'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Check, Copy, Minimize2, Maximize2, MessageCirclePlus, LoaderCircle } from 'lucide-react'
@@ -15,7 +16,6 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
   const structure = useStore((s) => s.structure)
   const cancelStructure = useStore((s) => s.cancelStructure)
   const graphJob = useStore((s) => s.session?.contentGraph?.jobs[id])
-  const origin = useStore((s) => (s.origin?.responseId === id ? s.origin : null))
   const isReplyTarget = useStore((s) => s.replyTo === id)
   const contentRef = useRef<HTMLDivElement>(null)
   const [canResize, setCanResize] = useState(false)
@@ -112,12 +112,6 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
           </div>
         </header>
         <h2 title={data.prompt}>{data.prompt}</h2>
-        {origin?.quote && (
-          <details className="origin-excerpt nodrag nopan" open>
-            <summary>선택한 노드의 원문 발췌</summary>
-            <blockquote>{origin.quote}</blockquote>
-          </details>
-        )}
         <div
           ref={contentRef}
           className={`response-content nodrag nopan ${data.collapsed && canResize ? 'nowheel' : ''}`}
@@ -157,30 +151,28 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
             </p>
           )}
         </div>
-        {data.status === 'completed' && (
+        {data.status === 'completed' && graphJob?.status !== 'completed' && (
           <footer className="structure-status nodrag nopan" aria-live="polite">
-            <span>
+            <span className="structure-indicator">
+              {graphJob?.status === 'running' && <LoaderCircle size={14} className="spin" aria-hidden="true" />}
               {graphJob?.status === 'running'
-                ? '정보 노드를 정리하고 있어요'
-                : graphJob?.status === 'completed'
-                  ? '응답 구조화 완료'
-                  : graphJob?.status === 'failed'
-                    ? '정보 구조화 실패 · 답변은 유지됩니다'
-                    : graphJob?.status === 'cancelled'
-                      ? '정보 구조화 중지됨'
-                      : '정보 노드 만들기'}
+                ? '정보 정리 중'
+                : graphJob?.status === 'failed'
+                  ? '정보 구조화 실패'
+                  : graphJob?.status === 'cancelled'
+                    ? '정보 정리 중지됨'
+                    : '정보 노드 만들기'}
             </span>
             {graphJob?.status === 'running' ? (
               <button onClick={() => cancelStructure(id)}>구조화 중지</button>
             ) : (
-              graphJob?.status !== 'completed' && (
                 <button disabled={!data.continuation} onClick={() => void structure(id)}>
                   {graphJob ? '구조화 재시도' : '구조화'}
                 </button>
-              )
             )}
           </footer>
         )}
+        <PreviousNodeButton id={id} />
       </article>
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </>

@@ -10,6 +10,7 @@ import type {
   Session,
   StructureResult,
   TextSpan,
+  SourceEntity,
 } from '../types'
 import { safeUrl } from './utils'
 
@@ -25,6 +26,11 @@ function normalizeUrl(raw: string) {
   if (!safe) return
   const url = new URL(safe)
   url.hash = ''
+  // Only known tracking parameters; document IDs, language and other query values remain distinct.
+  for (const key of [...url.searchParams.keys()]) {
+    if (/^utm_/i.test(key) || /^(fbclid|gclid|dclid|msclkid|srsltid|yclid|mc_cid|mc_eid|_ga|_gl)$/i.test(key)) url.searchParams.delete(key)
+  }
+  url.searchParams.sort()
   return url.href
 }
 export function markdownLinks(text: string): { url: string; span: TextSpan }[] {
@@ -78,7 +84,7 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
     const width = entity.type === 'information' ? 340 : 460
-    const height = 280
+    const height = entity.type === 'source' ? 260 : 280
     const x =
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
@@ -101,8 +107,58 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
   return nodes
 }
 
+function mergeSource(kept: SourceEntity, incoming: SourceEntity): SourceEntity {
+  const observations = new Map(kept.observations.map((o) => [o.responseId, o]))
+  for (const next of incoming.observations) {
+    const old = observations.get(next.responseId)
+    const preferred = old?.access === 'page_read' && next.access === 'search_result' ? old : next
+    const spans = [...new Map([...(old?.spans ?? []), ...next.spans].map((s) => [`${s.start}:${s.end}`, s])).values()]
+    observations.set(next.responseId, { ...preferred, spans })
+  }
+  const source = kept.source.access === 'page_read' ? kept.source : incoming.source
+  return { ...kept, source: { ...source, id: kept.id }, observations: [...observations.values()] }
+}
+
+// Keep the first displayed card and its placement; retarget all references to that card.
+export function deduplicateSources(session: Session): Session {
+  const graph = session.contentGraph
+  if (!graph) return session
+  const entities = { ...graph.entities }
+  const byUrl = new Map<string, string>(), aliases = new Map<string, string>()
+  const ids = [...new Set([...session.nodes.map((n) => n.id), ...Object.keys(entities)])]
+  for (const id of ids) {
+    const entity = entities[id]
+    if (entity?.type !== 'source') continue
+    const url = normalizeUrl(entity.source.url)
+    if (!url) continue
+    const keptId = byUrl.get(url)
+    if (!keptId) { byUrl.set(url, id); continue }
+    entities[keptId] = mergeSource(entities[keptId] as SourceEntity, entity)
+    delete entities[id]
+    aliases.set(id, keptId)
+  }
+  if (!aliases.size) return session
+  const edges = new Map<string, ContentRelation>()
+  for (const edge of graph.relations) {
+    const source = aliases.get(edge.source) ?? edge.source
+    const target = aliases.get(edge.target) ?? edge.target
+    const key = `${source}:${target}:${['has_extract', 'uses_context'].includes(edge.kind) ? edge.kind : 'source'}`
+    const old = edges.get(key)
+    const spans = [...new Map([...(old?.spans ?? []), ...edge.spans].map((s) => [`${s.start}:${s.end}`, s])).values()]
+    const kind = old?.kind === 'cites' || edge.kind === 'cites' ? 'cites' : edge.kind
+    edges.set(key, relation(source, target, kind, edge.responseId, spans))
+  }
+  return {
+    ...session,
+    nodes: session.nodes.filter((n) => !aliases.has(n.id)),
+    pinned: [...new Set(session.pinned.map((id) => aliases.get(id) ?? id))],
+    contentGraph: { ...graph, entities, relations: [...edges.values()] },
+  }
+}
+
 // Retrieval metadata is deterministic and requires no model call, including on legacy v2 restore.
 export function attachSources(session: Session, responseId: string): Session {
+  session = deduplicateSources(session)
   const response = responseById(session, responseId)
   if (!response || !response.data.toolSources?.length || response.data.status === 'streaming') return session
   const graph = session.contentGraph ?? emptyContentGraph()
@@ -113,17 +169,22 @@ export function attachSources(session: Session, responseId: string): Session {
   for (const source of response.data.toolSources) {
     if (!normalizeUrl(source.url)) continue
     const spans = links.filter((link) => link.url === normalizeUrl(source.url)).map((link) => link.span)
-    const old = entities[source.id]
+    const existing = Object.values(entities).find(
+      (e) => e.type === 'source' && normalizeUrl(e.source.url) === normalizeUrl(source.url),
+    )
+    const id = existing?.id ?? source.id
+    const old = entities[id]
     if (old && old.type !== 'source') continue
     const observation = { responseId, access: source.access, accessedAt: source.accessed_at, spans }
-    entities[source.id] = {
-      id: source.id,
+    const incoming: SourceEntity = {
+      id,
       type: 'source',
-      source: old?.source.access === 'page_read' && source.access === 'search_result' ? old.source : source,
-      observations: [...(old?.observations ?? []).filter((o) => o.responseId !== responseId), observation],
+      source: { ...source, id },
+      observations: [observation],
     }
-    ids.push(source.id)
-    extra.push(relation(responseId, source.id, spans.length ? 'cites' : 'consulted', responseId, spans))
+    entities[id] = old ? mergeSource(old, incoming) : incoming
+    ids.push(id)
+    extra.push(relation(responseId, id, spans.length ? 'cites' : 'consulted', responseId, spans))
   }
   const next = {
     ...session,

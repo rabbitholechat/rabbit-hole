@@ -129,8 +129,8 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 | 노드 | 의미 데이터 | 기본/상세 표시 |
 | --- | --- | --- |
 | response | 기존 prompt, text, status, continuation, toolSources | 질문·전체 답변, 구조화 상태·중지·재시도 |
-| information | id, subtype, responseId, textHash, title/excerpt 범위 | 원문 제목·발췌, 원문 보기로 응답 위치 추적 |
-| source | id, ToolSource, observations(responseId, access, accessedAt, spans) | 페이지 제목·도메인·검색/본문 조회·미검증·링크. 응답별 조회 기록은 데이터로만 보존 |
+| information | id, subtype, responseId, textHash, title/excerpt 범위 | 원문 제목·발췌, 이전 노드로 이동 |
+| source | id, ToolSource, observations(responseId, access, accessedAt, spans) | 페이지 제목·도메인·검색/본문 조회·페이지 열기 버튼. 응답별 조회 기록은 데이터로만 보존 |
 
 | 관계 | 방향 | 화면 라벨 | 생성 기준 |
 | --- | --- | --- | --- |
@@ -139,7 +139,7 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 | consulted | response → source | 조회 | 해당 응답의 실제 도구 조회 기록, 본문에 해당 링크 없음 |
 | cites | response 또는 information → source | 출처 표기 | 실제 Markdown 링크가 해당 도구 출처 URL과 일치. 코드 블록·이미지 제외, 참조식 링크 정의 지원 |
 
-출처 ID는 페이지별로 재사용하고 응답별 관찰 기록을 보존합니다. 출처가 없는 응답에는 출처 노드가 없습니다. 도구 메타데이터에 없는 생성 링크는 원래 답변에 남지만 출처 노드를 만들지 않습니다. `cites`도 자료 내용의 지지·인과·사실 검증을 의미하지 않습니다. 정보 간 의미 관계, uses_context, 비교 대상 연결 및 정보에서 대화 분기는 후순위입니다.
+출처 ID는 페이지별로 재사용하고 응답별 관찰 기록을 보존합니다. 출처가 없는 응답에는 출처 노드가 없습니다. 도구 메타데이터에 없는 생성 링크는 원래 답변에 남지만 출처 노드를 만들지 않습니다. `cites`도 자료 내용의 지지·인과·사실 검증을 의미하지 않습니다. 정보 간 의미 관계와 비교 대상 연결은 후순위입니다. 사용자가 선택한 노드의 맥락 참조는 아래 uses_context로 기록합니다.
 
 `done(completed)` 후 signed checkpoint로 구조화를 시작하고 결과 전체 검증 후 원자적으로 추가합니다. 실패·중지는 기존 답변·출처·배치를 유지하며 사용자가 재시도할 수 있습니다. `jobs[responseId]`에 상태와 시도 ID를 저장해 중복 요청과 오래된 결과를 차단합니다. 완료된 작업은 재실행하지 않고 원문 해시·범위 기반 노드 ID와 관계 ID로 재적용을 중복 제거합니다. 새 노드만 기존 카드와 겹치지 않는 위치에 추가하고 사용자가 옮긴 좌표·viewport는 보존합니다.
 
@@ -147,4 +147,22 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 
 구조화 실패 로그는 원문 없이 `structure_invalid_selection`(범위/제목 줄 오류), `structure_invalid_schema`(출력 형식 오류), `structure_output_limit`(출력 토큰 제한), `structure_incomplete`(미완료), `structure_refused`(거절), `structure_missing_output`(파싱 결과 없음)을 구분합니다. HTTP 실패는 기존 502 계약을 유지합니다. 구조화 출력 방식은 [공식 OpenAI 구조화 출력 문서](https://developers.openai.com/api/docs/guides/structured-outputs)를 참고합니다.
 
-출처 카드 기본 크기는 460×280px입니다. 기존 작은 출처도 복원 시 이 크기로 확대하되 좌표·viewport는 그대로 유지합니다. 응답 카드는 투명 배경과 녹색 테두리, 정보 카드는 황토색, 출처 카드는 파란색으로 구분합니다.
+출처 카드 기본 크기는 460×260px입니다. 기존 작은 출처도 복원 시 이 크기로 확대하되 좌표·viewport는 그대로 유지합니다. 응답 카드는 투명 배경과 녹색 테두리, 정보 카드는 황토색, 출처 카드는 파란색으로 구분합니다.
+
+### 출처 중복 제거와 노드 탐색
+
+캔버스에서는 출처 ID가 달라도 정규화된 페이지 URL이 같으면 첫 카드로 합칩니다. fragment와 알려진 추적 파라미터(`utm_*`, `fbclid`, `gclid`, `dclid`, `msclkid`, `srsltid`, `yclid`, `mc_cid`, `mc_eid`, `_ga`, `_gl`)를 비교에서 제외합니다. 쿼리 키 순서를 정렬해 파라미터 나열 순서만 다른 URL도 합칩니다(동일 키의 반복 값 순서는 유지). 도메인만으로 합치지 않으며 문서 ID·언어 등 나머지 쿼리, 다른 경로·프로토콜·호스트는 유지합니다. 서버의 원래 도구 메타데이터와 페이지 ID는 변경하지 않습니다.
+
+동일 페이지의 관찰 기록·인용 범위를 합치고 본문 조회 상태를 보존하며, 응답/정보의 연결선을 남는 카드로 갱신합니다. 기존 위치·viewport는 그대로 유지합니다. 새 조회 때와 기록 복원 때 모두 적용하고 추가 API 호출은 없습니다. 기존 중복의 합쳐진 화면은 후속 저장 시 IndexedDB에도 반영됩니다.
+
+모든 카드의 ‘이전 노드로’는 들어오는 연결선의 시작 노드로 이동합니다. 응답은 실제 parentId(구버전은 기존 대화 순서), 정보/출처는 해당 관계를 따릅니다. 여러 개면 선택 목록, 없으면 비활성 버튼입니다. 이동은 노드를 선택하고 현재 배율을 유지하여 화면을 해당 노드로 옮깁니다. 별도 원문 보기와 원문 발췌 패널은 제거했지만 추출 범위 데이터는 보존합니다.
+
+‘미검증’은 카드 표시에서만 제거하며 `verification=unverified` 계약은 유지합니다. 구조화 중에는 스피너와 중지 버튼을 표시하고 완료 문구는 숨깁니다. 새 정보·출처 카드는 짧은 페이드/이동 애니메이션을 적용하며 시스템의 동작 줄이기 설정에서는 끕니다.
+
+### 선택한 노드를 다음 응답에 사용
+
+`POST /api/agent`는 선택적으로 `node_context: {node_id, kind, title, text}`를 받습니다. kind는 information/source, ID 1..200자, 제목 최대 500자, text 1..12000자이며 추가 필드는 거부합니다. 이는 클라이언트에서 사용자가 명시적으로 선택한 참고 데이터이며 서버가 검증한 출처/사실로 취급하지 않습니다. 백엔드는 질문 뒤에 자료임을 명시한 JSON으로 붙여 일반 에이전트 입력과 서명 대화 이력에 포함합니다. 사용자 질문 자체의 2000자 제한은 유지합니다.
+
+응답 노드의 기존 분기는 해당 응답의 서명 문맥을 사용합니다. 정보/출처의 ‘다음 응답에 사용’은 현재 대화 문맥에 선택한 발췌 또는 페이지 제목·URL을 추가합니다. 질문 텍스트는 카드에 별도로 유지합니다. 재시도는 같은 선택 자료를 재사용합니다. 새 응답 → 선택한 정보/출처의 `uses_context`(맥락 참고) 간선은 사용자 선택 기록으로만 생성하며 지지·인과·검증 의미가 없습니다. 이전 노드 탐색은 이 맥락 참조 간선을 제외하고 원래 대화/추출/조회 경로를 따릅니다.
+
+응답·정보·출처에 복사, 접기/펼치기, 다음 응답 사용 동작을 제공합니다. 과거 가상 페이지 기록은 읽기 전용이므로 다음 응답 사용을 비활성화합니다. 접기 상태와 높이는 배치 데이터로 저장합니다. 페이지 열기/이전 노드로는 하단에 나란히 배치합니다. 툴팁은 카드 밖 body 포털에 표시해 카드 overflow/캔버스 배율에 잘리지 않으며 화면 경계에서 위치를 보정합니다.
