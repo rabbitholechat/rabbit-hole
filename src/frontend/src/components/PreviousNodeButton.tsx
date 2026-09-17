@@ -1,5 +1,5 @@
 import { responseParentId } from '../lib/nodeActions'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ChevronDown } from 'lucide-react'
 import type { CanvasNode, Session } from '../types'
 import { useStore } from '../store'
@@ -25,6 +25,25 @@ export function PreviousNodeButton({ id }: { id: string }) {
   const session = useStore((s) => s.session)
   const navigate = useStore((s) => s.navigateTo)
   const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const dismiss = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        rootRef.current?.querySelector('button')?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [open])
   const parents = previousNodes(session, id)
   function go(id: string) { setOpen(false); navigate(id) }
   function label(node: CanvasNode) {
@@ -34,7 +53,7 @@ export function PreviousNodeButton({ id }: { id: string }) {
     return entity?.type === 'information' ? `정보 · ${entity.title.quote}` : '출처'
   }
   return (
-    <div className="previous-node nodrag nopan" onClick={(event) => event.stopPropagation()}>
+    <div ref={rootRef} className="previous-node nodrag nopan" onClick={(event) => event.stopPropagation()}>
       <button className="node-button" disabled={!parents.length}
         title={!parents.length ? '이전 노드가 없습니다' : undefined}
         aria-expanded={parents.length > 1 ? open : undefined}

@@ -37,6 +37,10 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
           }[data.status]
   const structureActionLabel = isStructuring ? '구조화 중지' : graphJob ? '구조화 재시도' : '구조화'
   const isReplyTarget = useStore((s) => s.replyTo === id)
+  const [arrivalFinished, setArrivalFinished] = useState(false)
+  useEffect(() => {
+    if (isReplyTarget) setArrivalFinished(true)
+  }, [isReplyTarget])
   const { contentRef, canCollapse: canResize } = useCollapsibleContent(data.text, data.collapsed)
   const [copyState, setCopyState] = useState('복사하기')
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -56,7 +60,10 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <article
-        className={`response-card ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
+        className={`response-card ${arrivalFinished ? 'arrival-finished' : ''} ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
+        onAnimationEnd={(event) => {
+          if (event.target === event.currentTarget && ['content-arrive', 'page-arrive'].includes(event.animationName)) setArrivalFinished(true)
+        }}
         aria-label="에이전트 응답"
         aria-busy={data.status === 'streaming' || isStructuring || readingSources}
       >

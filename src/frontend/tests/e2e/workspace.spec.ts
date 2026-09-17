@@ -207,11 +207,27 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(page.locator('.source-card').getByRole('link', { name: '페이지 열기' })).toBeVisible()
   await page.locator('.information-card').getByRole('button', { name: '다음 응답에 사용' }).click()
   await expect(page.locator('.reply-context')).toContainText('벡터 검색')
+  await expect(page.locator('.information-card')).toHaveClass(/is-reply-target/)
+  await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'content-reply-highlight')
+  await expect(page.locator('.information-card header .response-status')).toHaveCSS('font-weight', '650')
+  await expect(page.locator('.information-card header .response-status')).toHaveCSS('color', 'rgb(150, 116, 35)')
   await page.getByRole('button', { name: '이어서 질문 취소' }).click()
+  await expect(page.locator('.information-card')).not.toHaveClass(/is-reply-target/)
+  await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'none')
+  await page.locator('.source-card').getByRole('button', { name: '다음 응답에 사용' }).click()
+  await expect(page.locator('.source-card')).toHaveCSS('animation-name', 'content-reply-highlight')
+  await expect(page.locator('.source-card header .response-status')).toHaveCSS('color', 'rgb(63, 115, 171)')
+  await page.locator('.source-card').getByRole('button', { name: '다음 응답에 사용' }).click()
+  await expect(page.locator('.source-card')).toHaveCSS('animation-name', 'none')
   await page.screenshot({ path: testInfo.outputPath('three-node-graph.png') })
   await expect(page.getByText('미검증', { exact: false })).toHaveCount(0)
   await expect(page.locator('.response-card').getByRole('button', { name: '이전 노드로' })).toBeDisabled()
   await page.locator('.source-card').getByRole('button', { name: '이전 노드로' }).click()
+  await expect.poll(() => page.locator('.source-card .previous-node').evaluate((root) => {
+    const button = root.querySelector('button')!.getBoundingClientRect()
+    const menu = root.querySelector('.previous-node-options')!.getBoundingClientRect()
+    return menu.top >= button.bottom
+  })).toBe(true)
   await page.locator('.source-card').getByRole('button', { name: '정보 · 벡터 검색', exact: true }).click()
   await expect(page.locator('.information-card')).toHaveClass(/is-selected/)
   await page.locator('.information-card').getByRole('button', { name: '이전 노드로' }).click()
@@ -609,6 +625,7 @@ test('response actions copy Markdown, collapse content and branch from the chose
   await expect(first).toHaveClass(/is-reply-target/)
   await first.getByRole('button', { name: '이어서 질문하기', exact: true }).click()
   await expect(first).not.toHaveClass(/is-reply-target/)
+  await expect(first).toHaveCSS('animation-name', 'none')
   await expect(first.getByRole('button', { name: '이어서 질문하기', exact: true })).toHaveAttribute(
     'aria-pressed',
     'false',
@@ -618,6 +635,7 @@ test('response actions copy Markdown, collapse content and branch from the chose
   await expect(page.getByText('이 응답에 이어서:', { exact: false })).toHaveCount(0)
   await page.getByRole('button', { name: '이어서 질문 취소', exact: true }).click()
   await expect(first).not.toHaveClass(/is-reply-target/)
+  await expect(first).toHaveCSS('animation-name', 'none')
   await expect(page.locator('.reply-context')).toHaveCount(0)
   await first.getByRole('button', { name: '이어서 질문하기', exact: true }).click()
   await input.fill('첫 응답에서 분기')

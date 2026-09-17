@@ -1605,9 +1605,8 @@ svg {
   gap: 8px;
   flex-shrink: 0;
 }
-.content-card > header small {
-  color: #8a8778;
-  font-size: 11px;
+.content-card > header .response-status {
+  color: var(--node-accent);
 }
 .information-card .node-tag {
   color: #88733c;
@@ -1697,7 +1696,7 @@ svg {
 .previous-node { position: relative; margin-top: 10px; flex-shrink: 0; }
 .previous-node-options {
   position: absolute;
-  bottom: calc(100% + 5px);
+  top: calc(100% + 6px);
   left: 0;
   width: 240px;
   max-height: 130px;
@@ -1870,5 +1869,34 @@ svg {
 }
 .source-content-note { font-size: 11px; line-height: 1.6; color: #6d8298; margin: 8px 0; }
 
-.source-progress { display: inline-flex; align-items: center; gap: 5px; color: #72907b !important; }
 .source-pending { min-height: 160px; }
+
+/* Keep navigation menus above neighboring cards without clipping at the card footer. */
+.content-card:has(.previous-node-options),
+.response-card:has(.previous-node-options),
+.page-card:has(.previous-node-options) { overflow: visible; }
+.react-flow__node:has(.previous-node-options) { z-index: 1001 !important; }
+.previous-node-options button:hover,
+.previous-node-options button:focus-visible {
+  background: #edf5f1;
+  color: #16634d;
+}
+
+/* Match the response selection pulse using each content node's accent color. */
+.content-card.is-reply-target {
+  border-color: var(--node-accent);
+  outline: 2px solid color-mix(in srgb, var(--node-accent) 50%, transparent);
+  outline-offset: 4px;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--node-accent) 14%, transparent);
+  animation: content-reply-highlight 1.8s ease-in-out infinite;
+}
+@keyframes content-reply-highlight {
+  50% {
+    outline-color: color-mix(in srgb, var(--node-accent) 19%, transparent);
+    box-shadow: 0 0 32px color-mix(in srgb, var(--node-accent) 22%, transparent);
+  }
+}
+
+/* Selection can interrupt entrance motion; removing it must never replay that motion. */
+.response-card.arrival-finished:not(.is-reply-target),
+.node-arriving .content-card.arrival-finished:not(.is-reply-target) { animation: none; }

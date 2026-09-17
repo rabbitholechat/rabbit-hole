@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { RabbitLoader } from './RabbitLoader'
 import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { NodeActions } from './NodeActions'
@@ -24,6 +25,11 @@ const sourceErrors: Record<string, string> = {
 }
 const kinds = { concept: '개념', entity: '대상', claim: '주장', example: '예시', comparison: '비교' }
 export function ContentCard({ id, data, selected }: NodeProps<InformationNode | SourceNode>) {
+  const isReplyTarget = useStore((s) => s.replyTo === id)
+  const [arrivalFinished, setArrivalFinished] = useState(false)
+  useEffect(() => {
+    if (isReplyTarget) setArrivalFinished(true)
+  }, [isReplyTarget])
   const entity = useStore((s) => s.session?.contentGraph?.entities[data.entityId])
   const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.excerpt.quote : `${entity?.source.content?.status ?? ''}:${entity?.source.content?.summary || entity?.source.content?.text || ''}`, data.collapsed)
   const collapsed = Boolean(data.collapsed && canCollapse)
@@ -35,14 +41,17 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <article
-        className={`content-card ${entity.type}-card ${selected ? 'is-selected' : ''} ${collapsed ? 'is-collapsed' : ''}`}
+        className={`content-card ${arrivalFinished ? 'arrival-finished' : ''} ${entity.type}-card ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${collapsed ? 'is-collapsed' : ''}`}
+        onAnimationEnd={(event) => {
+          if (event.target === event.currentTarget && ['content-arrive', 'page-arrive'].includes(event.animationName)) setArrivalFinished(true)
+        }}
         aria-label={source ? '출처 노드' : '정보 노드'}
         aria-busy={pending}
       >
         <header>
           <NodeTag kind={entity.type} />
-          {entity.type === 'information' && <small>{kinds[entity.subtype]}</small>}
-          {source && <small className="source-progress" role="status">
+          {entity.type === 'information' && <small className="response-status">{kinds[entity.subtype]}</small>}
+          {source && <small className="response-status source-progress" role="status">
             {pending && <RabbitLoader />}
             {content?.status === 'reading' ? '조회 중' : content?.status === 'summarizing' ? '요약 중' : content?.status === 'cancelled' ? '요약 중지됨' : content?.summary ? content.summary_error ? '일부 요약' : '요약 완료' : ''}
           </small>}
