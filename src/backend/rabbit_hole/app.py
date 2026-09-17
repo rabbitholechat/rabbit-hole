@@ -15,6 +15,7 @@ from . import diagnostics
 from .agent import AgentService
 from .config import Settings, get_settings
 from .errors import MESSAGES, StageFailure, error_code, error_location
+from .history import HistoryRepository, history_router
 from .middleware import BodyLimitMiddleware
 from .models import AgentRequest, ConversationTurn, Snapshot, TitleRequest, TitleResponse
 from .security import SnapshotSigner
@@ -32,7 +33,7 @@ class Job:
 
 
 class JobStore:
-    """Single-process active job controls. Completed data belongs in IndexedDB."""
+    """Single-process active job controls. Completed data belongs in PostgreSQL."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -79,12 +80,14 @@ def trim_context(turns: list[ConversationTurn], settings: Settings) -> list[Conv
     return turns
 
 
-def create_app(settings: Settings | None = None, service_factory=AgentService) -> FastAPI:
+def create_app(settings: Settings | None = None, service_factory=AgentService, history_repository=None) -> FastAPI:
     settings = settings or get_settings()
     if os.environ.get("VERCEL") and len(settings.session_signing_key.get_secret_value()) < 32:
         raise RuntimeError("SESSION_SIGNING_KEY must contain at least 32 characters on Vercel")
     app = FastAPI(title="Rabbit Hole", version="0.2.0")
-    app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_bytes)
+    app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_bytes,
+                       max_history_bytes=settings.max_history_bytes)
+    app.include_router(history_router(history_repository or HistoryRepository(settings)))
     store = JobStore(settings)
     signer = SnapshotSigner(settings.session_signing_key.get_secret_value())
     app.state.store = store

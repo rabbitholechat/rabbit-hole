@@ -1,5 +1,24 @@
-import { test, expect, type Page } from '@playwright/test'
-test.beforeEach(async ({ page }) => {
+import { test, expect, type Page, type BrowserContext } from '@playwright/test'
+import { memoryHistoryApi } from '../fixtures/historyApi'
+async function mockHistory(context: BrowserContext, history = memoryHistoryApi()) {
+  await context.route('**/api/sessions**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const parts = url.pathname.split('/')
+    const id = decodeURIComponent(parts[3] ?? '')
+    try {
+      const result = request.method() === 'GET' ? await history.list()
+        : request.method() === 'POST' ? await history.import(request.postDataJSON())
+        : request.method() === 'PUT' ? await history.save(id, request.postDataJSON())
+        : await history.delete(id, Number(url.searchParams.get('revision')))
+      await route.fulfill({ status: result === undefined ? 204 : 200, json: result })
+    } catch {
+      await route.fulfill({ status: 409, json: { detail: 'conflict' } })
+    }
+  })
+}
+test.beforeEach(async ({ page, context }) => {
+  await mockHistory(context)
   // No unmocked structure call may reach a local backend during browser tests.
   await page.route('**/api/structure', (route) => route.fulfill({ status: 502, body: '{}' }))
 })
@@ -323,7 +342,7 @@ const calls = (page: Page) =>
     () => (window as unknown as { agentHarness: { calls: Record<string, unknown>[] } }).agentHarness.calls,
   )
 
-test('tool retrieval history distinguishes access and restores without new requests', async ({
+test('tool retrieval history distinguishes access and restores without new model or tool requests', async ({
   page,
 }, testInfo) => {
   let requests = 0
@@ -412,7 +431,7 @@ test('tool retrieval history distinguishes access and restores without new reque
   expect(requests).toBe(1)
 })
 
-test('streams into a canvas node, retains dragged placement, continues conversation and restores offline', async ({
+test('streams into a canvas node, retains dragged placement, continues conversation and restores from server history without model calls', async ({
   page,
 }) => {
   await installStream(page)
@@ -936,4 +955,47 @@ test('image search cards show preview title and original page and restore withou
   await card.locator('.image-preview').dispatchEvent('error')
   await expect(card).toContainText('이미지를 불러오지 못했습니다.')
   await expect(card.getByRole('link', { name: '원본 페이지', exact: true })).toHaveCount(1)
+})
+
+
+test('independent browsers share server history and deletion without a model request', async ({ page, context, browser }) => {
+  const history = memoryHistoryApi()
+  await mockHistory(context, history)
+  const otherContext = await browser.newContext()
+  await mockHistory(otherContext, history)
+  let modelCalls = 0
+  await otherContext.route(/\/api\/(agent|title|structure)/, async (route) => {
+    modelCalls++
+    await route.abort()
+  })
+  try {
+    await page.goto('/')
+    await page.evaluate(async () => {
+      const session = {
+        id: 'shared-review', query: '공용 심사 기록', updatedAt: 1000, mode: 'live', protocol: 2,
+        sources: [], nodes: [{ id: 'response_shared', type: 'response', width: 560,
+          position: { x: 0, y: 0 }, data: { prompt: '공용 심사 기록', text: '다른 브라우저에서도 같은 답변', status: 'completed' } }],
+        graph: { relations: [], clusters: [] }, answer: null,
+        viewport: { x: 300, y: 200, zoom: 1 }, fitted: true, pinned: [], status: 'completed', failedParts: [],
+      }
+      const response = await fetch('/api/sessions/shared-review', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session, revision: 0 }),
+      })
+      if (!response.ok) throw Error('fixture save failed')
+    })
+    const other = await otherContext.newPage()
+    await other.goto('http://127.0.0.1:5188/')
+    await openHistory(other)
+    await other.getByRole('button', { name: '공용 심사 기록', exact: true }).click()
+    await expect(other.locator('.response-card')).toContainText('다른 브라우저에서도 같은 답변')
+    await openHistory(other)
+    await other.getByRole('button', { name: '공용 심사 기록 기록 삭제' }).click()
+    await expect(other.locator('.history-row')).toHaveCount(0)
+    await page.reload()
+    await openHistory(page)
+    await expect(page.locator('.history-row')).toHaveCount(0)
+    expect(modelCalls).toBe(0)
+  } finally {
+    await otherContext.close()
+  }
 })

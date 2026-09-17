@@ -1,3 +1,7 @@
+vi.mock('../src/lib/historyApi', async () => {
+  const { memoryHistoryApi } = await import('./fixtures/historyApi')
+  return { historyApi: memoryHistoryApi() }
+})
 import { parseToolSources } from '../src/lib/toolSources'
 import { responseParentId } from '../src/lib/nodeActions'
 import { previousNodes } from '../src/components/PreviousNodeButton'
@@ -48,7 +52,7 @@ const response: ResponseNode = {
   },
 }
 const session = (): Session => ({
-  id: 'session-r',
+  id: crypto.randomUUID(),
   query: '질문',
   updatedAt: 1,
   mode: 'live',

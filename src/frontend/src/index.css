@@ -1915,3 +1915,11 @@ svg {
 .image-card .node-button { color: #8055a5; border-color: #d6c3e7; }
 .image-card .image-preview { background: #ede4f6; }
 .image-card.is-reply-target { border-color: var(--node-accent); }
+
+/* Touch devices have no hover gesture to reveal the shared history delete button. */
+@media (hover: none) {
+  .history-delete {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

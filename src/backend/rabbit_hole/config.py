@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=Path(__file__).parents[1] / ".env", extra="ignore")
+    database_url: SecretStr = SecretStr("")
+    max_history_bytes: int = Field(4_000_000, ge=10000, le=4_000_000)
     openai_api_key: SecretStr = SecretStr("")
     debug_diagnostics: bool = False
     openai_model: str = "gpt-4.1-mini"

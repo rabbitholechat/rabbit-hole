@@ -5,6 +5,205 @@
     "version": "0.2.0"
   },
   "paths": {
+    "/api/sessions": {
+      "get": {
+        "tags": [
+          "shared history"
+        ],
+        "summary": "List Sessions",
+        "operationId": "list_sessions_api_sessions_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[a-zA-Z0-9_-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}": {
+      "put": {
+        "tags": [
+          "shared history"
+        ],
+        "summary": "Save Session",
+        "operationId": "save_session_api_sessions__session_id__put",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Revision"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "shared history"
+        ],
+        "summary": "Delete Session",
+        "operationId": "delete_session_api_sessions__session_id__delete",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Revision"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/import": {
+      "post": {
+        "tags": [
+          "shared history"
+        ],
+        "summary": "Import Session",
+        "operationId": "import_session_api_sessions__session_id__import_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistorySession"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -236,6 +435,43 @@
         ],
         "title": "AgentRequest"
       },
+      "CanvasNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "page",
+              "response",
+              "information",
+              "source"
+            ],
+            "title": "Type"
+          },
+          "position": {
+            "$ref": "#/components/schemas/Position"
+          },
+          "data": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Data"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "position",
+          "data"
+        ],
+        "title": "CanvasNode"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -248,6 +484,263 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HistoryList": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/StoredSession"
+            },
+            "type": "array",
+            "title": "Sessions"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sessions"
+        ],
+        "title": "HistoryList"
+      },
+      "HistorySession": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Id"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "titleRequested": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Titlerequested"
+          },
+          "lastParentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastparentid"
+          },
+          "lastQuery": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastquery"
+          },
+          "lastNodeContext": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastnodecontext"
+          },
+          "updatedAt": {
+            "type": "integer",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Updatedat"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "live",
+              "sample"
+            ],
+            "title": "Mode"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "const": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "sources": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/CanvasNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "graph": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Graph"
+          },
+          "contentGraph": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contentgraph"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "viewport": {
+            "$ref": "#/components/schemas/Viewport"
+          },
+          "fitted": {
+            "type": "boolean",
+            "title": "Fitted"
+          },
+          "pinned": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pinned"
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "completed",
+              "partial",
+              "failed",
+              "cancelled",
+              "awaiting_input"
+            ],
+            "title": "Status"
+          },
+          "failedParts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Failedparts"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "query",
+          "updatedAt",
+          "mode",
+          "sources",
+          "nodes",
+          "graph",
+          "answer",
+          "viewport",
+          "fitted",
+          "pinned",
+          "status",
+          "failedParts"
+        ],
+        "title": "HistorySession"
+      },
+      "ImportResult": {
+        "properties": {
+          "imported": {
+            "type": "boolean",
+            "title": "Imported"
+          }
+        },
+        "type": "object",
+        "required": [
+          "imported"
+        ],
+        "title": "ImportResult"
       },
       "InformationExtract": {
         "properties": {
@@ -283,6 +776,7 @@
         ],
         "title": "InformationExtract"
       },
+      "JsonValue": {},
       "NodeContext": {
         "properties": {
           "node_id": {
@@ -320,6 +814,76 @@
           "text"
         ],
         "title": "NodeContext"
+      },
+      "Position": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "Position"
+      },
+      "Revision": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "Revision"
+      },
+      "SessionWrite": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/HistorySession"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "revision"
+        ],
+        "title": "SessionWrite"
+      },
+      "StoredSession": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/HistorySession"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "session",
+          "revision"
+        ],
+        "title": "StoredSession"
       },
       "StructureRequest": {
         "properties": {
@@ -479,6 +1043,30 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "Viewport": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "zoom": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Zoom"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "zoom"
+        ],
+        "title": "Viewport"
       }
     }
   }

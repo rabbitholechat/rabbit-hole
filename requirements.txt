@@ -81,6 +81,10 @@ openai-agents==0.20.0
     # via rabbit-hole-backend
 opentelemetry-api==1.44.0
     # via mcp
+psycopg==3.3.5
+    # via rabbit-hole-backend
+psycopg-binary==3.3.5 ; implementation_name != 'pypy'
+    # via psycopg
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
 pydantic==2.13.5
@@ -142,6 +146,7 @@ typing-extensions==4.16.0
     #   openai
     #   openai-agents
     #   opentelemetry-api
+    #   psycopg
     #   pydantic
     #   pydantic-core
     #   referencing
@@ -153,6 +158,8 @@ typing-inspection==0.4.4
     #   mcp
     #   pydantic
     #   pydantic-settings
+tzdata==2026.4 ; sys_platform == 'win32'
+    # via psycopg
 urllib3==2.8.0
     # via requests
 uvicorn==0.53.0

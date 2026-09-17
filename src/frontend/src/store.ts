@@ -40,8 +40,8 @@ function persist(session: Session) {
   persistence = persistence
     .catch(() => {})
     .then(() => saveSession(snapshot))
-    .catch(() => {
-      useStore.setState({ storageError: '브라우저 저장소를 사용할 수 없어 기록을 저장하지 못했습니다.' })
+    .catch((error: unknown) => {
+      useStore.setState({ storageError: error instanceof Error ? error.message : '서버에 기록을 저장하지 못했습니다.' })
     })
 }
 interface State {
@@ -296,7 +296,9 @@ export const useStore = create<State>((set, get) => ({
   },
   initialize: async () => {
     try {
-      const history = (await loadSessions()).map((session) => ({
+      await persistence
+      set({ storageError: null })
+      const history = (await loadSessions((storageError) => set({ storageError }))).map((session) => ({
         ...session,
         nodes: session.nodes.map((node) => {
           if (node.type === 'source') {
@@ -332,7 +334,7 @@ export const useStore = create<State>((set, get) => ({
         }),
       })
     } catch {
-      set({ storageError: '브라우저 저장소를 사용할 수 없습니다.' })
+      set({ storageError: '서버에서 공용 기록을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.' })
     }
   },
   setInput: (input) => set({ input }),
@@ -358,11 +360,14 @@ export const useStore = create<State>((set, get) => ({
   },
   remove: async (id) => {
     if (get().session?.id === id) get().newConversation()
-    set({ history: get().history.filter((s) => s.id !== id) })
-    // Serialize deletion after pending snapshots so an old write cannot resurrect it.
+    // Remove only after the server confirms deletion; failures keep the history accessible.
     await persistence
-    await deleteSession(id)
-    set({ history: get().history.filter((s) => s.id !== id) })
+    try {
+      await deleteSession(id)
+      set({ history: get().history.filter((s) => s.id !== id) })
+    } catch (error) {
+      set({ storageError: error instanceof Error ? error.message : '서버 기록을 삭제하지 못했습니다.' })
+    }
   },
   reply: (id) => {
     if (get().activeRequest) return

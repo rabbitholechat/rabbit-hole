@@ -142,3 +142,9 @@ export type PartError = {
   code?: string
   message: string
 }
+
+// Shared PostgreSQL history API; revision 0 creates a new record.
+export type HistoryWrite = { session: Session; revision: number }
+export type HistoryList = { sessions: HistoryWrite[]; next_cursor?: string | null }
+export type Revision = { revision: number }
+export type ImportResult = { imported: boolean }

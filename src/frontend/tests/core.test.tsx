@@ -1,3 +1,8 @@
+import { historyApi } from '../src/lib/historyApi'
+vi.mock('../src/lib/historyApi', async () => {
+  const { memoryHistoryApi } = await import('./fixtures/historyApi')
+  return { historyApi: memoryHistoryApi() }
+})
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { RabbitIcon } from '../src/components/RabbitIcon'
@@ -80,7 +85,7 @@ it('never sends sample sources, prices or continuation into real requests', asyn
   expect(useStore.getState().session?.sources).toEqual([])
   fetchMock.mockRestore()
 })
-it('restores positions and viewport from IndexedDB and deletes history', async () => {
+it('restores positions and viewport from server history and deletes history', async () => {
   const sample = makeSample('vector')
   sample.viewport = { x: 345, y: -122, zoom: 0.7 }
   sample.sources[0].content_origin = 'web_search_summary'
@@ -350,4 +355,16 @@ it('validates source body snapshots without treating search summaries or unsafe 
   expect(parseToolSources([{ ...source, content: { ...source.content, final_url: 'javascript:alert(1)' } }])).toBeUndefined()
   expect(parseToolSources([{ ...source, content: { ...source.content, text: 'a'.repeat(32001) } }])).toBeUndefined()
   expect(parseToolSources([{ ...source, content: { ...source.content, status: 'failed', error_code: 'page_unavailable' } }])).toBeUndefined()
+})
+
+
+it('keeps the history entry and shows an error when server deletion fails', async () => {
+  const sample = { ...makeSample('vector'), id: crypto.randomUUID() }
+  await saveSession(sample)
+  await useStore.getState().initialize()
+  const remove = vi.spyOn(historyApi, 'delete').mockRejectedValueOnce(Error('서버 삭제 실패'))
+  await useStore.getState().remove(sample.id)
+  expect(useStore.getState().history.some((item) => item.id === sample.id)).toBe(true)
+  expect(useStore.getState().storageError).toBe('서버 삭제 실패')
+  remove.mockRestore()
 })

@@ -28,7 +28,7 @@ INFO: {"request_id":"…","event":"request_finished","status":"completed","outpu
 - `app.py:produce`: 델타 전송, 타임아웃, 오류 코드 확인. 잡힌 예외는 VS Code Raised Exceptions로 확인.
 - `store.ts:receive`: response_started → response_delta → response_completed 처리 및 노드 변경 확인.
 
-요청 흐름: /api/agent → 서명 문맥 검증 → 단일 Agent/Runner.run_streamed → SSE 텍스트 → 캔버스 응답 노드 → 완료 이력 서명·IndexedDB 저장.
+요청 흐름: /api/agent → 서명 문맥 검증 → 단일 Agent/Runner.run_streamed → SSE 텍스트 → 캔버스 응답 노드 → 완료 이력 서명·PostgreSQL 저장.
 
 검색·근거 검증·관계 모델 호출은 현재 파이프라인에 없습니다. 추가 질문도 일반 응답으로 표시됩니다. 취소 시 fetch 연결과 SDK 백그라운드 실행을 함께 종료합니다.
 
