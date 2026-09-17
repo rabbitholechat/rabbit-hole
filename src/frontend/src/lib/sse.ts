@@ -33,7 +33,7 @@ export async function consumeSSE(
           .join('\n')
         if (data) {
           const event = JSON.parse(data) as Envelope
-          if (event.version !== 1) throw new Error('지원하지 않는 응답 버전입니다.')
+          if (event.version !== 2) throw new Error('지원하지 않는 응답 버전입니다.')
           if (signal.aborted) return
           receive(event)
           if (event.type === 'done') finished = true

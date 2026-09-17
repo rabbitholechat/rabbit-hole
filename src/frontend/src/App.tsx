@@ -3,6 +3,7 @@ import {
   Background,
   BackgroundVariant,
   MarkerType,
+  PanOnScrollMode,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -11,6 +12,8 @@ import {
 } from '@xyflow/react'
 import {
   ArrowUp,
+  ArrowLeft,
+  ArrowRight,
   PanelLeftClose,
   ChevronRight,
   Clock3,
@@ -19,28 +22,30 @@ import {
   Minus,
   Plus,
   MessageCircle,
+  MessageCirclePlus,
   Square,
   Trash2,
   X,
   FlaskConical,
   RotateCcw,
   LoaderCircle,
-  Compass,
 } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 import { useStore } from './store'
 import { RabbitIcon } from './components/RabbitIcon'
 import { PageCard } from './components/PageCard'
+import { ConversationEdge } from './components/ConversationEdge'
 import { RelationEdge } from './components/RelationEdge'
 import { AnswerPanel } from './components/AnswerPanel'
-import { ClarificationPanel } from './components/ClarificationPanel'
+import { ResponseCard } from './components/ResponseCard'
 import { Button } from './components/ui/button'
+import { canvasBounds } from './lib/canvasBounds'
 import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
-import type { PageNode } from './types'
+import type { CanvasNode } from './types'
 
-const nodeTypes = { page: PageCard },
-  edgeTypes = { relation: RelationEdge }
+const nodeTypes = { page: PageCard, response: ResponseCard },
+  edgeTypes = { relation: RelationEdge, conversation: ConversationEdge }
 const sampleTitles = ['벡터 검색이란?', '아이폰 폴드 가격과 출시일', '오사카 최저가 항공권']
 const suggestions = [
   '복잡한 개념을 쉽게 설명해줘',
@@ -50,8 +55,18 @@ const suggestions = [
 function Workspace() {
   const state = useStore(),
     session = state.session
-  const flow = useReactFlow<PageNode>(),
+  const flow = useReactFlow<CanvasNode>(),
     viewport = useViewport()
+  const [screenSize, setScreenSize] = useState({ width: window.innerWidth, height: window.innerHeight })
+  useEffect(() => {
+    const resize = () => setScreenSize({ width: window.innerWidth, height: window.innerHeight })
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
+  const extent = useMemo(
+    () => canvasBounds(session?.nodes ?? [], viewport, screenSize),
+    [session?.nodes, viewport, screenSize],
+  )
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth > 700)
   useEffect(() => {
     const mobile = window.matchMedia('(max-width: 700px)')
@@ -65,7 +80,46 @@ function Workspace() {
   const [weak, setWeak] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null),
     composing = useRef(false)
+  useEffect(() => {
+    if (state.replyTo) inputRef.current?.focus()
+  }, [state.replyTo])
+  const navigateRef = useRef<(direction: number) => void>(() => {})
   const fitRef = useRef<(initial?: boolean) => void>(() => {})
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.altKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, select, [contenteditable="true"]')
+      )
+        return
+      const key = event.key.toLowerCase()
+      const modified = event.ctrlKey || event.metaKey
+      if (!modified) {
+        if (event.shiftKey || !['KeyW', 'KeyS', 'KeyA', 'KeyD'].includes(event.code)) return
+        event.preventDefault()
+        if (event.code === 'KeyA' || event.code === 'KeyD') {
+          if (!event.repeat) navigateRef.current(event.code === 'KeyA' ? -1 : 1)
+          return
+        }
+        if (event.repeat) {
+          const factor = event.code === 'KeyS' ? 1 / 1.04 : 1.04
+          void flow.zoomTo(flow.getViewport().zoom * factor, { duration: 0 })
+        } else if (event.code === 'KeyS') void flow.zoomOut({ duration: 150 })
+        else void flow.zoomIn({ duration: 150 })
+        return
+      }
+      if (event.repeat || !['b', '+', '=', '-', '0'].includes(key)) return
+      event.preventDefault()
+      if (key === 'b') setHistoryOpen((open) => !open)
+      else if (key === '0') fitRef.current()
+      else if (key === '-') void flow.zoomOut({ duration: 150 })
+      else void flow.zoomIn({ duration: 150 })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [flow])
   useEffect(() => {
     void useStore.getState().initialize()
   }, [])
@@ -79,16 +133,18 @@ function Workspace() {
     if (initial && window.innerWidth < 700) nodes = nodes.slice(0, 1)
     const minX = Math.min(...nodes.map((n) => n.position.x)),
       minY = Math.min(...nodes.map((n) => n.position.y))
-    const width = Math.max(...nodes.map((n) => n.position.x + CARD_WIDTH)) - minX
-    const height = Math.max(...nodes.map((n) => n.position.y + CARD_HEIGHT)) - minY
+    const width = Math.max(...nodes.map((n) => n.position.x + (n.width ?? CARD_WIDTH))) - minX
+    const height =
+      Math.max(...nodes.map((n) => n.position.y + (n.measured?.height ?? n.height ?? CARD_HEIGHT))) - minY
     const mobile = window.innerWidth < 700
     const left = mobile ? 24 : historyOpen ? 250 : 75
     const right = mobile ? 24 : 34
-    const top = mobile ? 170 : session?.answer ? 240 : 120,
-      bottom = mobile ? 280 : 150
+    const top = mobile ? (session?.protocol === 2 ? 145 : 170) : session?.answer ? 240 : 120,
+      bottom = mobile ? (session?.protocol === 2 ? 180 : 280) : 150
     const roomW = Math.max(220, window.innerWidth - left - right),
       roomH = Math.max(200, window.innerHeight - top - bottom)
-    const zoom = Math.min(0.95, roomW / (width + 60), roomH / (height + 60))
+    const padding = session?.protocol === 2 ? 16 : 60
+    const zoom = Math.min(0.95, roomW / (width + padding), roomH / (height + padding))
     const next = {
       x: left + roomW / 2 - (minX + width / 2) * zoom,
       y: top + roomH / 2 - (minY + height / 2) * zoom,
@@ -98,9 +154,48 @@ function Workspace() {
     state.viewport(next)
     state.markFitted()
   }
+  function focusNode(node: CanvasNode) {
+    const zoom = flow.getViewport().zoom
+    const width = node.measured?.width ?? node.width ?? CARD_WIDTH
+    const height = node.measured?.height ?? node.height ?? CARD_HEIGHT
+    const mobile = window.innerWidth < 700
+    const left = mobile ? 24 : historyOpen ? 250 : 75
+    const right = mobile ? 24 : 70
+    const top = mobile ? 145 : 120
+    const bottom = 160
+    const roomHeight = Math.max(100, window.innerHeight - top - bottom)
+    // Keep the heading visible when a long response is taller than the viewport.
+    const next = {
+      x: left + (window.innerWidth - left - right) / 2 - (node.position.x + width / 2) * zoom,
+      y: top + roomHeight / 2 - node.position.y * zoom - Math.min(height * zoom, roomHeight) / 2,
+      zoom,
+    }
+    state.markFitted()
+    void flow.setViewport(next, {
+      duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250,
+    })
+  }
+  const navigationIndex = Math.max(0, session?.nodes.findIndex((node) => node.id === state.selected) ?? 0)
+  function navigateNode(direction: number) {
+    const current = useStore.getState()
+    const ordered = current.session?.nodes ?? []
+    const index = Math.max(
+      0,
+      ordered.findIndex((node) => node.id === current.selected),
+    )
+    const next = ordered[index + direction]
+    if (!next) return
+    current.select(next.id)
+    focusNode(next)
+  }
+  navigateRef.current = navigateNode
   fitRef.current = fit
   useEffect(() => {
-    if (session?.nodes.length && !session.fitted && session.status !== 'running') {
+    if (
+      session?.nodes.length &&
+      !session.fitted &&
+      (session.protocol === 2 || session.status !== 'running')
+    ) {
       const timer = window.setTimeout(() => fitRef.current(true), 80)
       return () => clearTimeout(timer)
     }
@@ -116,19 +211,44 @@ function Workspace() {
   )
   const nodes = useMemo(
     () =>
-      session?.nodes.map((n) => ({
-        ...n,
-        selected: n.id === state.selected,
-        data: {
-          ...n.data,
-          related: related.has(n.id),
-          dimmed: Boolean(state.selected && n.id !== state.selected && !related.has(n.id)),
-        },
-      })) ?? [],
+      session?.nodes.map((n): CanvasNode =>
+        n.type === 'response'
+          ? { ...n, selected: n.id === state.selected }
+          : {
+              ...n,
+              selected: n.id === state.selected,
+              data: {
+                ...n.data,
+                related: related.has(n.id),
+                dimmed: Boolean(state.selected && n.id !== state.selected && !related.has(n.id)),
+              },
+            },
+      ) ?? [],
     [session?.nodes, related, state.selected],
   )
-  const edges: Edge[] = useMemo(
-    () =>
+  const edges: Edge[] = useMemo(() => {
+    if (session?.protocol === 2) {
+      const responses = session.nodes.filter((n) => n.type === 'response')
+      return responses.flatMap((node, index) => {
+        const parentId = node.data.parentId === undefined ? responses[index - 1]?.id : node.data.parentId
+        if (!parentId || !responses.some((n) => n.id === parentId)) return []
+        return [
+          {
+            id: `conversation-${parentId}-${node.id}`,
+            source: parentId,
+            target: node.id,
+            type: 'conversation',
+            className: 'conversation-edge',
+            ariaLabel: '이전 응답에서 다음 응답으로',
+            selectable: false,
+            focusable: false,
+            markerEnd: { type: MarkerType.ArrowClosed, color: '#7fa99c', width: 16, height: 16 },
+            style: { stroke: '#7fa99c', strokeWidth: 1.5 },
+          },
+        ]
+      })
+    }
+    return (
       session?.graph.relations.map((e, i) => ({
         id: `edge-${i}`,
         source: e.source,
@@ -146,9 +266,9 @@ function Workspace() {
           opacity: state.selected && e.source !== state.selected && e.target !== state.selected ? 0.3 : 1,
           strokeDasharray: e.strength === 'weak' ? '4 5' : undefined,
         },
-      })) ?? [],
-    [session?.graph, state.selected, state.selectedEdge, weak],
-  )
+      })) ?? []
+    )
+  }, [session?.graph, session?.nodes, session?.protocol, state.selected, state.selectedEdge, weak])
   const selectedSource = session?.sources.find((s) => s.id === state.selected)
   const selectedRelation =
     state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]
@@ -166,13 +286,19 @@ function Workspace() {
       className={`workspace ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'}`}
       aria-label="대화 캔버스"
     >
-      <ReactFlow<PageNode>
+      <ReactFlow<CanvasNode>
+        translateExtent={extent}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={state.nodesChange}
-        onNodeClick={(_, node) => state.select(node.id)}
+        onNodeClick={(event, node) => {
+          const target = event.target
+          if (target instanceof Element && target.closest('button, a, input, textarea')) return
+          state.select(node.id)
+          focusNode(node)
+        }}
         onNodeDragStop={(_, node) => {
           state.nodesChange([{ type: 'position', id: node.id, position: node.position, dragging: false }])
           state.markFitted()
@@ -185,6 +311,22 @@ function Workspace() {
           state.viewport(v)
           if (event) state.markFitted()
         }}
+        onWheelCapture={(event) => {
+          if (!event.shiftKey || event.ctrlKey || event.metaKey) return
+          const target = event.target
+          if (target instanceof Element && target.closest('.nowheel')) return
+          event.preventDefault()
+          event.stopPropagation()
+          const current = flow.getViewport()
+          const unit = event.deltaMode === 1 ? 20 : event.deltaMode === 2 ? window.innerWidth : 1
+          void flow.setViewport({ ...current, x: current.x - (event.deltaX || event.deltaY) * unit * 0.5 })
+          state.markFitted()
+        }}
+        panOnScroll
+        panOnScrollMode={PanOnScrollMode.Free}
+        zoomOnScroll={false}
+        zoomActivationKeyCode="Control"
+        zoomOnDoubleClick={false}
         minZoom={0.15}
         maxZoom={1.75}
         nodesConnectable={false}
@@ -195,12 +337,44 @@ function Workspace() {
       >
         <Background variant={BackgroundVariant.Lines} gap={28} lineWidth={0.6} color="#e2e6df" />
       </ReactFlow>
+      {Boolean(session?.nodes.length) && (
+        <nav className="node-navigation panel" aria-label="노드 탐색">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="이전 노드"
+            data-tooltip="이전 노드 · A"
+            data-tooltip-position="bottom"
+            aria-keyshortcuts="a"
+            disabled={navigationIndex === 0}
+            onClick={() => navigateNode(-1)}
+          >
+            <ArrowLeft size={16} />
+          </Button>
+          <span aria-live="polite" aria-atomic="true">
+            {navigationIndex + 1}/{session!.nodes.length}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="다음 노드"
+            data-tooltip="다음 노드 · D"
+            data-tooltip-position="bottom"
+            aria-keyshortcuts="d"
+            disabled={navigationIndex >= session!.nodes.length - 1}
+            onClick={() => navigateNode(1)}
+          >
+            <ArrowRight size={16} />
+          </Button>
+        </nav>
+      )}
       <header className="sidebar-header">
         <button
           className="brand"
           aria-label={historyOpen ? 'Rabbit Hole' : '대화 기록 펼치기'}
           aria-expanded={historyOpen}
-          data-tooltip={historyOpen ? undefined : '대화 기록 펼치기'}
+          data-tooltip={historyOpen ? undefined : '대화 기록 펼치기 · Ctrl/⌘+B'}
+          aria-keyshortcuts="Control+b Meta+b"
           data-tooltip-position="bottom"
           onClick={() => {
             if (!historyOpen) setHistoryOpen(true)
@@ -214,7 +388,8 @@ function Workspace() {
           variant="ghost"
           size="icon"
           aria-label="대화 기록 접기"
-          data-tooltip="대화 기록 접기"
+          data-tooltip="대화 기록 접기 · Ctrl/⌘+B"
+          aria-keyshortcuts="Control+b Meta+b"
           data-tooltip-position="bottom"
           aria-expanded={historyOpen}
           aria-hidden={!historyOpen}
@@ -233,7 +408,7 @@ function Workspace() {
         <Button
           className="new-search"
           onClick={() => {
-            state.newSearch()
+            state.newConversation()
             if (window.innerWidth < 700) setHistoryOpen(false)
             inputRef.current?.focus()
           }}
@@ -255,12 +430,12 @@ function Workspace() {
                 }}
               >
                 <Clock3 size={14} />
-                <span>{h.query}</span>
+                <span>{h.title || h.query}</span>
                 {h.mode === 'sample' && <small>예시</small>}
               </button>
               <button
                 className="history-delete"
-                aria-label={`${h.query} 기록 삭제`}
+                aria-label={`${h.title || h.query} 기록 삭제`}
                 onClick={() => void state.remove(h.id)}
               >
                 <Trash2 size={13} />
@@ -295,16 +470,18 @@ function Workspace() {
       {session && (
         <div className="canvas-heading">
           <div>
-            <span className="eyebrow">
-              {session.mode === 'sample' ? 'DESIGN PREVIEW' : 'YOUR EXPLORATION'}
-            </span>
-            <h1>{session.query.split('\n')[0]}</h1>
+            {session.mode === 'sample' && <span className="eyebrow">DESIGN PREVIEW</span>}
+            <h1>{(session.title || session.query).split('\n')[0]}</h1>
           </div>
-          <span>{session.sources.length}개의 페이지</span>
+          <span>
+            {session.protocol === 2
+              ? `${session.nodes.length}개의 응답`
+              : `${session.sources.length}개의 페이지`}
+          </span>
           {session.mode === 'sample' && <span className="sample-badge">디자인 예시 · 가상 데이터</span>}
         </div>
       )}
-      <AnswerPanel />
+      {session?.protocol !== 2 && <AnswerPanel />}
       {(selectedSource || selectedRelation) && (
         <section className="detail-panel panel" aria-label={selectedSource ? '출처 상세' : '관계 상세'}>
           <header>
@@ -355,16 +532,6 @@ function Workspace() {
                     <ExternalLink size={14} />
                   </a>
                 )}
-                <Button
-                  className="explore-button"
-                  variant="outline"
-                  size="sm"
-                  disabled={busy || session?.mode === 'sample' || !session?.continuation}
-                  onClick={() => void state.run({ focusId: selectedSource.id })}
-                >
-                  <Compass />
-                  관련 자료 더 찾기
-                </Button>
                 {session?.mode === 'sample' && (
                   <p className="timestamp">디자인 예시에서는 실제 요청을 실행하지 않습니다.</p>
                 )}
@@ -398,7 +565,6 @@ function Workspace() {
         </section>
       )}
       <div className="composer-area">
-        {!busy && session?.clarification && <ClarificationPanel clarification={session.clarification} />}
         {(state.error || state.storageError) && (
           <div className="error-banner panel" role="alert">
             <span>{state.error || state.storageError}</span>
@@ -412,25 +578,25 @@ function Workspace() {
             </Button>
 
             {!busy && session?.status === 'failed' && (
-              <Button variant="outline" size="sm" onClick={() => void state.run({ fresh: true })}>
+              <Button variant="outline" size="sm" onClick={() => void state.run({ retry: true })}>
                 다시 시도
               </Button>
             )}
           </div>
         )}
         {busy && (
-          <div className="search-status" role="status">
+          <div className="agent-status" role="status">
             <LoaderCircle className="spin" size={14} />
             {state.stage}
-            <span>확보한 자료부터 보여드릴게요.</span>
+            <span>받은 응답부터 캔버스에 표시합니다.</span>
           </div>
         )}
-        {!busy && session && session.mode === 'live' && (
+        {!busy && session && session.mode === 'live' && session.protocol === 2 && (
           <div className="result-status">
             <span>
               {
                 {
-                  completed: '탐색을 이어가 보세요',
+                  completed: '대화를 이어가 보세요',
                   awaiting_input: '추가 답변을 기다리고 있어요',
                   partial: '부분 완료 · 확보한 결과 유지',
                   failed: '요청을 완료하지 못했어요',
@@ -440,43 +606,51 @@ function Workspace() {
                 }[session.status]
               }
             </span>
-            <button onClick={() => void state.run({ fresh: true })}>
-              <RotateCcw size={12} />
-              다시 요청
-            </button>
-            {session.failedParts
-              .filter((p) => p === 'intent' || p === 'answer' || p === 'relationships')
-              .map((part) => (
-                <Button
-                  key={part}
-                  size="sm"
-                  variant="outline"
-                  disabled={!session.continuation}
-                  onClick={() => void state.run({ retry: part as 'intent' | 'answer' | 'relationships' })}
-                >
-                  {part === 'intent' ? '질문 확인' : part === 'answer' ? '답변' : '관계'} 재시도
-                </Button>
-              ))}
+            {['failed', 'partial', 'cancelled'].includes(session.status) && (
+              <button onClick={() => void state.run({ retry: true })}>
+                <RotateCcw size={12} />
+                다시 요청
+              </button>
+            )}
           </div>
         )}
         {!session && (
           <section className="welcome">
             <h1>호기심이 이어지는 곳</h1>
-            <p>질문에서 아이디어로, 대화에서 다음 단계로.</p>
           </section>
         )}
-        <form className="composer panel" onSubmit={submit}>
+        <form className={`composer panel ${state.replyTo ? 'has-reply' : ''}`} onSubmit={submit}>
+          {state.replyTo && (
+            <div className="reply-slot">
+              <div className="reply-context" aria-label="이어서 질문할 응답">
+                <MessageCirclePlus size={15} aria-hidden="true" />
+                <div className="reply-context-text">
+                  <strong>이어서 질문하기</strong>
+                  <span>
+                    {
+                      session?.nodes.filter((n) => n.type === 'response').find((n) => n.id === state.replyTo)
+                        ?.data.prompt
+                    }
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => state.reply(null)}
+                  aria-label="이어서 질문 취소"
+                  data-tooltip="이어서 질문 취소"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+          )}
           <MessageCircle size={21} />
           <textarea
             ref={inputRef}
             rows={1}
             aria-label="메시지 입력"
             placeholder={
-              session?.clarification
-                ? '추가 질문에 답변해 주세요'
-                : session
-                  ? '이어서 질문하거나 다음 작업을 요청하세요'
-                  : '무엇을 함께 풀어볼까요?'
+              session?.protocol === 2 ? '이어서 질문하거나 다음 작업을 요청하세요' : '무엇을 함께 풀어볼까요?'
             }
             value={state.input}
             maxLength={2000}
@@ -520,11 +694,9 @@ function Workspace() {
             ))}
           </div>
         )}
-        <p className="composer-note">
-          {session?.mode === 'sample'
-            ? '디자인 예시입니다. 메시지를 보내면 새로운 대화를 시작합니다.'
-            : '질문에서 아이디어로, 대화에서 다음 단계로.'}
-        </p>
+        {session?.mode === 'sample' && (
+          <p className="composer-note">디자인 예시입니다. 메시지를 보내면 새로운 대화를 시작합니다.</p>
+        )}
       </div>
       {session?.sources.length ? (
         <div className="map-legend">
@@ -543,7 +715,8 @@ function Workspace() {
           variant="ghost"
           size="icon"
           aria-label="화면 맞춤"
-          data-tooltip="화면 맞춤"
+          data-tooltip="화면 맞춤 · Ctrl/⌘+0"
+          aria-keyshortcuts="Control+0 Meta+0"
           onClick={() => fit()}
         >
           <Maximize />
@@ -553,17 +726,24 @@ function Workspace() {
           variant="ghost"
           size="icon"
           aria-label="축소"
-          data-tooltip="축소"
+          data-tooltip="축소 · S · Ctrl/⌘+− · Ctrl+휠 아래"
+          aria-keyshortcuts="s Control+- Meta+-"
           onClick={() => void flow.zoomOut({ duration: 150 })}
         >
           <Minus />
         </Button>
-        <span aria-label="현재 배율">{Math.round(viewport.zoom * 100)}%</span>
+        <span
+          aria-label="현재 배율"
+          data-tooltip="휠: 상하 · Shift+휠: 좌우 · 트랙패드: 자유 이동 · Ctrl+휠: 확대·축소"
+        >
+          {Math.round(viewport.zoom * 100)}%
+        </span>
         <Button
           variant="ghost"
           size="icon"
           aria-label="확대"
-          data-tooltip="확대"
+          data-tooltip="확대 · W · Ctrl/⌘++ · Ctrl+휠 위"
+          aria-keyshortcuts="w Control++ Meta++"
           onClick={() => void flow.zoomIn({ duration: 150 })}
         >
           <Plus />

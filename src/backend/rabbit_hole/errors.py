@@ -14,10 +14,6 @@ class StageFailure(ValueError):
         super().__init__(code)
 
 
-class EvidenceValidationError(ValueError):
-    pass
-
-
 def error_code(error: Exception) -> str:
     if isinstance(error, StageFailure):
         return error.code
@@ -33,8 +29,6 @@ def error_code(error: Exception) -> str:
         if error.status_code in {400, 404, 422}:
             return "provider_request_error"
         return "provider_error"
-    if isinstance(error, EvidenceValidationError):
-        return "invalid_evidence"
     if isinstance(error, MaxTurnsExceeded):
         return "turn_limit"
     if isinstance(error, (ModelBehaviorError, ValidationError, ValueError)):
@@ -44,19 +38,15 @@ def error_code(error: Exception) -> str:
 
 MESSAGES = {
     "timeout": "응답 시간이 초과되었습니다.",
-    "connection_error": "검색·모델 서비스에 연결하지 못했습니다.",
+    "connection_error": "모델 서비스에 연결하지 못했습니다.",
     "provider_auth_error": "모델 서비스의 API 키 또는 접근 권한을 확인하세요.",
     "provider_rate_limit": "모델 서비스의 요청 한도 또는 사용 가능 잔액을 확인하세요.",
     "provider_request_error": "모델 서비스가 요청을 거부했습니다. 모델과 도구 설정을 확인하세요.",
     "provider_error": "모델 서비스 오류가 발생했습니다.",
-    "invalid_evidence": "생성된 결과의 출처 또는 근거 검증에 실패했습니다.",
-    "invalid_output": "모델 출력 형식을 확인하지 못했습니다.",
+    "invalid_output": "모델의 응답을 확인하지 못했습니다.",
     "turn_limit": "모델 실행 횟수 한도에 도달했습니다.",
-    "search_budget_exhausted": "검색 호출 예산을 소진했습니다.",
-    "invalid_tool_input": "검색 도구에 전달된 입력이 올바르지 않습니다.",
-    "search_incomplete": "웹 검색 응답이 완료되지 않았습니다.",
-    "search_tool_failed": "웹 검색 도구가 정상적으로 완료되지 않았습니다.",
-    "no_sources": "사용할 수 있는 공개 페이지를 확보하지 못했습니다.",
+    "incomplete_response": "모델 응답이 완료되지 않았습니다. 받은 내용은 보존했습니다.",
+    "output_limit": "응답 길이 한도에 도달했습니다. 받은 내용은 보존했습니다.",
     "internal_error": "작업 처리 중 오류가 발생했습니다.",
 }
 

@@ -1,55 +1,73 @@
-# API / SSE 계약 v1
+# API / SSE 계약 v2
 
-JSON 본문 기본 2,100,000바이트 상한. continuation은 최대 2,000,000자.
+동일 origin `/api`, JSON 본문 상한 2,100,000바이트, continuation 최대 2,000,000자.
 
-로그인 없음. 같은 origin `/api` 사용. WebSocket 불필요: 단방향 SSE + fetch AbortController.
+- `GET /api/health`: status, configured, api_version=2. 비밀값 없음.
+- `POST /api/agent`: query(공백 제외 1..2000자), request_id(UUID), continuation(선택). 추가 필드 거부.
+- `DELETE /api/jobs/{job_id}`: started의 access_token을 Bearer 헤더로 전달. 주 취소 경로는 fetch AbortController/연결 종료. 다른 서버 인스턴스의 작업은 404.
 
-- `GET /api/health`: 키 값 없이 구성 여부.
-- `POST /api/search`: JSON query(1..2000), request_id(UUID), continuation(서버 서명 snapshot, 선택), focus_source_id(선택), retry_part(intent|answer|relationships, 선택). 응답은 `text/event-stream`.
-- `DELETE /api/jobs/{id}`: Bearer 작업 접근 토큰. 동일 프로세스에서 최선 노력 취소, 다른 인스턴스는 404. 주 취소 경로는 스트림 연결 종료.
+```json
+{"query":"아이디어를 실행 계획으로 정리해줘","request_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6"}
+```
 
-SSE envelope: `{version:1, request_id, job_id, seq, type, data}`. `id: seq`, `event: type`, `data: JSON` + 빈 줄. 주요 이벤트 순서: `started`, `status`, `sources`(여러 번), `answer`/`relationships`, `checkpoint`, `done`. 출처 확보 직후에도 `checkpoint`를 보냅니다. 실패 부문은 `part_error`, 연결 유지 SSE comment `: ping`. `clarification`은 SDK 의도 확인 후 조건 입력 요청과 checkpoint를 보내고 종료합니다. 의도 확인은 모델 호출을 사용합니다.
+첫 요청에는 continuation 생략. 후속 요청에는 마지막 checkpoint의 continuation과 새로운 query/request_id를 전달합니다. 실패/중지된 답변은 모델 대화 이력에 포함되지 않으므로 같은 query를 다시 보내면 해당 턴을 다시 시도합니다. 자동 유료 재시도 없음.
 
-- started: access_token (메모리 전용), status
-- status: stage(understanding|searching|reading|relating)
-- clarification: message, questions(1..3개), suggestions(0..4개). 주제별 kind/전용 필드 없음. 클라이언트는 질문을 표시하고 사용자 답변을 query + continuation으로 전송. 예시 선택은 입력만 채우며 자동 호출 없음.
-- sources: sources 배열 (페이지 단위 upsert)
-- answer: claims 배열(text, evidence[source_id, quote, basis]), limitation
-- relationships: relations 배열(source, target, kind, label, explanation, evidence, strength), clusters 배열(id, label, source_ids), page_types 배열(source_id, tag)
-- part_error: part(intent|search|answer|relationships), code(아래 목록), message (민감 정보 제거). 기존 클라이언트/기록 호환을 위해 프런트에서 code 생략 허용.
-- checkpoint: continuation 서명 문자열. 서버가 확보한 출처/답변/관계/원 질문 보존. 브라우저 데이터를 신뢰해서 레지스트리에 넣지 않음.
-- done: status(completed|partial|cancelled|failed|awaiting_input), failed_parts
+## 스트림
 
-클라이언트는 활성 request_id만 적용. 새 화면/중지/기록 전환 시 세대 변경과 abort. 단절 시 받은 카드 보존, 자동 재호출 없음.
+SSE envelope: `{version:2, request_id, job_id, seq, type, data}`. `id: seq`, `event: type`, `data: JSON`과 빈 줄. seq는 요청별 단조 증가. 5초 동안 전송이 없으면 `: ping`.
 
-개별 출처: id(URL SHA256), original_url, url, title, domain, summary, excerpt, published_at(nullable), retrieved_at, read_status(summary|read|failed), tag, content_origin(search_snippet|web_search_summary). 가격 전용 추정 필드 없음.
+| 이벤트 | data | 의미 |
+| --- | --- | --- |
+| started | access_token, status=running | 작업 제어 토큰, 브라우저 메모리에만 유지 |
+| checkpoint | continuation | 서버 서명된 완료 대화 이력 |
+| response_started | id | 응답 노드 생성. ID는 response_{request_id} |
+| status | stage=responding | 에이전트 응답 진행 |
+| response_delta | id, delta | Markdown 원문 텍스트를 그대로 추가 |
+| response_completed | id, text | 완성된 전체 응답으로 확정, 델타에 다시 추가하지 않음 |
+| part_error | part=response, code, message | 공개 가능한 실패 정보 |
+| done | status, failed_parts | completed/partial/failed, 실패 시 [response] |
 
-모델 출력은 미등록 ID, 없는 노드, 근거 발췌 불일치 시 거부. 답변 핵심 주장에 별도 의미 검증 실행. SDK 내부 이벤트와 reasoning은 전송하지 않음.
+정상 순서: started → checkpoint(이전 이력) → response_started → status → response_delta 반복 → response_completed → checkpoint(이번 턴 포함) → done.
+실패 시 response_completed 없음. 받은 텍스트가 있으면 partial, 없으면 failed. checkpoint는 이전 완료 대화만 유지합니다. 취소 시 연결 종료, 클라이언트가 노드 상태를 cancelled로 확정합니다.
 
-Vercel: POST 한 응답의 수명 동안 작업 실행. 후속/부문 재시도는 서명 checkpoint로 다른 인스턴스에서도 복구. 완료 이력 DB는 IndexedDB이며 작업 메모리는 만료/재시작 시 소실. 글로벌 rate limit은 배포 WAF에서 추가 구성.
+에이전트 응답 1개 = 응답 태그·아이콘을 가진 캔버스 노드 1개. 높이는 Markdown 내용에 맞춰 증가합니다. 이어지는 응답은 오른쪽에 배치하고 클라이언트에서 대화 순서 화살표로 연결합니다. 이는 내용 근거 관계가 아닙니다. 별도 요약·노드 분해·출처 등록·관계 생성 모델 호출 없음. SDK의 공개 output_text/refusal delta만 전달하고 내부 추론/도구 이벤트는 전달하지 않습니다. 현재 등록 도구는 없습니다.
 
-## OpenAI 검색 출처 계약
+## 제한과 보존
 
-- 검색 공급자는 OpenAI Responses `web_search`만 사용. 구성 여부는 OPENAI_API_KEY만 검사.
-- `content_origin`은 기존 기록에서 생략 가능하며 기본값은 `search_snippet`. 새 검색은 `web_search_summary`.
-- `summary`는 OpenAI의 URL 인용 annotation이 붙은 단일 출처 문단. 생성 요약이며 원문 인용이 아님. 복수 URL 문단이나 인용 없는 consulted URL은 요약을 비워 둠.
-- 새 검색의 `excerpt`는 빈 문자열, `read_status`는 `summary`. 원문을 확보했다고 주장하지 않음. 기존 기록의 원문은 보존.
-- URL은 공급자의 `web_search_call.action.sources` 또는 `url_citation`에서만 등록. 생성 텍스트의 링크는 출처로 채택하지 않음.
-- 요청당 내장 도구 호출 최대 1회. `MAX_SEARCH_CALLS`는 재시도를 포함하는 요청 예산. 숨은 SDK 재시도 비활성화.
-- 인용 링크는 해당 페이지 카드/근거에서 열 수 있어야 함. AI 요약의 부분 문자열 대조와 의미 검증은 원문 사실 검증을 보장하지 않음.
+- 출력 토큰, 요청 시간, 전체 실행 시간, SDK 턴 수, 응답 길이(64,000자), 동시 작업·요청 빈도 제한 적용.
+- 서명 이력은 최근 MAX_CONTEXT_TURNS개 메시지, 최대 96,000자. 오래된 user/assistant 쌍부터 제거. 실패한 턴은 포함하지 않음.
+- continuation은 HMAC 서명, 암호화 아님. 로그 출력 금지. 7일 만료. 프로덕션에는 모든 인스턴스가 동일한 SESSION_SIGNING_KEY 사용.
+- 프런트는 현재 request_id, 증가하는 seq, 활성 응답 id만 반영. 중지/화면 전환 뒤 늦은 델타 무시.
+- 스트리밍 중 500ms 간격으로 IndexedDB 저장, 완료·중지·실패 즉시 저장. 새로고침 시 마지막 저장 시점까지 복원. running 기록은 partial로 표시하며 API를 호출하지 않음.
+- 노드 위치·viewport 보존. 최초 노드만 자동 화면 맞춤. 후속 노드는 오른쪽에 추가하며 화면 맞춤 버튼으로 전체 보기.
+- Markdown HTML/외부 이미지 비활성화. 링크는 클라이언트의 기존 안전한 HTTP(S) URL 검사 적용. 생성 링크는 검증 출처가 아님.
 
-추가 질문과 awaiting_input 상태는 IndexedDB에 저장하며 복원 시 API를 호출하지 않습니다. 기존 기록의 주제별 레거시 필드는 요청에 전송하지 않습니다.
+## 호환성
 
-## 실패 진단
+`/api/search`와 v1 검색 파이프라인은 제거했습니다. 기존 IndexedDB 페이지·관계 기록과 디자인 예시는 로컬 열람 가능. 기존 기록에서 메시지를 보내면 새 v2 대화가 시작되고 기존 continuation/가상 자료를 전송하지 않습니다.
 
-`part_error.code`: timeout, connection_error, provider_auth_error, provider_rate_limit,
-provider_request_error, provider_error, invalid_evidence, invalid_output, turn_limit,
-search_budget_exhausted, invalid_tool_input, search_incomplete, search_tool_failed,
-no_sources, internal_error.
+## 실패 코드
 
-검색 도구 예외는 SDK가 모델용 대체 문장으로 삼키지 않고 서버로 전파됩니다.
-검색 예외는 `part=search`로 보고하며 다른 단계의 실패가 이미 있으면 파생된 `no_sources` 오류를 추가하지 않습니다.
-출처가 있으면 카드는 보존하고 partial, 없으면 failed로 종료합니다.
-서버 로그에는 request_id, part, code, 예외 클래스명, 코드 파일명·줄 번호·함수명만 기록합니다. 예외 원문·응답 본문·키·질문·내부 추론은 기록하지 않습니다.
+timeout, connection_error, provider_auth_error, provider_rate_limit, provider_request_error,
+provider_error, invalid_output, turn_limit, incomplete_response, output_limit, internal_error.
 
-`evidence.quote`는 저장된 Markdown summary/excerpt의 부분 문자열을 그대로 복사합니다. 강조 문법 제거·번역·제목/URL 대체를 허용하지 않습니다. 관계 유형은 same_topic, comparison, application, same_entity, same_conditions, contrasting_view, related_concept이며 양쪽 페이지 내용에 근거한 무방향 연결입니다.
+원문 오류·키·추론은 SSE에 포함하지 않습니다. 요청 검증 422, 만료/위조/구버전 continuation 409, 본문 제한 413, 요청 제한 429, 미설정 503.
+
+### POST `/api/title`
+
+첫 완료 응답의 마지막 `checkpoint.continuation`과 새 UUID `request_id`를 전달하면
+`{"title":"대화 제목"}`을 반환합니다. 서명된 문맥이 user/assistant 한 쌍이어야 합니다.
+프런트는 `done(completed)` 후 독립 요청으로 한 번 호출하며 다음 대화를 막지 않습니다.
+실패하면 질문을 제목으로 유지합니다. `title`, `titleRequested`는 IndexedDB에 저장되며
+기록 복원은 제목 생성 요청을 보내지 않습니다. 생성 중 다른 기록을 열어도 원래 기록만 갱신합니다.
+서명 오류/잘못된 문맥 409, 요청 제한 429, 모델 미설정 503, 생성 실패 502입니다.
+본문과 동일한 요청/동시 실행 제한 및 별도 `BACKGROUND_TIMEOUT_SECONDS`를 적용합니다.
+
+### 응답에서 대화 분기
+
+프런트는 완료 응답 직후 `checkpoint`의 서명된 `continuation`을 해당 응답 노드에도 저장합니다.
+특정 응답에서 이어서 질문할 때 `/api/agent`에 그 노드의 `continuation`을 전달합니다.
+예를 들어 A→B 다음에 A에서 C를 요청하면 모델 문맥은 A→C이며 B는 포함하지 않습니다.
+노드의 `parentId`가 캔버스 간선을 결정합니다. `collapsed`와 함께 IndexedDB에 저장합니다.
+실패한 분기의 재시도는 같은 부모와 요청 전 문맥을 사용합니다.
+기존 기록 중 노드별 문맥이 없는 응답은 분기 버튼을 비활성화하며 문맥을 추측하지 않습니다.

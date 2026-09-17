@@ -28,4 +28,6 @@ class SnapshotSigner:
                 raise ValueError("Expired snapshot")
             return result
         except Exception as error:
-            raise ValueError("저장된 검색의 서버 인증이 만료되었습니다. 새 검색을 실행하세요.") from error
+            raise ValueError(
+                "대화의 서버 인증이 만료되었거나 호환되지 않습니다. 새 대화를 시작하세요."
+            ) from error

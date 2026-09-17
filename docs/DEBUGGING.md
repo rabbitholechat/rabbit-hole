@@ -1,59 +1,37 @@
-# 검색과 근거 디버깅
+# 에이전트 스트리밍 디버깅
 
-VS Code Python 디버거로 실행하면 자동 활성화됩니다. 디버거 없이 실행하려면 `src/backend/.env`에 `DEBUG_DIAGNOSTICS=true`를 설정하고 서버를 재시작하세요. 일반 실행의 기본값은 false입니다. Rabbit Hole 진단만 활성화하며 OpenAI SDK 전체 DEBUG 로깅은 활성화하지 않습니다.
+VS Code Python 디버거에서 자동 활성화됩니다. 일반 터미널에서는 `src/backend/.env`의 `DEBUG_DIAGNOSTICS=true`로 켭니다. SDK 전체 DEBUG 로깅은 켜지 않습니다.
 
-터미널의 레벨 접두사 뒤에는 JSON 한 건이 나옵니다. 출처 목록은 DEBUG, 등록 제외는 WARNING, 근거/구조 검증 실패는 ERROR이며 TTY 터미널에서는 레벨에 색상이 표시됩니다. `request_id`로 요청을 구분합니다.
+로그는 레벨 접두사 + JSON 한 건이며 TTY에서는 레벨별 색상을 표시합니다.
 
-- `search_sources`: 각 검색 응답의 후보 수와 search_call 번호.
-- `search_source`: 첫 검색을 포함한 각 응답에서 파싱한 출처 후보 전부. URL, 제목, 확보한 요약 포함. 전체 API 응답이나 내부 추론은 아님.
-- `source_registered`: URL 안전성 검사와 수량 제한을 통과한 출처의 전체 Source 객체. 서버에서 생성한 id, summary, excerpt, 상태 포함.
-- `source_rejected`: URL 검사/조회 시간 초과/수량 제한으로 등록하지 못한 이유와 후보 인덱스.
-- `evidence_rejected`: source_id, basis, quote, 실패 이유, claim_index 또는 edge_index, evidence_index. 인덱스는 0부터 시작.
-- `validation_rejected`: 근거 배열 누락 또는 그래프 구조 오류.
-
-기본 모드에서는 출처 본문/인용을 출력하지 않습니다. DEBUG 모드에도 API 키, 서명 토큰, 전체 공급자 응답과 내부 추론은 출력하지 않습니다.
-
-## 근거를 거부하는 조건
-
-| reason | 조건 |
-| --- | --- |
-| unknown_source_id | 인용한 ID가 서버 레지스트리에 없음 |
-| empty_quote | 인용 문구가 비어 있거나 공백뿐임 |
-| ai_summary_as_excerpt | AI 검색 요약을 원문 발췌로 인용 |
-| original_not_read | 원문을 읽지 않았는데 excerpt로 인용 |
-| empty_source_text | 비교 대상 summary/excerpt가 비어 있음 |
-| quote_not_found | 공백을 정규화해도 인용 문구가 비교 대상의 부분 문자열이 아님 |
-| missing_evidence | 주장 또는 관계의 근거 배열이 비어 있음 |
-| self_edge | 관계의 양 끝이 동일한 페이지 |
-| unknown_endpoint | 관계의 양 끝 중 등록되지 않은 ID가 있음 |
-| missing_endpoint_evidence | 양쪽 페이지 모두의 근거를 포함하지 않음 |
-| duplicate_edge | 동일 페이지 쌍을 중복 연결 |
-| unknown_page_type_source | 분류 대상이 등록되지 않은 페이지 |
-| unknown_cluster_source | 그룹에 등록되지 않은 페이지 포함 |
-| duplicate_cluster_source | 동일 페이지가 그룹에 중복 배정 |
-
-모든 근거와 관계를 검사하여 발견한 오류를 모두 기록한 뒤, 하나라도 실패하면 기존처럼 해당 결과를 거부합니다. 사실 여부를 판정하는 검사가 아니라 출처/인용 일치 검사입니다. 번역, 대소문자 변경, 마크다운 변경도 불일치할 수 있습니다.
-
-## 요청 한 건의 흐름
-
-1. query + 새 request_id를 POST /api/search로 전송. 첫 검색에는 continuation 생략.
-2. started → status(understanding): 도구 없는 모델이 질문과 기존 대화를 해석.
-3. 조건 확인이 필요하면 clarification → checkpoint → done(awaiting_input). 사용자 답변과 continuation으로 다음 요청.
-4. 바로 검색할 수 있으면 답변 에이전트가 search_web 호출 → status(searching). 함수 내부에서 OpenAI Responses web_search 호출. 검색은 예산 안에서 여러 번 가능.
-5. OpenAI의 인용 문단/출처 URL 파싱 → URL 검사 → URL 기반 ID 등록. 이때 위 DEBUG 출처 로그 출력.
-6. sources → checkpoint: 프런트는 페이지 카드 생성. checkpoint에는 서명된 중간 상태 포함.
-7. 답변 에이전트 출력 → 로컬 출처/인용 검사. 통과한 비어 있지 않은 답변만 별도 모델로 의미 검증 → answer. 실패하면 part_error(answer).
-8. 출처가 있으면 status(relating) → 관계 모델 → 로컬 관계/양쪽 근거 검사 → sources(분류 반영) → relationships. 실패하면 part_error(relationships).
-9. 최종 checkpoint → done(completed/partial/failed). 출처가 있고 실패가 있으면 partial. 취소는 별도 경로.
-
-사용자가 제공한 응답에서는 sources 10개 중 요약이 있는 출처가 2개였습니다. 나머지는 URL만 확보된 페이지입니다. 이 응답의 실제 실패 reason은 새 DEBUG 로그로 확인해야 하며, empty_source_text나 quote_not_found라고 추정해서 확정하면 안 됩니다.
-
-예를 들어 다음은 **형식 설명용** 로그입니다. 실제 실패 재현 결과가 아닙니다.
+| 레벨 | 이벤트 | 내용 |
+| --- | --- | --- |
+| INFO | request_started | request_id, job_id |
+| DEBUG | agent_start | 모델, 문맥 메시지/문자 수, 도구 수(현재 0), 턴 제한 |
+| DEBUG | response_delta | seq, 이번 델타 문자 수, 누적 문자 수 |
+| ERROR | request_failed | part, code, 예외 클래스, 파일·줄·함수 위치 |
+| WARNING | cleanup_failed | 클라이언트 종료 실패 예외 클래스 |
+| INFO | request_finished | 상태, 응답 문자 수, 소요 시간 |
 
 ```text
-DEBUG: {"request_id":"…","event":"evidence_rejected","reason":"quote_not_found","evidence":{"source_id":"src_1ce4aae8dee34dcc90e0e32d","quote":"한국어로 다시 쓴 문구","basis":"summary"},"stage":"answer","claim_index":0,"evidence_index":0}
+INFO: {"request_id":"…","event":"request_started","job_id":"…"}
+DEBUG: {"request_id":"…","event":"agent_start","model":"gpt-4.1-mini","context_turns":1,"context_chars":18,"tools":0,"max_turns":1}
+DEBUG: {"request_id":"…","event":"response_delta","seq":5,"delta_chars":8,"total_chars":8}
+INFO: {"request_id":"…","event":"request_finished","status":"completed","output_chars":120,"elapsed_ms":1500}
 ```
 
-같은 source_id의 source_registered 로그에 있는 summary와 비교하면 무엇이 다른지 확인할 수 있습니다.
+위 로그는 형식 예시입니다. 실제 모델 결과가 아닙니다. 키, 작업 토큰, continuation, 질문·응답 원문, 전체 공급자 응답, 내부 추론은 DEBUG에도 기록하지 않습니다.
 
-인용의 기준은 저장된 Markdown summary/excerpt입니다. 모델 지침에 Markdown·구두점·원어 보존을 명시하며 한국어 응답 지시는 quote에 적용하지 않습니다. 비교 시 마크다운을 제거하지 않습니다. 이는 웹페이지 원문을 새로 확보한다는 뜻이 아닙니다.
+추천 중단점:
+
+- `agent.py:AgentService.stream`: `event.data`에서 SDK 실제 응답 확인. `response.output_text.delta`와 `response.refusal.delta`만 화면으로 전달.
+- `app.py:produce`: 델타 전송, 타임아웃, 오류 코드 확인. 잡힌 예외는 VS Code Raised Exceptions로 확인.
+- `store.ts:receive`: response_started → response_delta → response_completed 처리 및 노드 변경 확인.
+
+요청 흐름: /api/agent → 서명 문맥 검증 → 단일 Agent/Runner.run_streamed → SSE 텍스트 → 캔버스 응답 노드 → 완료 이력 서명·IndexedDB 저장.
+
+검색·근거 검증·관계 모델 호출은 현재 파이프라인에 없습니다. 추가 질문도 일반 응답으로 표시됩니다. 취소 시 fetch 연결과 SDK 백그라운드 실행을 함께 종료합니다.
+
+대화 제목은 별도 `/api/title` 요청으로 실행됩니다. `INFO`의 `title_started`,
+`title_completed`, `WARNING`의 `title_failed`로 확인합니다. 디버그 모드에서는
+`DEBUG`의 `title_model`에 선택된 모델만 기록하며 제목과 대화 원문은 기록하지 않습니다.

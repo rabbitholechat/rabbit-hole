@@ -1,8 +1,7 @@
 import { create } from 'zustand'
 import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
-import type { Answer, Clarification, Envelope, Graph, PageNode, Session, Source, PartError } from './types'
+import type { CanvasNode, Envelope, Session, ResponseNode, PartError } from './types'
 import { deleteSession, loadSessions, saveSession } from './lib/db'
-import { layoutPages } from './lib/layout'
 import { consumeSSE } from './lib/sse'
 import { makeSample, type SampleKind } from './lib/samples'
 
@@ -11,6 +10,7 @@ const emptySession = (query: string): Session => ({
   query,
   updatedAt: Date.now(),
   mode: 'live',
+  protocol: 2,
   sources: [],
   nodes: [],
   graph: { relations: [], clusters: [] },
@@ -24,6 +24,7 @@ const emptySession = (query: string): Session => ({
 let controller: AbortController | undefined
 let access: { id: string; token: string } | undefined
 let persistence: Promise<unknown> = Promise.resolve()
+let saveTimer: ReturnType<typeof setTimeout> | undefined
 function persist(session: Session) {
   const snapshot = structuredClone(session)
   persistence = persistence
@@ -40,28 +41,28 @@ interface State {
   selected: string | null
   selectedEdge: number | null
   activeRequest: string | null
+  responseId: string | null
+  replyTo: string | null
+  pendingParentId: string | null
+  reply: (id: string | null) => void
+  toggleResponse: (id: string) => void
+  pendingQuery: string
   lastSeq: number
   stage: string
   error: string | null
   storageError: string | null
-  baseline: PageNode[]
-  focusId?: string
   initialize: () => Promise<void>
   setInput: (input: string) => void
-  newSearch: () => void
+  newConversation: () => void
   open: (id: string) => void
   remove: (id: string) => Promise<void>
   sample: (kind: SampleKind) => void
   select: (id: string | null) => void
   selectEdge: (index: number | null) => void
-  run: (options?: {
-    focusId?: string
-    retry?: 'intent' | 'answer' | 'relationships'
-    fresh?: boolean
-  }) => Promise<void>
+  run: (options?: { retry?: boolean }) => Promise<void>
   stop: () => void
   receive: (event: Envelope) => void
-  nodesChange: (changes: NodeChange<PageNode>[]) => void
+  nodesChange: (changes: NodeChange<CanvasNode>[]) => void
   viewport: (viewport: Viewport) => void
   markFitted: () => void
 }
@@ -74,6 +75,61 @@ function commit(session: Session) {
   }))
   persist(session)
 }
+// Independent request: title work never holds the response stream or changes the viewport.
+async function generateTitle(session: Session) {
+  if (session.titleRequested || !session.continuation || session.mode !== 'live') return
+  if (session.nodes.filter((n) => n.type === 'response' && n.data.status === 'completed').length !== 1) return
+  commit({ ...session, titleRequested: true })
+  try {
+    const response = await fetch('/api/title', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_id: crypto.randomUUID(), continuation: session.continuation }),
+      signal: AbortSignal.timeout(20000),
+    })
+    if (!response.ok) return
+    const data: unknown = await response.json()
+    if (!data || typeof data !== 'object' || !('title' in data) || typeof data.title !== 'string') return
+    const title = data.title.trim()
+    if (!title || title.length > 60) return
+    const state = useStore.getState()
+    const current =
+      state.session?.id === session.id ? state.session : state.history.find((item) => item.id === session.id)
+    if (!current) return // Deleted conversations must not be resurrected.
+    const updated = { ...current, title }
+    useStore.setState({
+      ...(state.session?.id === session.id ? { session: updated } : {}),
+      history: state.history.map((item) => (item.id === session.id ? updated : item)),
+    })
+    persist(updated)
+  } catch {
+    // Keep the original query as the title; response completion is independent.
+  }
+}
+function finish(session: Session, status: Session['status']): Session {
+  return {
+    ...session,
+    status,
+    nodes: session.nodes.map((node) =>
+      node.type === 'response' && node.data.status === 'streaming'
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              status:
+                status === 'completed'
+                  ? 'completed'
+                  : status === 'cancelled'
+                    ? 'cancelled'
+                    : node.data.text
+                      ? 'partial'
+                      : 'failed',
+            },
+          }
+        : node,
+    ),
+  }
+}
 export const useStore = create<State>((set, get) => ({
   session: null,
   history: [],
@@ -81,117 +137,155 @@ export const useStore = create<State>((set, get) => ({
   selected: null,
   selectedEdge: null,
   activeRequest: null,
+  responseId: null,
+  replyTo: null,
+  pendingParentId: null,
+  pendingQuery: '',
   lastSeq: 0,
   stage: '',
   error: null,
   storageError: null,
-  baseline: [],
   initialize: async () => {
     try {
-      const history = await loadSessions()
-      set({ history: history.map((s) => (s.status === 'running' ? { ...s, status: 'partial' } : s)) })
+      const history = (await loadSessions()).map((session) => ({
+        ...session,
+        nodes: session.nodes.map((node) => {
+          if (node.type !== 'response') return node
+          // Older response cards stored a fixed height; remeasure content on restore.
+          const { height: _height, measured: _measured, ...rest } = node
+          return rest
+        }),
+      }))
+      set({ history: history.map((s) => (s.status === 'running' ? finish(s, 'partial') : s)) })
     } catch {
       set({ storageError: '브라우저 저장소를 사용할 수 없습니다.' })
     }
   },
   setInput: (input) => set({ input }),
-  newSearch: () => {
+  newConversation: () => {
     get().stop()
-    set({
-      session: null,
-      selected: null,
-      selectedEdge: null,
-      input: '',
-      error: null,
-      stage: '',
-    })
+    set({ session: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null })
   },
   open: (id) => {
     get().stop()
     const session = get().history.find((s) => s.id === id)
     if (session)
       set({
-        session,
+        session: structuredClone(session),
         selected: null,
         selectedEdge: null,
         input: '',
         error: null,
-        stage: '',
+        replyTo: null,
       })
   },
   remove: async (id) => {
-    if (get().session?.id === id) get().newSearch()
-    set((s) => ({ history: s.history.filter((h) => h.id !== id) }))
-    try {
-      await persistence
-      await deleteSession(id)
-    } catch {
-      set({ storageError: '기록을 삭제하지 못했습니다.' })
-    }
+    if (get().session?.id === id) get().newConversation()
+    set({ history: get().history.filter((s) => s.id !== id) })
+    // Serialize deletion after pending snapshots so an old write cannot resurrect it.
+    await persistence
+    await deleteSession(id)
+    set({ history: get().history.filter((s) => s.id !== id) })
   },
   sample: (kind) => {
     get().stop()
     commit(makeSample(kind))
-    set({ input: '', selected: null, selectedEdge: null, error: null, stage: '' })
+    set({ selected: null, selectedEdge: null, error: null, input: '', replyTo: null })
   },
-  select: (selected) => set({ selected, selectedEdge: null }),
-  selectEdge: (selectedEdge) => set({ selectedEdge, selected: null }),
+  reply: (id) => {
+    if (get().activeRequest) return
+    set({ replyTo: get().replyTo === id ? null : id })
+  },
+  toggleResponse: (id) => {
+    const session = get().session
+    if (session)
+      commit({
+        ...session,
+        nodes: session.nodes.map((n) =>
+          n.type === 'response' && n.id === id
+            ? { ...n, data: { ...n.data, collapsed: !n.data.collapsed } }
+            : n,
+        ),
+      })
+  },
+  select: (id) => set({ selected: id, selectedEdge: null }),
+  selectEdge: (index) => set({ selectedEdge: index, selected: null }),
   stop: () => {
-    const { activeRequest, session } = get()
-    set({ activeRequest: null, stage: '' }) // Invalidate before aborting: queued events cannot mutate another view.
+    const state = get()
+    if (!state.activeRequest) return
+    clearTimeout(saveTimer)
+    saveTimer = undefined
     controller?.abort()
-    controller = undefined
-    if (access && activeRequest)
+    if (access)
       void fetch(`/api/jobs/${access.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${access.token}` },
       }).catch(() => {})
+    controller = undefined
     access = undefined
-    if (activeRequest && session) commit({ ...session, status: 'cancelled' })
+    set({ activeRequest: null, responseId: null, stage: '' })
+    if (state.session) commit(finish(state.session, 'cancelled'))
   },
   run: async (options = {}) => {
     const before = get()
     if (before.activeRequest) return
-    if (before.session?.mode === 'sample' && (options.focusId || options.retry)) return
-    const query = options.focusId
-      ? `${before.session?.query}\n선택한 페이지와 관련된 자료를 더 찾아줘.`
-      : options.retry || options.fresh
-        ? before.session?.query || before.input
-        : before.input.trim()
+    const latest = before.session?.nodes.filter((n): n is ResponseNode => n.type === 'response').at(-1)
+    const query = options.retry
+      ? before.session?.lastQuery || before.pendingQuery || latest?.data.prompt
+      : before.input.trim()
     if (!query) return
-    if (before.session?.clarification && !before.session.continuation && !options.fresh) {
+    const reusable = before.session?.protocol === 2 && before.session.mode === 'live'
+    if (reusable && before.session!.nodes.length && !before.session!.continuation) {
       set({ error: '이전 대화를 이어갈 정보가 없습니다. 새 대화를 시작해 주세요.' })
       return
     }
-    const reusable = before.session?.mode === 'live' && before.session.continuation && !options.fresh
     const session = reusable ? { ...before.session! } : emptySession(query)
+    const parentId = options.retry
+      ? session.lastParentId
+      : (before.replyTo ??
+        session.nodes.filter((n) => n.type === 'response' && n.data.status === 'completed').at(-1)?.id ??
+        null)
+    const parent = session.nodes.find((n): n is ResponseNode => n.type === 'response' && n.id === parentId)
+    const continuation = options.retry
+      ? session.continuation
+      : (parent?.data.continuation ?? session.continuation)
+    if (before.replyTo && (!parent?.data.continuation || parent.data.status !== 'completed')) {
+      set({ error: '이 응답의 대화 문맥이 없습니다. 새 응답에서 이어서 질문해 주세요.' })
+      return
+    }
+    session.continuation = continuation
+    session.lastParentId = parentId
+
+    session.lastQuery = query
     session.status = 'running'
     session.updatedAt = Date.now()
+    session.failedParts = []
     const requestId = crypto.randomUUID()
     const abort = new AbortController()
     controller = abort
     set({
       session,
       activeRequest: requestId,
+      responseId: null,
+      pendingQuery: query,
+      pendingParentId: parentId ?? null,
+      replyTo: null,
       lastSeq: 0,
-      stage: '요청을 준비하고 있어요',
+      stage: '응답을 준비하고 있어요',
       error: null,
-      baseline: session.nodes,
-      focusId: options.focusId,
+      selected: null,
       selectedEdge: null,
       input: '',
     })
     try {
-      const response = await fetch('/api/search', {
+      const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: abort.signal,
         body: JSON.stringify({
           query,
           request_id: requestId,
-          continuation: reusable ? session.continuation : undefined,
-          focus_source_id: options.focusId,
-          retry_part: options.retry,
+          continuation: reusable ? continuation : undefined,
         }),
       })
       await consumeSSE(response, get().receive, abort.signal)
@@ -199,10 +293,18 @@ export const useStore = create<State>((set, get) => ({
       if (get().activeRequest !== requestId || abort.signal.aborted) return
       set({ error: error instanceof Error ? error.message : '요청 처리 중 오류가 발생했습니다.' })
       const current = get().session
-      if (current) commit({ ...current, status: current.sources.length ? 'partial' : 'failed' })
+      if (current)
+        commit(
+          finish(
+            current,
+            current.nodes.some((n) => n.type === 'response' && n.id === get().responseId && n.data.text)
+              ? 'partial'
+              : 'failed',
+          ),
+        )
     } finally {
       if (get().activeRequest === requestId) {
-        set({ activeRequest: null, stage: '' })
+        set({ activeRequest: null, responseId: null, stage: '' })
         access = undefined
         controller = undefined
       }
@@ -210,7 +312,13 @@ export const useStore = create<State>((set, get) => ({
   },
   receive: (event) => {
     const state = get()
-    if (event.request_id !== state.activeRequest || event.seq <= state.lastSeq || !state.session) return
+    if (
+      event.version !== 2 ||
+      event.request_id !== state.activeRequest ||
+      event.seq <= state.lastSeq ||
+      !state.session
+    )
+      return
     set({ lastSeq: event.seq })
     const session = { ...state.session }
     switch (event.type) {
@@ -218,67 +326,85 @@ export const useStore = create<State>((set, get) => ({
         access = { id: event.job_id, token: String(event.data.access_token) }
         break
       case 'status':
-        set({
-          stage:
-            (
-              {
-                understanding: '질문 확인 중',
-                searching: '자료를 조사하고 있어요',
-                reading: '자료 확인 중',
-                relating: '관련성 정리 중',
-              } as Record<string, string>
-            )[String(event.data.stage)] || '요청을 처리하고 있어요',
-        })
+        set({ stage: '응답을 작성하고 있어요' })
         break
-      case 'sources': {
-        const sources = new Map(session.sources.map((s) => [s.id, s]))
-        for (const source of event.data.sources as Source[]) sources.set(source.id, source)
-        session.sources = [...sources.values()]
-        session.nodes = layoutPages(session.sources, session.nodes, session.graph, state.focusId)
-        set({ session })
+      case 'response_started': {
+        if (state.responseId) break
+        const id = String(event.data.id)
+        const width = Math.min(560, window.innerWidth - 48)
+        const parent = session.nodes.find((n) => n.id === state.pendingParentId)
+        const x = parent ? parent.position.x + (parent.width || 560) + 64 : 0
+        const column = session.nodes.filter(
+          (n) => n.position.x < x + width && n.position.x + (n.width || 560) > x,
+        )
+        const y = column.length
+          ? Math.max(...column.map((n) => n.position.y + (n.measured?.height ?? n.height ?? 400))) + 64
+          : (parent?.position.y ?? 0)
+        const node: ResponseNode = {
+          id,
+          type: 'response',
+          width,
+          position: { x, y },
+          data: {
+            parentId: state.pendingParentId,
+            prompt: state.pendingQuery,
+            text: '',
+            status: 'streaming',
+          },
+        }
+        session.nodes = [...session.nodes, node]
+        set({ responseId: id })
+        commit(session)
         break
       }
-      case 'answer':
-        session.clarification = null
-        session.answer = event.data as unknown as Answer
-        session.failedParts = session.failedParts.filter((p) => p !== 'answer')
-        set({ session })
-        break
-      case 'relationships': {
-        const incoming = event.data as unknown as Graph
-        const ids = new Set(session.sources.map((s) => s.id))
-        // Defense in depth: no relation may reference a nonexistent card.
-        session.graph = {
-          ...incoming,
-          relations: incoming.relations.filter((e) => ids.has(e.source) && ids.has(e.target)),
-        }
-        const fixed = session.nodes.filter(
-          (n) => state.baseline.some((b) => b.id === n.id) || session.pinned.includes(n.id),
+      case 'response_delta':
+      case 'response_completed': {
+        if (event.data.id !== state.responseId) break
+        session.nodes = session.nodes.map((n) =>
+          n.type === 'response' && n.id === state.responseId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  text:
+                    event.type === 'response_delta'
+                      ? n.data.text + String(event.data.delta)
+                      : String(event.data.text),
+                  status: event.type === 'response_completed' ? 'completed' : 'streaming',
+                },
+              }
+            : n,
         )
-        session.nodes = layoutPages(session.sources, fixed, session.graph, state.focusId)
-        session.failedParts = session.failedParts.filter((p) => p !== 'relationships')
-        set({ session })
+        if (event.type === 'response_completed') commit(session)
+        else {
+          set({ session })
+          if (!saveTimer)
+            saveTimer = setTimeout(() => {
+              saveTimer = undefined
+              const current = get().session
+              if (current?.id === session.id) commit(current)
+            }, 500)
+        }
         break
       }
       case 'part_error': {
         const failure = event.data as unknown as PartError
-        session.failedParts = [...new Set([...session.failedParts, String(event.data.part)])]
+        session.failedParts = ['response']
         set({ session, error: failure.code ? `${failure.message} [${failure.code}]` : failure.message })
         break
       }
-      case 'clarification':
-        session.clarification = event.data as unknown as Clarification
-        session.failedParts = session.failedParts.filter((p) => p !== 'intent')
-        set({ session })
-        break
       case 'checkpoint':
         session.continuation = String(event.data.continuation)
-        set({ session })
+        session.nodes = session.nodes.map((n) =>
+          n.type === 'response' && n.id === state.responseId && n.data.status === 'completed'
+            ? { ...n, data: { ...n.data, continuation: session.continuation } }
+            : n,
+        )
+        commit(session)
         break
       case 'done':
-        if (event.data.status === 'completed') session.clarification = null
-        session.status = event.data.status as Session['status']
-        commit(session)
+        commit(finish(session, event.data.status as Session['status']))
+        if (event.data.status === 'completed') void generateTitle(get().session!)
         break
     }
   },
@@ -286,7 +412,7 @@ export const useStore = create<State>((set, get) => ({
     const session = get().session
     if (!session) return
     const selection = changes.find((c) => c.type === 'select' && c.selected)
-    if (selection && selection.type === 'select') set({ selected: selection.id, selectedEdge: null })
+    if (selection?.type === 'select') set({ selected: selection.id, selectedEdge: null })
     const moved = changes.flatMap((c) => (c.type === 'position' && c.position ? [c.id] : []))
     const next = {
       ...session,

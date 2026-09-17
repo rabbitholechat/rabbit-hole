@@ -17,9 +17,9 @@ describe('SSE parser', () => {
     const seen: unknown[] = []
     await consumeSSE(
       response([
-        ': ping\n\ndata: {"version":1,"ty',
+        ': ping\n\ndata: {"version":2,"ty',
         'pe":"status","data":{"stage":"검색"}}\n\n',
-        'data: {"version":1,"type":"done"}\n\n',
+        'data: {"version":2,"type":"done"}\n\n',
       ]),
       (e) => seen.push(e),
       new AbortController().signal,
@@ -29,7 +29,7 @@ describe('SSE parser', () => {
   it('reports truncated streams rather than silently completing', async () => {
     await expect(
       consumeSSE(
-        response(['data: {"version":1,"type":"sources"}\n\n']),
+        response(['data: {"version":2,"type":"sources"}\n\n']),
         () => {},
         new AbortController().signal,
       ),

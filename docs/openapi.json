@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rabbit Hole",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/api/health": {
@@ -21,15 +21,15 @@
         }
       }
     },
-    "/api/search": {
+    "/api/agent": {
       "post": {
-        "summary": "Search",
-        "operationId": "search_api_search_post",
+        "summary": "Respond",
+        "operationId": "respond_api_agent_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SearchRequest"
+                "$ref": "#/components/schemas/AgentRequest"
               }
             }
           },
@@ -37,7 +37,7 @@
         },
         "responses": {
           "200": {
-            "description": "Versioned SSE envelopes; see docs/API.md",
+            "description": "Agent text SSE v2; see docs/API.md",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -47,7 +47,7 @@
             }
           },
           "409": {
-            "description": "Expired or invalid continuation; start a new search"
+            "description": "Invalid, expired or incompatible continuation"
           },
           "413": {
             "description": "Request body exceeds configured byte limit"
@@ -56,7 +56,45 @@
             "description": "Rate or concurrent job limit"
           },
           "503": {
-            "description": "Search provider configuration is missing"
+            "description": "Model configuration is missing"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/title": {
+      "post": {
+        "summary": "Title",
+        "operationId": "title_api_title_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TitleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -116,20 +154,7 @@
   },
   "components": {
     "schemas": {
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
-          }
-        },
-        "type": "object",
-        "title": "HTTPValidationError"
-      },
-      "SearchRequest": {
+      "AgentRequest": {
         "properties": {
           "query": {
             "type": "string",
@@ -153,34 +178,6 @@
               }
             ],
             "title": "Continuation"
-          },
-          "focus_source_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Focus Source Id"
-          },
-          "retry_part": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "intent",
-                  "answer",
-                  "relationships"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Retry Part"
           }
         },
         "additionalProperties": false,
@@ -189,7 +186,57 @@
           "query",
           "request_id"
         ],
-        "title": "SearchRequest"
+        "title": "AgentRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "TitleRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "continuation": {
+            "type": "string",
+            "maxLength": 2000000,
+            "minLength": 1,
+            "title": "Continuation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "continuation"
+        ],
+        "title": "TitleRequest"
+      },
+      "TitleResponse": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "TitleResponse"
       },
       "ValidationError": {
         "properties": {

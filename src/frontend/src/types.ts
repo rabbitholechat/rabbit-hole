@@ -26,18 +26,30 @@ export type Relation = {
 }
 export type Graph = { relations: Relation[]; clusters: { id: string; label: string; source_ids: string[] }[] }
 export type PageNode = Node<{ source: Source; related?: boolean; dimmed?: boolean }, 'page'>
-export type Clarification = {
-  message: string
-  questions: string[]
-  suggestions: string[]
-}
+export type ResponseNode = Node<
+  {
+    parentId?: string | null
+    continuation?: string
+    collapsed?: boolean
+    prompt: string
+    text: string
+    status: 'streaming' | 'completed' | 'partial' | 'failed' | 'cancelled'
+  },
+  'response'
+>
+export type CanvasNode = PageNode | ResponseNode
 export type Session = {
   id: string
   query: string
+  title?: string
+  titleRequested?: boolean
+  lastParentId?: string | null
+  lastQuery?: string
   updatedAt: number
   mode: 'live' | 'sample'
+  protocol?: 2
   sources: Source[]
-  nodes: PageNode[]
+  nodes: CanvasNode[]
   graph: Graph
   answer: Answer | null
   viewport: Viewport
@@ -46,10 +58,9 @@ export type Session = {
   continuation?: string
   status: 'idle' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled' | 'awaiting_input'
   failedParts: string[]
-  clarification?: Clarification | null
 }
 export type Envelope = {
-  version: 1
+  version: 2
   request_id: string
   job_id: string
   seq: number
@@ -58,22 +69,7 @@ export type Envelope = {
 }
 
 export type PartError = {
-  part: 'intent' | 'search' | 'answer' | 'relationships'
-  code?:
-    | 'timeout'
-    | 'connection_error'
-    | 'provider_auth_error'
-    | 'provider_rate_limit'
-    | 'provider_request_error'
-    | 'provider_error'
-    | 'invalid_evidence'
-    | 'invalid_output'
-    | 'turn_limit'
-    | 'search_budget_exhausted'
-    | 'invalid_tool_input'
-    | 'search_incomplete'
-    | 'search_tool_failed'
-    | 'no_sources'
-    | 'internal_error'
+  part: 'response'
+  code?: string
   message: string
 }

@@ -10,6 +10,7 @@ __pycache__/
 dist/
 test-results/
 playwright-report/
+.playwright-mcp/
 .vercel/
 .DS_Store
 

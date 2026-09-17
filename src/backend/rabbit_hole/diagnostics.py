@@ -1,4 +1,4 @@
-"""Opt-in source/evidence diagnostics; never log full provider responses or reasoning."""
+"""Levelled structured metadata only. Never log prompts, text, credentials or reasoning."""
 
 import json
 import logging
@@ -19,12 +19,10 @@ def enabled(configured: bool) -> bool:
     return configured or sys.gettrace() is not None
 
 
-def write(active: bool, request_id: str, event: str, **data):
+def log(level: int, request_id: str, event: str, **metadata):
+    logger.log(level, json.dumps({"request_id": request_id, "event": event, **metadata}, ensure_ascii=False))
+
+
+def write(active: bool, request_id: str, event: str, **metadata):
     if active:
-        payload = json.dumps({"request_id": request_id, "event": event, **data}, ensure_ascii=False)
-        if event in {"evidence_rejected", "validation_rejected"}:
-            logger.error(payload)
-        elif event == "source_rejected":
-            logger.warning(payload)
-        else:
-            logger.debug(payload)
+        log(logging.DEBUG, request_id, event, **metadata)

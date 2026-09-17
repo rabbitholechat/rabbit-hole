@@ -11,16 +11,13 @@ from dataclasses import dataclass, field
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from . import diagnostics
+from .agent import AgentService
 from .config import Settings, get_settings
-from .diagnostics import enabled as diagnostics_enabled
 from .errors import MESSAGES, StageFailure, error_code, error_location
 from .middleware import BodyLimitMiddleware
-from .models import ConversationTurn, SearchRequest, Snapshot
-from .search import AgentService, Budget
+from .models import AgentRequest, ConversationTurn, Snapshot, TitleRequest, TitleResponse
 from .security import SnapshotSigner
-from .sources import Registry
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,26 +55,34 @@ class JobStore:
         )
         timestamps = self.requests[client]
         if len(timestamps) >= self.settings.requests_per_minute:
-            raise HTTPException(429, "잠시 후 다시 검색하세요.", headers={"Retry-After": "60"})
+            raise HTTPException(429, "잠시 후 다시 요청하세요.", headers={"Retry-After": "60"})
         if sum(not j.finished for j in self.jobs.values()) >= self.settings.max_concurrent_jobs:
-            raise HTTPException(429, "검색 작업이 많습니다. 잠시 후 다시 시도하세요.")
+            raise HTTPException(429, "요청이 많습니다. 잠시 후 다시 시도하세요.")
         timestamps.append(now)
         if len(self.jobs) >= self.settings.max_stored_jobs:
             finished = [j for j in self.jobs.values() if j.finished]
             if finished:
                 del self.jobs[min(finished, key=lambda j: j.created).id]
             else:
-                raise HTTPException(429, "검색 작업 저장소가 가득 찼습니다.")
+                raise HTTPException(429, "요청 저장소가 가득 찼습니다.")
         job = Job()
         self.jobs[job.id] = job
         return job
+
+
+def trim_context(turns: list[ConversationTurn], settings: Settings) -> list[ConversationTurn]:
+    """Keep complete recent exchanges, never a dangling assistant message."""
+    turns = list(turns)
+    while len(turns) > settings.max_context_turns or sum(len(t.content) for t in turns) > 96000:
+        turns = turns[2:]
+    return turns
 
 
 def create_app(settings: Settings | None = None, service_factory=AgentService) -> FastAPI:
     settings = settings or get_settings()
     if os.environ.get("VERCEL") and len(settings.session_signing_key.get_secret_value()) < 32:
         raise RuntimeError("SESSION_SIGNING_KEY must contain at least 32 characters on Vercel")
-    app = FastAPI(title="Rabbit Hole", version="0.1.0")
+    app = FastAPI(title="Rabbit Hole", version="0.2.0")
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_bytes)
     store = JobStore(settings)
     signer = SnapshotSigner(settings.session_signing_key.get_secret_value())
@@ -85,197 +90,147 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
 
     @app.get("/api/health")
     async def health():
-        return {"status": "ok", "configured": settings.configured, "api_version": 1}
+        return {"status": "ok", "configured": settings.configured, "api_version": 2}
 
     @app.post(
-        "/api/search",
+        "/api/agent",
         response_class=StreamingResponse,
         responses={
             200: {
-                "description": "Versioned SSE envelopes; see docs/API.md",
+                "description": "Agent text SSE v2; see docs/API.md",
                 "content": {"text/event-stream": {"schema": {"type": "string"}}},
             },
-            409: {"description": "Expired or invalid continuation; start a new search"},
+            409: {"description": "Invalid, expired or incompatible continuation"},
             413: {"description": "Request body exceeds configured byte limit"},
             429: {"description": "Rate or concurrent job limit"},
-            503: {"description": "Search provider configuration is missing"},
+            503: {"description": "Model configuration is missing"},
         },
     )
-    async def search(body: SearchRequest, request: Request):
-        snapshot = None
+    async def respond(body: AgentRequest, request: Request):
+        conversation = []
         if body.continuation:
             try:
-                snapshot = signer.verify(body.continuation)
+                conversation = signer.verify(body.continuation).conversation
             except ValueError as error:
                 raise HTTPException(409, str(error)) from error
-        if body.focus_source_id and (
-            not snapshot or body.focus_source_id not in {s.id for s in snapshot.sources}
-        ):
-            raise HTTPException(422, "등록된 출처를 선택하세요.")
-        if snapshot and len(snapshot.sources) >= settings.max_session_sources and not body.retry_part:
-            raise HTTPException(409, "이 지도의 탐색 한도에 도달했습니다. 새 검색으로 이어가세요.")
         if not settings.configured:
-            raise HTTPException(
-                503,
-                "검색 API가 설정되지 않았습니다. 백엔드 .env의 키를 설정하세요. 디자인 예시는 별도로 열 수 있습니다.",
-            )
-        # Ignore spoofable forwarding headers. Configure global per-IP limits at deployment WAF.
+            raise HTTPException(503, "모델 API가 설정되지 않았습니다. 백엔드 .env의 키를 설정하세요.")
         job = store.create(request.client.host if request.client else "unknown")
         queue: asyncio.Queue = asyncio.Queue()
         seq = 0
-        registry = Registry(
-            snapshot.sources if snapshot else [],
-            debug=diagnostics_enabled(settings.debug_diagnostics),
-            request_id=str(body.request_id),
-        )
-        original_query = snapshot.query if snapshot else body.query
-        budget = Budget(settings, cancelled=job.cancel)
-        conversation = list(snapshot.conversation) if snapshot else []
-        if not body.retry_part:
-            conversation.append(ConversationTurn(role="user", content=body.query))
-        conversation = conversation[-settings.max_context_turns :]
-        clarification = snapshot.clarification if snapshot else None
-        search_query = snapshot.search_query if snapshot else ""
+        request_id = str(body.request_id)
+        response_id = f"response_{request_id}"
+        debug = diagnostics.enabled(settings.debug_diagnostics)
 
         async def emit(kind: str, data: dict):
             nonlocal seq
-            budget.check()
+            if job.cancel.is_set():
+                raise asyncio.CancelledError()
             seq += 1
             envelope = {
-                "version": 1,
-                "request_id": str(body.request_id),
+                "version": 2,
+                "request_id": request_id,
                 "job_id": job.id,
                 "seq": seq,
                 "type": kind,
                 "data": data,
             }
             await queue.put(f"id: {seq}\nevent: {kind}\ndata: {json.dumps(envelope, ensure_ascii=False)}\n\n")
-            if kind == "sources":
-                checkpoint = Snapshot(
-                    query=original_query,
-                    sources=list(registry.sources.values()),
-                    answer=snapshot.answer if snapshot else None,
-                    relationships=snapshot.relationships if snapshot else None,
-                    conversation=conversation,
-                    clarification=clarification,
-                    search_query=search_query,
-                    issued_at=time.time(),
-                )
-                await emit("checkpoint", {"continuation": signer.sign(checkpoint)})
+
+        async def checkpoint():
+            state = Snapshot(conversation=conversation, issued_at=time.time())
+            await emit("checkpoint", {"continuation": signer.sign(state)})
 
         async def produce():
-            nonlocal clarification, search_query, conversation
-            failed = []
-            answer = snapshot.answer if snapshot else None
-            graph = snapshot.relationships if snapshot else None
+            nonlocal conversation
             service = None
-            active_part = "search"
-
-            async def report_failure(part: str, error: Exception):
-                code = error_code(error)
-                failed.append(part)
-                logger.warning(
-                    "request_failed request_id=%s part=%s code=%s exception=%s location=%s",
-                    body.request_id,
-                    part,
-                    code,
-                    type(error).__name__,
-                    error_location(error),
-                )
-                await emit("part_error", {"part": part, "code": code, "message": MESSAGES[code]})
-
+            text = ""
+            status = "failed"
+            failed = []
+            diagnostics.log(logging.INFO, request_id, "request_started", job_id=job.id)
             try:
                 await emit("started", {"access_token": job.token, "status": "running"})
-                if snapshot:
-                    await emit("sources", {"sources": [s.model_dump() for s in registry.sources.values()]})
-                service = service_factory(settings, registry, budget, emit)
-                service.previous_answer = answer
-                service.conversation = conversation
-                service.search_query = search_query
+                # Safe retry context is available even if the response is cancelled midway.
+                await checkpoint()
+                await emit("response_started", {"id": response_id})
+                await emit("status", {"stage": "responding"})
+                inputs = conversation + [ConversationTurn(role="user", content=body.query)]
+                diagnostics.write(
+                    debug,
+                    request_id,
+                    "agent_start",
+                    model=settings.openai_model,
+                    context_turns=len(inputs),
+                    context_chars=sum(len(t.content) for t in inputs),
+                    tools=0,
+                    max_turns=settings.max_model_turns,
+                )
                 async with asyncio.timeout(settings.job_timeout_seconds):
-                    if body.retry_part in {None, "intent"}:
-                        active_part = "intent"
-                        try:
-                            plan = await service.prepare(body, original_query)
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as error:
-                            await report_failure("intent", error)
-                            return
-                        clarification = plan.clarification
-                        if plan.action == "clarify":
-                            conversation.append(
-                                ConversationTurn(role="assistant", content=clarification.model_dump_json())
+                    service = service_factory(settings)
+                    async with contextlib.aclosing(service.stream(inputs)) as deltas:
+                        async for delta in deltas:
+                            if not delta:
+                                continue
+                            if len(text) + len(delta) > 64000:
+                                raise StageFailure("response", "output_limit")
+                            text += delta
+                            await emit("response_delta", {"id": response_id, "delta": delta})
+                            diagnostics.write(
+                                debug,
+                                request_id,
+                                "response_delta",
+                                seq=seq,
+                                delta_chars=len(delta),
+                                total_chars=len(text),
                             )
-                            conversation = conversation[-settings.max_context_turns :]
-                            await emit("clarification", clarification.model_dump())
-                            return
-                        search_query = plan.query
-                        service.search_query = search_query
-                    else:
-                        clarification = None
-                    if body.retry_part != "relationships":
-                        active_part = "answer"
-                        try:
-                            answer = await service.answer(
-                                body, original_query, search=body.retry_part in {None, "intent"}
-                            )
-                            await emit("answer", answer.model_dump())
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as error:
-                            part = error.part if isinstance(error, StageFailure) else "answer"
-                            await report_failure(part, error)
-                    if not registry.sources and not failed:
-                        await report_failure("search", StageFailure("search", "no_sources"))
-                    if body.retry_part != "answer" and registry.sources:
-                        active_part = "relationships"
-                        try:
-                            graph = await service.relationships()
-                            await emit("relationships", graph.model_dump())
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as error:
-                            await report_failure("relationships", error)
-            except TimeoutError as error:
-                await report_failure(active_part, error)
-                if active_part == "answer" and not body.retry_part and registry.sources:
-                    await report_failure("relationships", error)
+                if not text.strip():
+                    raise StageFailure("response", "invalid_output")
+                conversation = trim_context(
+                    inputs + [ConversationTurn(role="assistant", content=text)], settings
+                )
+                await emit("response_completed", {"id": response_id, "text": text})
+                status = "completed"
             except asyncio.CancelledError:
                 job.cancel.set()
+                status = "cancelled"
                 raise
             except Exception as error:
-                await report_failure(active_part, error)
+                status = "partial" if text else "failed"
+                code = error_code(error)
+                failed = ["response"]
+                diagnostics.log(
+                    logging.ERROR,
+                    request_id,
+                    "request_failed",
+                    part="response",
+                    code=code,
+                    exception=type(error).__name__,
+                    location=error_location(error),
+                )
+                await emit("part_error", {"part": "response", "code": code, "message": MESSAGES[code]})
             finally:
                 try:
                     if not job.cancel.is_set():
-                        state = Snapshot(
-                            query=original_query,
-                            sources=list(registry.sources.values()),
-                            answer=answer,
-                            relationships=graph,
-                            conversation=conversation,
-                            clarification=clarification,
-                            search_query=search_query,
-                            issued_at=time.time(),
-                        )
-                        await emit("checkpoint", {"continuation": signer.sign(state)})
-                        await emit(
-                            "done",
-                            {
-                                "status": ("partial" if registry.sources else "failed")
-                                if failed
-                                else "awaiting_input"
-                                if clarification
-                                else "completed",
-                                "failed_parts": list(dict.fromkeys(failed)),
-                            },
-                        )
+                        await checkpoint()
+                        await emit("done", {"status": status, "failed_parts": failed})
                 finally:
+                    if service:
+                        try:
+                            await service.close()
+                        except Exception as error:
+                            diagnostics.log(
+                                logging.WARNING, request_id, "cleanup_failed", exception=type(error).__name__
+                            )
+                    diagnostics.log(
+                        logging.INFO,
+                        request_id,
+                        "request_finished",
+                        status=status,
+                        output_chars=len(text),
+                        elapsed_ms=round((time.monotonic() - job.created) * 1000),
+                    )
                     job.finished = True
                     await queue.put(None)
-                    if service:
-                        await service.close()
 
         async def stream():
             job.task = asyncio.create_task(produce())
@@ -309,6 +264,44 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                 "X-Content-Type-Options": "nosniff",
             },
         )
+
+    @app.post("/api/title", response_model=TitleResponse)
+    async def title(body: TitleRequest, request: Request):
+        try:
+            conversation = signer.verify(body.continuation).conversation
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        if [turn.role for turn in conversation] != ["user", "assistant"]:
+            raise HTTPException(409, "첫 응답이 완료된 대화만 제목을 생성할 수 있습니다.")
+        if not settings.configured:
+            raise HTTPException(503, "모델 API가 설정되지 않았습니다.")
+        job = store.create(request.client.host if request.client else "unknown")
+        request_id = str(body.request_id)
+        service = None
+        diagnostics.log(logging.INFO, request_id, "title_started")
+        diagnostics.write(
+            diagnostics.enabled(settings.debug_diagnostics), request_id, "title_model",
+            model=settings.openai_background_model,
+        )
+        try:
+            async with asyncio.timeout(settings.background_timeout_seconds):
+                service = service_factory(settings)
+                result = TitleResponse(title=await service.title(conversation))
+            diagnostics.log(logging.INFO, request_id, "title_completed",
+                            elapsed_ms=round((time.monotonic() - job.created) * 1000))
+            return result
+        except Exception as error:
+            diagnostics.log(logging.WARNING, request_id, "title_failed",
+                            code=error_code(error), exception=type(error).__name__)
+            raise HTTPException(502, "대화 제목을 생성하지 못했습니다.") from error
+        finally:
+            job.finished = True
+            if service:
+                try:
+                    await service.close()
+                except Exception as error:
+                    diagnostics.log(logging.WARNING, request_id, "cleanup_failed",
+                                    exception=type(error).__name__)
 
     @app.delete("/api/jobs/{job_id}", status_code=204)
     async def cancel(job_id: str, authorization: str = Header(default="")):

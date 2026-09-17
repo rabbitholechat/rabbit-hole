@@ -10,14 +10,12 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     debug_diagnostics: bool = False
     openai_model: str = "gpt-4.1-mini"
-    max_search_calls: int = Field(3, ge=1, le=10)
-    max_sources: int = Field(10, ge=1, le=20)
-    max_session_sources: int = Field(40, ge=10, le=60)
+    openai_background_model: str = "gpt-4o-mini"
+    background_timeout_seconds: float = Field(15, ge=1, le=60)
     job_timeout_seconds: float = Field(90, ge=1, le=300)
     request_timeout_seconds: float = Field(20, ge=1, le=60)
-    external_retries: int = Field(1, ge=0, le=2)
     max_context_turns: int = Field(12, ge=4, le=24)
-    max_model_turns: int = Field(8, ge=1, le=20)
+    max_model_turns: int = Field(1, ge=1, le=20)
     max_output_tokens: int = Field(4000, ge=256, le=16000)
     max_request_bytes: int = Field(2_100_000, ge=10000, le=4_000_000)
     max_concurrent_jobs: int = Field(4, ge=1, le=32)
