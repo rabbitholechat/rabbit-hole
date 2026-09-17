@@ -572,8 +572,9 @@ test('composer and canvas tools stay separate while resizing with sidebar open o
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.response-card')).toBeVisible()
   await finishStream(page)
-  for (const width of [320, 390, 700, 768, 1024, 1101, 1200, 1280, 1366, 1440]) {
+  for (const width of [320, 390, 520, 521, 700, 768, 1024, 1101, 1200, 1280, 1366, 1440]) {
     await page.setViewportSize({ width, height: 844 })
+    let openedBrand: { x: number; y: number } | undefined
     for (const open of [true, false]) {
       const toggle = page.getByRole('button', { name: open ? '대화 기록 펼치기' : '대화 기록 접기' })
       if (await toggle.isVisible()) await toggle.click()
@@ -612,16 +613,29 @@ test('composer and canvas tools stay separate while resizing with sidebar open o
           const sidebarOpen = document.querySelector('.workspace')!.classList.contains('sidebar-open')
           const sidebar = document.querySelector('.history-panel')!.getBoundingClientRect()
           const header = document.querySelector('.sidebar-header')!.getBoundingClientRect()
+          const alignedInSidebar = !sidebarOpen || (
+            Math.abs((header.left - sidebar.left) - (sidebar.right - header.right)) < 1
+          )
+          if (sidebarOpen && innerWidth <= 520) {
+            return alignedInSidebar && heading.width === 0 && navigation.width === 0 &&
+              header.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth
+          }
           const center = (rect: DOMRect) => rect.top + rect.height / 2
           return Math.abs(center(brand) - center(heading)) < 1 &&
             Math.abs(center(brand) - center(navigation)) < 1 &&
             heading.right + 11 <= navigation.left && brand.right <= heading.left &&
             counts.top >= title.bottom && counts.right <= heading.right + 1 &&
-            (sidebarOpen
+            alignedInSidebar && navigation.right <= innerWidth - 13 && (sidebarOpen
               ? header.left >= sidebar.left + 12 && header.right <= sidebar.right &&
                 heading.left >= sidebar.right + 12
-              : navigation.right <= innerWidth - 13)
+              : true)
         })).toBe(true)
+      }
+      const brandIcon = await page.locator('.sidebar-header .brand svg').boundingBox()
+      if (open) openedBrand = brandIcon!
+      else {
+        expect(Math.abs(brandIcon!.x - openedBrand!.x)).toBeLessThan(1)
+        expect(Math.abs(brandIcon!.y - openedBrand!.y)).toBeLessThan(1)
       }
       if (open && [390, 700].includes(width)) {
         await expect(page.locator('.history-panel')).toHaveCSS('opacity', '1')
