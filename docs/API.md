@@ -76,6 +76,8 @@ ID는 정규화된 페이지 URL의 SHA-256 앞 24자리입니다. fragment만 �
 timeout, connection_error, provider_auth_error, provider_rate_limit, provider_request_error,
 provider_error, invalid_output, turn_limit, incomplete_response, output_limit, internal_error.
 
+`provider_error`는 HTTP 연결 성공 후 스트리밍 중 발생하는 공급자 오류(`APIError`)도 포함합니다. 받은 응답은 보존하고, 미완료 응답은 후속 대화 문맥에 확정하지 않습니다. 공급자 오류 본문은 공개하지 않습니다.
+
 원문 오류·키·추론은 SSE에 포함하지 않습니다. 요청 검증 422, 만료/위조/구버전 continuation 409, 본문 제한 413, 요청 제한 429, 미설정 503.
 
 ### POST `/api/title`

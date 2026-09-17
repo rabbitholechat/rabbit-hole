@@ -3,8 +3,10 @@ import json
 import logging
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
+from openai import APIError
 
 from rabbit_hole import diagnostics
 from rabbit_hole.app import create_app
@@ -120,10 +122,19 @@ def test_body_limit():
     )
 
 
-def test_partial_failure_preserves_text_but_does_not_commit_unfinished_turn(caplog):
+@pytest.mark.parametrize("failure_kind", ["timeout", "provider_error"])
+@pytest.mark.parametrize("partial", [False, True])
+def test_partial_failure_preserves_text_but_does_not_commit_unfinished_turn(caplog, failure_kind, partial):
     class FailingService(FakeService):
         async def stream(self, conversation):
-            yield "받은 내용"
+            if partial:
+                yield "받은 내용"
+            if failure_kind == "provider_error":
+                raise APIError(
+                    "SECRET raw provider body",
+                    request=httpx.Request("POST", "https://api.openai.com/v1/responses"),
+                    body={"message": "SECRET", "code": "server_error"},
+                )
             raise TimeoutError("SECRET raw provider body")
 
     caplog.set_level(logging.DEBUG, logger=diagnostics.logger.name)
@@ -132,9 +143,10 @@ def test_partial_failure_preserves_text_but_does_not_commit_unfinished_turn(capl
         client = TestClient(create_app(settings(debug_diagnostics=True), FailingService))
         result = client.post("/api/agent", json=body(query="PRIVATE input"))
         data = events(result)
-        assert data[-1]["data"] == {"status": "partial", "failed_parts": ["response"]}
+        assert data[-1]["data"] == {"status": "partial" if partial else "failed", "failed_parts": ["response"]}
+        assert [e["data"]["delta"] for e in data if e["type"] == "response_delta"] == (["받은 내용"] if partial else [])
         failure = next(e["data"] for e in data if e["type"] == "part_error")
-        assert failure["code"] == "timeout"
+        assert failure["code"] == failure_kind
         token = [e["data"]["continuation"] for e in data if e["type"] == "checkpoint"][-1]
         assert SnapshotSigner("x" * 32).verify(token).conversation == []
         assert "SECRET" not in result.text + caplog.text
