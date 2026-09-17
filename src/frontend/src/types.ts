@@ -46,7 +46,51 @@ export type ResponseNode = Node<
   },
   'response'
 >
-export type CanvasNode = PageNode | ResponseNode
+export type TextSpan = { start: number; end: number; quote: string }
+export type InformationKind = 'concept' | 'entity' | 'claim' | 'example' | 'comparison'
+export type StructureResult = {
+  version: 1
+  text_hash: string
+  items: { key: string; subtype: InformationKind; title: TextSpan; excerpt: TextSpan }[]
+}
+export type InformationEntity = {
+  id: string
+  type: 'information'
+  subtype: InformationKind
+  responseId: string
+  textHash: string
+  title: TextSpan
+  excerpt: TextSpan
+}
+export type SourceEntity = {
+  id: string
+  type: 'source'
+  source: ToolSource
+  observations: { responseId: string; access: ToolSource['access']; accessedAt: string; spans: TextSpan[] }[]
+}
+export type ContentRelation = {
+  id: string
+  source: string
+  target: string
+  kind: 'has_extract' | 'consulted' | 'cites'
+  responseId: string
+  spans: TextSpan[]
+}
+export type StructureJob = {
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  attemptId: string
+  textHash?: string
+  error?: string
+}
+export type ContentGraph = {
+  version: 1
+  entities: Record<string, InformationEntity | SourceEntity>
+  relations: ContentRelation[]
+  jobs: Record<string, StructureJob>
+}
+export type InformationNode = Node<{ entityId: string }, 'information'>
+export type SourceNode = Node<{ entityId: string }, 'source'>
+export type CanvasNode = PageNode | ResponseNode | InformationNode | SourceNode
 export type Session = {
   id: string
   query: string
@@ -60,6 +104,7 @@ export type Session = {
   sources: Source[]
   nodes: CanvasNode[]
   graph: Graph
+  contentGraph?: ContentGraph
   answer: Answer | null
   viewport: Viewport
   fitted: boolean

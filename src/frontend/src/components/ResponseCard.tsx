@@ -12,6 +12,10 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
   const toggle = useStore((s) => s.toggleResponse)
   const reply = useStore((s) => s.reply)
   const busy = useStore((s) => Boolean(s.activeRequest))
+  const structure = useStore((s) => s.structure)
+  const cancelStructure = useStore((s) => s.cancelStructure)
+  const graphJob = useStore((s) => s.session?.contentGraph?.jobs[id])
+  const origin = useStore((s) => (s.origin?.responseId === id ? s.origin : null))
   const isReplyTarget = useStore((s) => s.replyTo === id)
   const contentRef = useRef<HTMLDivElement>(null)
   const [canResize, setCanResize] = useState(false)
@@ -108,6 +112,12 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
           </div>
         </header>
         <h2 title={data.prompt}>{data.prompt}</h2>
+        {origin?.quote && (
+          <details className="origin-excerpt nodrag nopan" open>
+            <summary>선택한 노드의 원문 발췌</summary>
+            <blockquote>{origin.quote}</blockquote>
+          </details>
+        )}
         <div
           ref={contentRef}
           className={`response-content nodrag nopan ${data.collapsed && canResize ? 'nowheel' : ''}`}
@@ -147,30 +157,29 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
             </p>
           )}
         </div>
-        {!!data.toolSources?.length && (
-          <details className="response-sources nodrag nopan">
-            <summary>조회 자료 {data.toolSources.length}개 · 사실 검증 아님</summary>
-            <ul>
-              {data.toolSources.map((source) => {
-                const url = safeUrl(source.url)
-                return (
-                  <li key={source.id}>
-                    {url ? (
-                      <a href={url} target="_blank" rel="noopener noreferrer">
-                        {source.title}
-                      </a>
-                    ) : (
-                      source.title
-                    )}
-                    <small>
-                      {source.access === 'page_read' ? '본문 조회' : '검색 결과'} ·{' '}
-                      {new Date(source.accessed_at).toLocaleString()}
-                    </small>
-                  </li>
-                )
-              })}
-            </ul>
-          </details>
+        {data.status === 'completed' && (
+          <footer className="structure-status nodrag nopan" aria-live="polite">
+            <span>
+              {graphJob?.status === 'running'
+                ? '정보 노드를 정리하고 있어요'
+                : graphJob?.status === 'completed'
+                  ? '응답 구조화 완료'
+                  : graphJob?.status === 'failed'
+                    ? '정보 구조화 실패 · 답변은 유지됩니다'
+                    : graphJob?.status === 'cancelled'
+                      ? '정보 구조화 중지됨'
+                      : '정보 노드 만들기'}
+            </span>
+            {graphJob?.status === 'running' ? (
+              <button onClick={() => cancelStructure(id)}>구조화 중지</button>
+            ) : (
+              graphJob?.status !== 'completed' && (
+                <button disabled={!data.continuation} onClick={() => void structure(id)}>
+                  {graphJob ? '구조화 재시도' : '구조화'}
+                </button>
+              )
+            )}
+          </footer>
         )}
       </article>
       <Handle type="source" position={Position.Right} isConnectable={false} />

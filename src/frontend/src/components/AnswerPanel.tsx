@@ -56,7 +56,7 @@ export function AnswerPanel() {
         {expanded && <p className="answer-limitation">{answer.limitation}</p>}
       </div>
       <footer>
-        {session.mode === 'sample' ? '디자인 예시 · 가상 데이터' : 'AI 요약은 출처와 함께 확인하세요.'}
+        {session.mode === 'sample' ? '이전 가상 데이터 기록' : 'AI 요약은 출처와 함께 확인하세요.'}
         {!expanded && answer.claims.length > 1 && (
           <button onClick={() => setExpanded(true)}>자세히 보기</button>
         )}

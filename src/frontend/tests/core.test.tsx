@@ -3,7 +3,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { RabbitIcon } from '../src/components/RabbitIcon'
 import { Button } from '../src/components/ui/button'
 import { layoutPages, CARD_HEIGHT, CARD_WIDTH } from '../src/lib/layout'
-import { makeSample } from '../src/lib/samples'
+import { makeSample } from './fixtures/legacySamples'
 import { saveSession, loadSessions, deleteSession } from '../src/lib/db'
 import { useStore } from '../src/store'
 import { canvasBounds } from '../src/lib/canvasBounds'
@@ -181,7 +181,7 @@ it('validates and restores tool sources without moving nodes or fetching history
   send(4, 'response_sources', { id: 'response_r', sources })
   send(5, 'done', { status: 'completed', failed_parts: [] })
   const saved = useStore.getState().session!
-  expect(saved.nodes).toHaveLength(1)
+  expect(saved.nodes).toHaveLength(2)
   expect(saved.nodes[0].data).toMatchObject({ text: 'Answer', toolSources: sources })
   expect(saved.nodes[0].position).toEqual({ x: 123, y: 234 })
   await saveSession(saved)

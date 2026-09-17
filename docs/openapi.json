@@ -109,6 +109,44 @@
         }
       }
     },
+    "/api/structure": {
+      "post": {
+        "summary": "Structure",
+        "operationId": "structure_api_structure_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StructureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StructureResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/{job_id}": {
       "delete": {
         "summary": "Cancel",
@@ -200,6 +238,122 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InformationExtract": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "subtype": {
+            "type": "string",
+            "enum": [
+              "concept",
+              "entity",
+              "claim",
+              "example",
+              "comparison"
+            ],
+            "title": "Subtype"
+          },
+          "title": {
+            "$ref": "#/components/schemas/TextSpan"
+          },
+          "excerpt": {
+            "$ref": "#/components/schemas/TextSpan"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "subtype",
+          "title",
+          "excerpt"
+        ],
+        "title": "InformationExtract"
+      },
+      "StructureRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "continuation": {
+            "type": "string",
+            "maxLength": 2000000,
+            "minLength": 1,
+            "title": "Continuation"
+          },
+          "text_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Text Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "continuation",
+          "text_hash"
+        ],
+        "title": "StructureRequest"
+      },
+      "StructureResult": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version",
+            "default": 1
+          },
+          "text_hash": {
+            "type": "string",
+            "title": "Text Hash"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InformationExtract"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text_hash",
+          "items"
+        ],
+        "title": "StructureResult"
+      },
+      "TextSpan": {
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Start"
+          },
+          "end": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "End"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "quote"
+        ],
+        "title": "TextSpan"
       },
       "TitleRequest": {
         "properties": {

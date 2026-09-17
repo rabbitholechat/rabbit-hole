@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4.1-mini"
     openai_background_model: str = "gpt-4o-mini"
     openai_search_model: str = "gpt-4.1-mini"
+    openai_structure_model: str = "gpt-4.1-mini"
+    structure_timeout_seconds: float = Field(25, ge=1, le=60)
     background_timeout_seconds: float = Field(15, ge=1, le=60)
     job_timeout_seconds: float = Field(90, ge=1, le=300)
     request_timeout_seconds: float = Field(20, ge=1, le=60)

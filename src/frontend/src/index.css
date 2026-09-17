@@ -140,7 +140,10 @@ svg {
 }
 .history-panel h2 {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
   margin: 24px 8px 12px;
   font-weight: 550;
   font-size: 12px;
@@ -156,6 +159,7 @@ svg {
 .history-empty {
   font-size: 12px;
   line-height: 1.7;
+  text-align: center;
   color: #9aa19c;
   margin: 14px 8px 24px;
 }
@@ -197,37 +201,6 @@ svg {
 .history-row:hover .history-delete,
 .history-row:focus-within .history-delete {
   opacity: 1;
-}
-.sample-controls {
-  margin-top: 20px;
-  padding: 14px 5px 2px;
-  border-top: 1px solid #eff0ec;
-}
-.sample-controls > button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #859087;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.sample-menu {
-  padding-top: 10px;
-}
-.sample-menu button {
-  width: 100%;
-  padding: 9px 2px;
-  text-align: left;
-  font-size: 11px;
-}
-.sample-menu button:hover {
-  color: #0f766e;
-}
-.sample-menu span {
-  display: block;
-  color: #a2a69e;
-  font-size: 9px;
-  margin-top: 3px;
 }
 .history-panel.collapsed {
   width: 47px;
@@ -996,17 +969,9 @@ svg {
   flex: 1;
   min-height: 0;
   max-height: none;
-}
-.sample-controls {
-  flex-shrink: 0;
-  margin-top: auto;
-  padding-top: 16px;
-}
-.sample-controls > button {
-  width: 100%;
-}
-.sample-controls > button > svg:last-child {
-  margin-left: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 .composer-area {
   left: var(--sidebar-space);
@@ -1632,8 +1597,6 @@ svg {
 }
 .history-item,
 .history-delete,
-.sample-menu button,
-.sample-controls > button,
 .external-link {
   border-radius: 7px;
 }
@@ -1679,26 +1642,144 @@ svg {
     top: 124px;
   }
 }
-/* Tool retrieval history belongs to the response; it is not a source graph. */
-.response-sources {
-  border-top: 1px solid var(--border, #dbe3dc);
-  margin-top: 12px;
-  padding-top: 10px;
-  font-size: 12px;
-  overflow-wrap: anywhere;
+.content-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 18px;
+  border: 1px solid #c4d8d1;
+  border-top: 3px solid #779d90;
+  border-radius: 14px;
+  background: #fafaf8f2;
+  color: #35483f;
+  overflow: hidden;
 }
-.response-sources summary {
+.information-card {
+  border-color: #d8cead;
+  border-top-color: #a49464;
+}
+.content-card.is-selected {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+.content-card > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.content-card > header small {
+  color: #8a8778;
+  font-size: 11px;
+}
+.information-card .node-tag {
+  color: #88733c;
+  background: #f4efdf;
+}
+.source-card .node-tag {
+  color: #53796f;
+  background: #eaf1ee;
+}
+.content-card h2 {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.5;
+  margin: 12px 0 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  flex-shrink: 0;
+}
+.information-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  font-size: 12px;
+  overscroll-behavior: contain;
+}
+.content-origin {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #798674;
+  padding-top: 10px;
+  flex-shrink: 0;
+}
+.content-origin small {
+  margin-left: auto;
+  color: #8e9b94;
+}
+.source-domain {
+  font-size: 11px;
+  color: #81938a;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.source-access {
+  font-size: 12px;
+  margin-top: 8px;
+  color: #426f5f;
+}
+.source-access span {
+  color: #8e978d;
+}
+.source-card .source-link {
+  margin: 6px 0;
+}
+.source-observations {
+  font-size: 11px;
+  color: #81938a;
+  overflow: auto;
+  min-height: 0;
+}
+.source-observations summary {
   cursor: pointer;
 }
-.response-sources ul {
-  padding-left: 20px;
-  max-height: 220px;
-  overflow: auto;
-}
-.response-sources li {
-  margin: 8px 0;
-}
-.response-sources small {
+.source-observations button {
   display: block;
-  opacity: 0.7;
+  padding: 3px 0;
+  color: #507765;
+}
+.content-edge-label {
+  position: absolute;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: #fafaf8ed;
+  font-size: 10px;
+  color: #859589;
+  pointer-events: none;
+}
+.structure-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 11px;
+  color: #8b978f;
+}
+.structure-status button {
+  color: #0f766e;
+}
+.structure-status button:disabled {
+  opacity: 0.4;
+}
+.origin-excerpt {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #668573;
+}
+.origin-excerpt blockquote {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  border-left: 2px solid #abc8bb;
+  padding: 8px 10px;
+  margin-top: 8px;
 }

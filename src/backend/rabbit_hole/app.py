@@ -18,6 +18,7 @@ from .errors import MESSAGES, StageFailure, error_code, error_location
 from .middleware import BodyLimitMiddleware
 from .models import AgentRequest, ConversationTurn, Snapshot, TitleRequest, TitleResponse
 from .security import SnapshotSigner
+from .structure import StructureRequest, StructureResult, text_hash
 
 
 @dataclass
@@ -306,6 +307,52 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                 except Exception as error:
                     diagnostics.log(logging.WARNING, request_id, "cleanup_failed",
                                     exception=type(error).__name__)
+
+    @app.post("/api/structure", response_model=StructureResult)
+    async def structure(body: StructureRequest, request: Request):
+        try:
+            turns = signer.verify(body.continuation).conversation
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        if not turns or turns[-1].role != "assistant" or text_hash(turns[-1].content) != body.text_hash:
+            raise HTTPException(409, "완료 응답의 문맥과 원문이 일치하지 않습니다.")
+        if not settings.configured:
+            raise HTTPException(503, "모델 API가 설정되지 않았습니다.")
+        job = store.create(request.client.host if request.client else "unknown")
+        service = None
+        task = None
+        diagnostics.log(logging.INFO, str(body.request_id), "structure_started")
+        try:
+            async with asyncio.timeout(settings.structure_timeout_seconds):
+                service = service_factory(settings)
+                task = asyncio.create_task(service.structure(turns[-1].content))
+                while not task.done():
+                    await asyncio.wait({task}, timeout=0.2)
+                    if await request.is_disconnected():
+                        raise asyncio.CancelledError()
+                result = await task
+                # Validate service output at the API boundary too.
+                result = StructureResult.model_validate(result)
+                if result.text_hash != body.text_hash:
+                    raise ValueError("invalid_extract")
+            diagnostics.log(logging.INFO, str(body.request_id), "structure_completed")
+            return result
+        except asyncio.CancelledError:
+            diagnostics.log(logging.INFO, str(body.request_id), "structure_cancelled")
+            raise
+        except Exception as error:
+            diagnostics.log(logging.ERROR, str(body.request_id), "structure_failed",
+                            code=error_code(error), location="structure")
+            raise HTTPException(502, "응답 구조화에 실패했습니다. 원래 답변은 유지됩니다.") from error
+        finally:
+            if task and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+            if service:
+                with contextlib.suppress(Exception):
+                    await service.close()
+            job.finished = True
 
     @app.delete("/api/jobs/{job_id}", status_code=204)
     async def cancel(job_id: str, authorization: str = Header(default="")):

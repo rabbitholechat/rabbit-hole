@@ -32,7 +32,7 @@ SSE envelope: `{version:2, request_id, job_id, seq, type, data}`. `id: seq`, `ev
 조회 자료가 있으면 마지막 checkpoint 직전에 `response_sources`를 보냅니다. 응답 실패 시에도 확보한 조회 자료가 있으면 전송합니다. 취소/연결 종료 뒤에는 전송하지 않습니다. 자료가 없으면 이벤트를 생략합니다. 델타와 동일한 요청/응답 ID·seq 검증을 적용하며, 기존 클라이언트는 모르는 이벤트를 무시할 수 있습니다.
 실패 시 response_completed 없음. 받은 텍스트가 있으면 partial, 없으면 failed. checkpoint는 이전 완료 대화만 유지합니다. 취소 시 연결 종료, 클라이언트가 노드 상태를 cancelled로 확정합니다.
 
-에이전트 응답 1개 = 응답 태그·아이콘을 가진 캔버스 노드 1개. 높이는 Markdown 내용에 맞춰 증가합니다. 이어지는 응답은 오른쪽에 배치하고 클라이언트에서 대화 순서 화살표로 연결합니다. 이는 내용 근거 관계가 아닙니다. 별도 노드 분해·근거 검증·관계 생성 호출은 없습니다. SDK의 공개 output_text/refusal delta와 제한된 조회 메타데이터만 전달하고 내부 추론·도구 인자·전체 본문·원시 도구 이벤트는 전달하지 않습니다.
+에이전트 응답 1개 = 응답 태그·아이콘을 가진 캔버스 노드 1개. 높이는 Markdown 내용에 맞춰 증가합니다. 이어지는 응답은 오른쪽에 배치하고 클라이언트에서 대화 순서 화살표로 연결합니다. 이는 내용 근거 관계가 아닙니다. 완료 후 아래의 독립 구조화 요청으로 정보 노드를 추가합니다. 근거 검증·의미 관계 생성 호출은 없습니다. SDK의 공개 output_text/refusal delta와 제한된 조회 메타데이터만 전달하고 내부 추론·도구 인자·전체 본문·원시 도구 이벤트는 전달하지 않습니다.
 
 ## 에이전트 도구
 
@@ -53,7 +53,7 @@ SSE envelope: `{version:2, request_id, job_id, seq, type, data}`. `id: seq`, `ev
 
 ID는 정규화된 페이지 URL의 SHA-256 앞 24자리입니다. fragment만 제외하고 경로·쿼리를 유지하며 도메인 병합하지 않습니다. read_page는 리디렉션의 최종 URL을 사용합니다. 동일 URL의 검색→읽기는 같은 ID로 갱신하고 읽기→검색은 상태를 낮추지 않습니다. 조회 목록은 인용 관계가 아닙니다. 응답에 생성된 임의 링크는 이 목록에 등록하지 않습니다.
 
-프런트는 응답의 `toolSources`에 저장하고 접을 수 있는 ‘조회 자료 · 사실 검증 아님’ 목록으로 표시합니다. 별도 출처 노드·관계는 생성하지 않습니다. 과거 검색용 Source 타입과 분리하며 기록 복원은 조회를 재실행하지 않습니다. 도구 본문·조회 목록은 서명 continuation에 추가하지 않고 완료 질문/공개 답변만 유지합니다.
+프런트는 응답의 `toolSources`를 보존하고 페이지별 출처 노드로 표시합니다. 실제 응답 Markdown에 해당 링크가 있으면 `cites`(출처 표기), 없으면 `consulted`(조회) 화살표를 연결합니다. 조회 성공은 사실 검증이나 답변 지지를 의미하지 않습니다. 과거 검색용 Source 타입과 분리하며 기록 복원은 조회를 재실행하지 않습니다. 도구 본문·조회 목록은 서명 continuation에 추가하지 않고 완료 질문/공개 답변만 유지합니다.
 
 공식 API 참고: [OpenAI 웹 검색 도구와 출처 메타데이터](https://developers.openai.com/api/docs/guides/tools-web-search).
 
@@ -69,7 +69,7 @@ ID는 정규화된 페이지 URL의 SHA-256 앞 24자리입니다. fragment만 �
 
 ## 호환성
 
-`/api/search`와 v1 검색 파이프라인은 제거했습니다. 기존 IndexedDB 페이지·관계 기록과 디자인 예시는 로컬 열람 가능. 기존 기록에서 메시지를 보내면 새 v2 대화가 시작되고 기존 continuation/가상 자료를 전송하지 않습니다.
+`/api/search`와 v1 검색 파이프라인은 제거했습니다. 디자인 예시 생성 UI는 제거했습니다. 기존 IndexedDB 페이지·관계 및 가상 데이터 기록은 로컬 열람 가능. 기존 기록에서 메시지를 보내면 새 v2 대화가 시작되고 기존 continuation/가상 자료를 전송하지 않습니다.
 
 ## 실패 코드
 
@@ -96,3 +96,51 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 노드의 `parentId`가 캔버스 간선을 결정합니다. `collapsed`와 함께 IndexedDB에 저장합니다.
 실패한 분기의 재시도는 같은 부모와 요청 전 문맥을 사용합니다.
 기존 기록 중 노드별 문맥이 없는 응답은 분기 버튼을 비활성화하며 문맥을 추측하지 않습니다.
+
+### POST `/api/structure` — 완료 응답의 정보 추출
+
+요청: `request_id`(새 UUID), `continuation`(해당 응답 직후의 서버 서명 문맥), `text_hash`(공개 답변 UTF-8 SHA-256). 추가 필드는 거부합니다. 서버는 서명을 확인하고 마지막 assistant 답변의 해시와 비교합니다. 사용자가 바꾼 임의 텍스트는 구조화하지 않습니다.
+
+```json
+{
+  "version": 1,
+  "text_hash": "c66e5e88fa09f898b3617cd3c44ea73b8e85dd223c71201ab898cb3a0a4a6012",
+  "items": [{
+    "key": "2091f76c4d5308a1d7bf1218",
+    "subtype": "concept",
+    "title": {"start": 0, "end": 5, "quote": "벡터 검색"},
+    "excerpt": {"start": 0, "end": 17, "quote": "벡터 검색은 의미를 비교합니다."}
+  }]
+}
+```
+
+위는 원문 `벡터 검색은 의미를 비교합니다.\n\n추가 설명입니다.`의 필드 설명용 결과입니다(실제 120자 미만 응답은 추출 생략). `key`는 `text_hash:start:end:subtype`의 SHA-256 앞 24자리입니다. 범위는 Unicode 코드 포인트 기준 `[start, end)`이며 JavaScript에서는 `Array.from(text)`로 슬라이스합니다. 제목은 발췌 안의 원문 일부여야 하고, 발췌는 원문에서 위치가 유일해야 합니다. 모델은 선택과 하위 유형만 판단하며 새 사실·설명·출처를 작성하지 않습니다. 서버가 원문 대조 후 오프셋과 키를 계산하고 프런트가 해시·범위·문자열을 재검증합니다. 정확한 복사 여부는 검증하지만 발췌의 의미적 완결성을 보증하지는 않습니다.
+
+- `subtype`: concept / entity / claim / example / comparison. 비교는 정보 노드의 하위 유형입니다.
+- 정보는 0..6개. 120자 미만은 모델 호출 없이 빈 배열, 전체 답변 복제·중복 발췌 제외. 긴 답변도 분리할 가치가 없으면 빈 배열입니다.
+- 모델: `OPENAI_STRUCTURE_MODEL` 기본 gpt-4.1-mini. Responses 구조화 출력 1회, 최대 4,000 출력 토큰, 도구 없음, 저장·자동 재시도 없음. 본문과 독립된 추가 모델 비용이 발생합니다.
+- `STRUCTURE_TIMEOUT_SECONDS` 기본 25초(1..60), 프런트 요청 제한 30초. 기존 요청 빈도·동시 실행 예산 공유. 연결 종료 시 작업 취소·클라이언트 종료.
+- 서명/해시 불일치 409, 검증 422, 요청 제한 429, 미설정 503, 추출/시간 초과 502. 오류에 원문을 노출하지 않습니다.
+
+### 캔버스 저장과 관계
+
+`Session.contentGraph = {version: 1, entities, relations, jobs}`에 의미 데이터를 저장하고, `Session.nodes`에는 React Flow 좌표·크기와 파생 노드의 `{entityId}` 참조를 저장합니다. 기존 응답 노드 형식과 원문은 유지합니다.
+
+| 노드 | 의미 데이터 | 기본/상세 표시 |
+| --- | --- | --- |
+| response | 기존 prompt, text, status, continuation, toolSources | 질문·전체 답변, 구조화 상태·중지·재시도 |
+| information | id, subtype, responseId, textHash, title/excerpt 범위 | 원문 제목·발췌, 원문 보기로 응답 위치 추적 |
+| source | id, ToolSource, observations(responseId, access, accessedAt, spans) | 페이지 제목·도메인·검색/본문 조회·미검증, 링크·응답별 조회 기록 |
+
+| 관계 | 방향 | 화면 라벨 | 생성 기준 |
+| --- | --- | --- | --- |
+| 기존 대화 순서 | 부모 response → 후속 response | 기존 대화 순서 표시 | 사용자의 응답 분기 선택/실행 기록 |
+| has_extract | response → information | 정보 추출 | 모델이 선택한 원문 발췌를 서버/클라이언트 검증 |
+| consulted | response → source | 조회 | 해당 응답의 실제 도구 조회 기록, 본문에 해당 링크 없음 |
+| cites | response 또는 information → source | 출처 표기 | 실제 Markdown 링크가 해당 도구 출처 URL과 일치. 코드 블록·이미지 제외, 참조식 링크 정의 지원 |
+
+출처 ID는 페이지별로 재사용하고 응답별 관찰 기록을 보존합니다. 출처가 없는 응답에는 출처 노드가 없습니다. 도구 메타데이터에 없는 생성 링크는 원래 답변에 남지만 출처 노드를 만들지 않습니다. `cites`도 자료 내용의 지지·인과·사실 검증을 의미하지 않습니다. 정보 간 의미 관계, uses_context, 비교 대상 연결 및 정보에서 대화 분기는 후순위입니다.
+
+`done(completed)` 후 signed checkpoint로 구조화를 시작하고 결과 전체 검증 후 원자적으로 추가합니다. 실패·중지는 기존 답변·출처·배치를 유지하며 사용자가 재시도할 수 있습니다. `jobs[responseId]`에 상태와 시도 ID를 저장해 중복 요청과 오래된 결과를 차단합니다. 완료된 작업은 재실행하지 않고 원문 해시·범위 기반 노드 ID와 관계 ID로 재적용을 중복 제거합니다. 새 노드만 기존 카드와 겹치지 않는 위치에 추가하고 사용자가 옮긴 좌표·viewport는 보존합니다.
+
+화면 전환/삭제는 해당 구조화를 취소합니다. IndexedDB 복원은 모델을 호출하지 않으며 중단된 작업은 cancelled로 복원합니다. 예전 v2 조회 메타데이터는 로컬에서 출처 노드로 표시할 수 있지만 과거 답변의 정보 추출은 자동 실행하지 않습니다. 구조화 실패가 원래 답변 표시와 후속 질문을 막지 않습니다.

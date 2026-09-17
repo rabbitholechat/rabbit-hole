@@ -1,47 +1,177 @@
 import { test, expect, type Page } from '@playwright/test'
+test.beforeEach(async ({ page }) => {
+  // No unmocked structure call may reach a local backend during browser tests.
+  await page.route('**/api/structure', (route) => route.fulfill({ status: 502, body: '{}' }))
+})
 async function openHistory(page: Page) {
   const expand = page.getByRole('button', { name: '대화 기록 펼치기' })
   if (await expand.isVisible()) await expand.click()
 }
-async function sample(page: Page) {
-  await openHistory(page)
-  await page.getByRole('button', { name: '디자인 예시 둘러보기' }).click()
-  await page.getByRole('button', { name: '벡터 검색이란? 가상 데이터' }).click()
-}
-test('same canvas, suggestion only fills, samples, selection, relation, history restore and delete', async ({
-  page,
-}) => {
+test('suggestions only fill input and design examples are absent', async ({ page }) => {
   let calls = 0
-  page.on('request', (request) => {
-    if (request.url().includes('/api/agent')) calls++
+  await page.route('**/api/agent', async (route) => {
+    calls++
+    await route.abort()
   })
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '호기심이 이어지는 곳' })).toBeVisible()
   await page.getByRole('button', { name: '복잡한 개념을 쉽게 설명해줘', exact: true }).click()
   await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('복잡한 개념을 쉽게 설명해줘')
+  await openHistory(page)
+  await expect(page.getByRole('button', { name: '디자인 예시 둘러보기' })).toHaveCount(0)
+  await expect(page.locator('.sample-menu, .sample-controls')).toHaveCount(0)
   expect(calls).toBe(0)
-  await page.locator('.react-flow').evaluate((el) => el.setAttribute('data-original-canvas', 'yes'))
-  await sample(page)
-  await expect(page.locator('.page-card')).toHaveCount(6)
-  await expect(page.locator('.react-flow')).toHaveAttribute('data-original-canvas', 'yes')
-  await expect(page.locator('.sample-badge')).toHaveText('디자인 예시 · 가상 데이터')
-  await page.getByRole('button', { name: '답변 펼치기' }).click()
-  await page.getByRole('button', { name: '출처 1 선택' }).click()
-  await expect(page.getByRole('region', { name: '출처 상세' })).toBeVisible()
-  await page.getByRole('button', { name: '상세 닫기' }).click()
-  await page.getByRole('button', { name: '답변 접기' }).click()
-  await page.locator('.edge-label').first().click({ force: true })
-  await expect(page.getByRole('region', { name: '관계 상세' })).toBeVisible()
-  await page.getByRole('button', { name: '상세 닫기' }).click()
+})
+
+test('history count follows its heading and long icon-free history scrolls inside the sidebar', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/')
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('rabbit-hole', 1)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('sessions', 'readwrite')
+      for (let i = 0; i < 60; i++)
+        tx.objectStore('sessions').put({
+          id: `history-${i}`,
+          query: `저장된 대화 ${i + 1}`,
+          updatedAt: 1000 - i,
+          mode: 'live',
+          protocol: 2,
+          nodes: [],
+          sources: [],
+          graph: { relations: [], clusters: [] },
+          answer: null,
+          viewport: { x: 0, y: 0, zoom: 1 },
+          fitted: false,
+          pinned: [],
+          status: 'completed',
+          failedParts: [],
+        })
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  })
   await page.reload()
   await openHistory(page)
-  await page.getByRole('button', { name: '벡터 검색이란? 예시', exact: true }).click()
-  await expect(page.locator('.page-card')).toHaveCount(6)
-  expect(calls).toBe(0)
+  await expect(page.locator('.history-panel h2')).toHaveText('최근 대화 60')
+  await expect(page.locator('.history-item svg')).toHaveCount(0)
+  const geometry = await page.locator('.history-panel h2').evaluate((el) => {
+    const range = document.createRange()
+    range.selectNodeContents(el.firstChild!)
+    return el.querySelector('span')!.getBoundingClientRect().left - range.getBoundingClientRect().right
+  })
+  expect(geometry).toBeLessThan(15)
+  const scrolled = await page.locator('.history-list').evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+    return { y: el.scrollTop, overflow: getComputedStyle(el).overflowY }
+  })
+  expect(scrolled.y).toBeGreaterThan(0)
+  expect(scrolled.overflow).toBe('auto')
+  await expect(page.getByRole('button', { name: '저장된 대화 60', exact: true })).toBeInViewport()
+  await page.screenshot({ path: testInfo.outputPath('history-scroll.png') })
+})
+
+test('completed response becomes three node types and retries do not duplicate or move existing nodes', async ({
+  page,
+}, testInfo) => {
+  const excerpt =
+    '벡터 검색은 의미를 비교합니다. 도메인에 따라 정확도가 달라집니다. [원문](https://example.com/a)'
+  const answer = `첫 번째 응답입니다.\n\n${excerpt}\n\n${'나머지 답변을 원래 응답에 그대로 보존합니다. '.repeat(8)}`
+  let structureCalls = 0
+  await page.route('**/api/title', (route) => route.fulfill({ status: 502, body: '{}' }))
+  await page.route('**/api/structure', async (route) => {
+    structureCalls++
+    if (structureCalls === 1) {
+      await route.fulfill({ status: 502, body: '{}' })
+      return
+    }
+    const request = route.request().postDataJSON()
+    const start = Array.from(answer.slice(0, answer.indexOf(excerpt))).length
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        version: 1,
+        text_hash: request.text_hash,
+        items: [
+          {
+            key: 'd'.repeat(24),
+            subtype: 'concept',
+            title: { start, end: start + 5, quote: '벡터 검색' },
+            excerpt: { start, end: start + Array.from(excerpt).length, quote: excerpt },
+          },
+        ],
+      }),
+    })
+  })
+  await page.route('**/api/agent', async (route) => {
+    const request = route.request().postDataJSON(),
+      id = `response_${request.request_id}`
+    const events = [
+      ['response_started', { id }],
+      ['response_completed', { id, text: answer }],
+      [
+        'response_sources',
+        {
+          id,
+          sources: [
+            {
+              id: `src_${'a'.repeat(24)}`,
+              url: 'https://example.com/a',
+              title: '실제 조회 기록',
+              access: 'page_read',
+              verification: 'unverified',
+              accessed_at: '2026-09-17T00:00:00Z',
+            },
+          ],
+        },
+      ],
+      ['checkpoint', { continuation: 'signed' }],
+      ['done', { status: 'completed', failed_parts: [] }],
+    ]
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: events
+        .map(
+          ([type, data], index) =>
+            `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: index + 1, type, data })}\n\n`,
+        )
+        .join(''),
+    })
+  })
+  await page.goto('/')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('정보와 출처를 정리해줘')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  const retry = page.getByRole('button', { name: '구조화 재시도' })
+  await expect(retry).toBeVisible()
+  await expect(page.locator('.source-card')).toHaveCount(1)
+  await expect(page.locator('.information-card')).toHaveCount(0)
+  await page.locator('.response-card').getByRole('button', { name: '응답 접기' }).click()
+  const before = await page.locator('.react-flow__node-response').getAttribute('style')
+  await retry.click()
+  await expect(page.locator('.information-card')).toHaveCount(1)
+  await expect(page.locator('.react-flow__node-response')).toHaveAttribute('style', before!)
+  await expect(page.locator('.response-card')).toHaveCount(1)
+  await expect(page.locator('.content-edge-label').filter({ hasText: '정보 추출' })).toHaveCount(1)
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await expect.poll(() => page.locator('.source-card').evaluate((element) => {
+    const bounds = element.getBoundingClientRect()
+    return bounds.left >= 0 && bounds.right <= window.innerWidth
+  })).toBe(true)
+  expect(await page.evaluate(() => window.scrollX)).toBe(0)
+  await page.screenshot({ path: testInfo.outputPath('three-node-graph.png') })
+  await page.getByRole('button', { name: /원문 보기/ }).click()
+  await expect(page.locator('.origin-excerpt blockquote')).toHaveText(excerpt)
+  await page.reload()
   await openHistory(page)
-  await page.getByRole('button', { name: '벡터 검색이란? 기록 삭제' }).click()
-  await expect(page.locator('.page-card')).toHaveCount(0)
-  await expect(page.getByText('대화 기록이 여기에 쌓입니다.')).toBeVisible()
+  await page.getByRole('button', { name: '정보와 출처를 정리해줘', exact: true }).click()
+  await expect(page.locator('.information-card')).toHaveCount(1)
+  await expect(page.locator('.source-card')).toHaveCount(1)
+  expect(structureCalls).toBe(2)
 })
 
 test('IME submission and unconfigured agent show an error without sample fallback', async ({ page }) => {
@@ -161,22 +291,23 @@ test('tool retrieval history distinguishes access and restores without new reque
   await page.goto('/')
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('계산과 자료 확인')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
-  const summary = page.locator('.response-sources summary')
-  await expect(summary).toHaveText('조회 자료 2개 · 사실 검증 아님')
-  await summary.click()
-  await expect(page.locator('.response-sources')).toContainText('검색 결과')
-  await expect(page.locator('.response-sources')).toContainText('본문 조회')
-  await expect(page.getByRole('link', { name: '본문을 읽은 페이지' })).toHaveAttribute(
-    'href',
-    'https://example.com/b',
+  await expect(page.locator('.source-card')).toHaveCount(2)
+  await expect(page.locator('.response-sources')).toHaveCount(0)
+  await expect(page.locator('.source-card').filter({ hasText: '검색으로 찾은 페이지' })).toContainText(
+    '검색 결과',
   )
+  await expect(page.locator('.source-card').filter({ hasText: '본문을 읽은 페이지' })).toContainText(
+    '본문 조회',
+  )
+  await expect(page.locator('.content-edge-label').filter({ hasText: '출처 표기' })).toHaveCount(1)
+  await expect(page.locator('.content-edge-label').filter({ hasText: /^조회$/ })).toHaveCount(1)
   await expect(page.locator('.response-card')).toHaveCount(1)
   await expect(page.locator('.page-card')).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('tool-sources.png') })
   await page.reload()
   await openHistory(page)
   await page.getByRole('button', { name: '계산과 자료 확인', exact: true }).click()
-  await expect(page.locator('.response-sources summary')).toHaveText('조회 자료 2개 · 사실 검증 아님')
+  await expect(page.locator('.source-card')).toHaveCount(2)
   expect(requests).toBe(1)
 })
 

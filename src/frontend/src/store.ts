@@ -3,8 +3,15 @@ import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
 import type { CanvasNode, Envelope, Session, ResponseNode, PartError } from './types'
 import { deleteSession, loadSessions, saveSession } from './lib/db'
 import { consumeSSE } from './lib/sse'
-import { makeSample, type SampleKind } from './lib/samples'
 import { parseToolSources } from './lib/toolSources'
+import {
+  attachInformation,
+  attachSources,
+  emptyContentGraph,
+  hashText,
+  responseById,
+  validateStructure,
+} from './lib/contentGraph'
 
 const emptySession = (query: string): Session => ({
   id: crypto.randomUUID(),
@@ -26,6 +33,7 @@ let controller: AbortController | undefined
 let access: { id: string; token: string } | undefined
 let persistence: Promise<unknown> = Promise.resolve()
 let saveTimer: ReturnType<typeof setTimeout> | undefined
+const structureRequests = new Map<string, AbortController>()
 function persist(session: Session) {
   const snapshot = structuredClone(session)
   persistence = persistence
@@ -57,7 +65,10 @@ interface State {
   newConversation: () => void
   open: (id: string) => void
   remove: (id: string) => Promise<void>
-  sample: (kind: SampleKind) => void
+  structure: (responseId: string) => Promise<void>
+  cancelStructure: (responseId: string) => void
+  revealOrigin: (responseId: string, quote?: string) => void
+  origin: { responseId: string; quote: string } | null
   select: (id: string | null) => void
   selectEdge: (index: number | null) => void
   run: (options?: { retry?: boolean }) => Promise<void>
@@ -75,6 +86,24 @@ function commit(session: Session) {
     ),
   }))
   persist(session)
+}
+function updateSession(id: string, change: (session: Session) => Session) {
+  const state = useStore.getState()
+  const current = state.session?.id === id ? state.session : state.history.find((s) => s.id === id)
+  if (!current) return
+  const next = change(current)
+  useStore.setState({
+    ...(state.session?.id === id ? { session: next } : {}),
+    history: state.history.map((s) => (s.id === id ? next : s)),
+  })
+  persist(next)
+}
+function cancelSessionStructures() {
+  const session = useStore.getState().session
+  if (!session) return
+  for (const [id, job] of Object.entries(session.contentGraph?.jobs ?? {})) {
+    if (job.status === 'running') useStore.getState().cancelStructure(id)
+  }
 }
 // Independent request: title work never holds the response stream or changes the viewport.
 async function generateTitle(session: Session) {
@@ -146,6 +175,109 @@ export const useStore = create<State>((set, get) => ({
   stage: '',
   error: null,
   storageError: null,
+  origin: null,
+  revealOrigin: (responseId, quote = '') =>
+    set({ selected: responseId, selectedEdge: null, origin: { responseId, quote } }),
+  cancelStructure: (responseId) => {
+    const session = get().session
+    if (!session) return
+    structureRequests.get(`${session.id}:${responseId}`)?.abort()
+    updateSession(session.id, (current) => {
+      const graph = current.contentGraph
+      const job = graph?.jobs[responseId]
+      if (!graph || !job || job.status !== 'running') return current
+      return {
+        ...current,
+        contentGraph: { ...graph, jobs: { ...graph.jobs, [responseId]: { ...job, status: 'cancelled' } } },
+      }
+    })
+  },
+  structure: async (responseId) => {
+    const session = get().session
+    if (!session || session.protocol !== 2 || session.mode !== 'live') return
+    const response = responseById(session, responseId)
+    if (!response || response.data.status !== 'completed') return
+    const graph = session.contentGraph ?? emptyContentGraph()
+    if (['running', 'completed'].includes(graph.jobs[responseId]?.status)) return
+    const attemptId = crypto.randomUUID()
+    const key = `${session.id}:${responseId}`
+    const abort = new AbortController()
+    structureRequests.set(key, abort)
+    updateSession(session.id, (current) => {
+      const contentGraph = current.contentGraph ?? emptyContentGraph()
+      return {
+        ...current,
+        contentGraph: {
+          ...contentGraph,
+          jobs: { ...contentGraph.jobs, [responseId]: { status: 'running', attemptId } },
+        },
+      }
+    })
+    try {
+      const textHash = await hashText(response.data.text)
+      if (abort.signal.aborted) return
+      let result: unknown = { version: 1, text_hash: textHash, items: [] }
+      if (Array.from(response.data.text).length >= 120) {
+        if (!response.data.continuation) throw Error('missing_context')
+        const res = await fetch('/api/structure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            request_id: attemptId,
+            continuation: response.data.continuation,
+            text_hash: textHash,
+          }),
+          signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30000)]),
+        })
+        if (!res.ok) throw Error('structure_failed')
+        result = await res.json()
+      }
+      const validated = validateStructure(result, response.data.text, textHash)
+      if (abort.signal.aborted) return
+      updateSession(session.id, (current) => {
+        if (
+          current.contentGraph?.jobs[responseId]?.attemptId !== attemptId ||
+          current.contentGraph.jobs[responseId].status !== 'running' ||
+          responseById(current, responseId)?.data.text !== response.data.text
+        )
+          return current
+        const next = attachInformation(current, responseId, validated)
+        return {
+          ...next,
+          contentGraph: {
+            ...next.contentGraph!,
+            jobs: { ...next.contentGraph!.jobs, [responseId]: { status: 'completed', attemptId, textHash } },
+          },
+        }
+      })
+    } catch {
+      if (!abort.signal.aborted)
+        updateSession(session.id, (current) => {
+          const contentGraph = current.contentGraph
+          if (
+            contentGraph?.jobs[responseId]?.attemptId !== attemptId ||
+            contentGraph.jobs[responseId].status !== 'running'
+          )
+            return current
+          return {
+            ...current,
+            contentGraph: {
+              ...contentGraph,
+              jobs: {
+                ...contentGraph.jobs,
+                [responseId]: {
+                  status: 'failed',
+                  attemptId,
+                  error: '정보 노드를 만들지 못했습니다. 원래 답변은 유지됩니다.',
+                },
+              },
+            },
+          }
+        })
+    } finally {
+      if (structureRequests.get(key) === abort) structureRequests.delete(key)
+    }
+  },
   initialize: async () => {
     try {
       const history = (await loadSessions()).map((session) => ({
@@ -157,17 +289,41 @@ export const useStore = create<State>((set, get) => ({
           return rest
         }),
       }))
-      set({ history: history.map((s) => (s.status === 'running' ? finish(s, 'partial') : s)) })
+      set({
+        history: history.map((s) => {
+          let restored = s.status === 'running' ? finish(s, 'partial') : s
+          if (restored.contentGraph)
+            restored = {
+              ...restored,
+              contentGraph: {
+                ...restored.contentGraph,
+                jobs: Object.fromEntries(
+                  Object.entries(restored.contentGraph.jobs).map(([id, job]) => [
+                    id,
+                    job.status === 'running' ? { ...job, status: 'cancelled' as const } : job,
+                  ]),
+                ),
+              },
+            }
+          if (restored.protocol === 2)
+            for (const node of restored.nodes) {
+              if (node.type === 'response') restored = attachSources(restored, node.id)
+            }
+          return restored
+        }),
+      })
     } catch {
       set({ storageError: '브라우저 저장소를 사용할 수 없습니다.' })
     }
   },
   setInput: (input) => set({ input }),
   newConversation: () => {
+    cancelSessionStructures()
     get().stop()
-    set({ session: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null })
+    set({ session: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, origin: null })
   },
   open: (id) => {
+    cancelSessionStructures()
     get().stop()
     const session = get().history.find((s) => s.id === id)
     if (session)
@@ -178,6 +334,7 @@ export const useStore = create<State>((set, get) => ({
         input: '',
         error: null,
         replyTo: null,
+        origin: null,
       })
   },
   remove: async (id) => {
@@ -187,11 +344,6 @@ export const useStore = create<State>((set, get) => ({
     await persistence
     await deleteSession(id)
     set({ history: get().history.filter((s) => s.id !== id) })
-  },
-  sample: (kind) => {
-    get().stop()
-    commit(makeSample(kind))
-    set({ selected: null, selectedEdge: null, error: null, input: '', replyTo: null })
   },
   reply: (id) => {
     if (get().activeRequest) return
@@ -397,7 +549,7 @@ export const useStore = create<State>((set, get) => ({
             ? { ...n, data: { ...n.data, toolSources: sources } }
             : n,
         )
-        commit(session)
+        commit(attachSources(session, state.responseId!))
         break
       }
       case 'part_error': {
@@ -416,8 +568,11 @@ export const useStore = create<State>((set, get) => ({
         commit(session)
         break
       case 'done':
-        commit(finish(session, event.data.status as Session['status']))
-        if (event.data.status === 'completed') void generateTitle(get().session!)
+        commit(attachSources(finish(session, event.data.status as Session['status']), state.responseId!))
+        if (event.data.status === 'completed') {
+          void get().structure(state.responseId!)
+          void generateTitle(get().session!)
+        }
         break
     }
   },

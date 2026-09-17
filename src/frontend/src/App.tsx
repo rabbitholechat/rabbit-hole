@@ -16,7 +16,6 @@ import {
   ArrowRight,
   PanelLeftClose,
   ChevronRight,
-  Clock3,
   ExternalLink,
   Maximize,
   Minus,
@@ -26,7 +25,6 @@ import {
   Square,
   Trash2,
   X,
-  FlaskConical,
   RotateCcw,
   LoaderCircle,
 } from 'lucide-react'
@@ -38,15 +36,16 @@ import { ConversationEdge } from './components/ConversationEdge'
 import { RelationEdge } from './components/RelationEdge'
 import { AnswerPanel } from './components/AnswerPanel'
 import { ResponseCard } from './components/ResponseCard'
+import { ContentCard } from './components/ContentCard'
+import { ContentEdge } from './components/ContentEdge'
 import { Button } from './components/ui/button'
 import { canvasBounds } from './lib/canvasBounds'
 import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
 import type { CanvasNode } from './types'
 
-const nodeTypes = { page: PageCard, response: ResponseCard },
-  edgeTypes = { relation: RelationEdge, conversation: ConversationEdge }
-const sampleTitles = ['벡터 검색이란?', '아이폰 폴드 가격과 출시일', '오사카 최저가 항공권']
+const nodeTypes = { page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard },
+  edgeTypes = { relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
 const suggestions = [
   '복잡한 개념을 쉽게 설명해줘',
   '두 가지 선택지를 비교해줘',
@@ -76,7 +75,6 @@ function Workspace() {
     mobile.addEventListener('change', collapseOnMobile)
     return () => mobile.removeEventListener('change', collapseOnMobile)
   }, [])
-  const [samplesOpen, setSamplesOpen] = useState(false)
   const [weak, setWeak] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null),
     composing = useRef(false)
@@ -188,6 +186,11 @@ function Workspace() {
     current.select(next.id)
     focusNode(next)
   }
+  useEffect(() => {
+    if (!state.origin) return
+    const node = useStore.getState().session?.nodes.find((n) => n.id === state.origin!.responseId)
+    if (node) focusNode(node)
+  }, [state.origin])
   navigateRef.current = navigateNode
   fitRef.current = fit
   useEffect(() => {
@@ -212,7 +215,7 @@ function Workspace() {
   const nodes = useMemo(
     () =>
       session?.nodes.map((n): CanvasNode =>
-        n.type === 'response'
+        n.type !== 'page'
           ? { ...n, selected: n.id === state.selected }
           : {
               ...n,
@@ -229,7 +232,7 @@ function Workspace() {
   const edges: Edge[] = useMemo(() => {
     if (session?.protocol === 2) {
       const responses = session.nodes.filter((n) => n.type === 'response')
-      return responses.flatMap((node, index) => {
+      const conversationEdges: Edge[] = responses.flatMap((node, index) => {
         const parentId = node.data.parentId === undefined ? responses[index - 1]?.id : node.data.parentId
         if (!parentId || !responses.some((n) => n.id === parentId)) return []
         return [
@@ -247,6 +250,25 @@ function Workspace() {
           },
         ]
       })
+      const contentEdges: Edge[] = (session.contentGraph?.relations ?? []).map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: 'content',
+        label: { has_extract: '정보 추출', consulted: '조회', cites: '출처 표기' }[edge.kind],
+        ariaLabel: {
+          has_extract: '응답에서 정보 추출',
+          consulted: '응답에서 자료 조회',
+          cites: '원문에 출처 표기',
+        }[edge.kind],
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#91a69d', width: 14, height: 14 },
+        style: {
+          stroke: edge.kind === 'has_extract' ? '#bcab82' : '#91a69d',
+          strokeDasharray: edge.kind === 'consulted' ? '4 4' : undefined,
+        },
+        selectable: false,
+      }))
+      return [...conversationEdges, ...contentEdges]
     }
     return (
       session?.graph.relations.map((e, i) => ({
@@ -268,7 +290,15 @@ function Workspace() {
         },
       })) ?? []
     )
-  }, [session?.graph, session?.nodes, session?.protocol, state.selected, state.selectedEdge, weak])
+  }, [
+    session?.graph,
+    session?.contentGraph,
+    session?.nodes,
+    session?.protocol,
+    state.selected,
+    state.selectedEdge,
+    weak,
+  ])
   const selectedSource = session?.sources.find((s) => s.id === state.selected)
   const selectedRelation =
     state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]
@@ -416,10 +446,10 @@ function Workspace() {
           <Plus />새 대화
         </Button>
         <h2>
-          최근 대화 <span>{state.history.length || ''}</span>
+          최근 대화 <span>{state.history.length}</span>
         </h2>
         <div className="history-list">
-          {!state.history.length && <p className="history-empty">대화 기록이 여기에 쌓입니다.</p>}
+          {!state.history.length && <p className="history-empty">대화 기록이 없습니다</p>}
           {state.history.map((h) => (
             <div className={`history-row ${session?.id === h.id ? 'active' : ''}`} key={h.id}>
               <button
@@ -429,7 +459,6 @@ function Workspace() {
                   if (window.innerWidth < 700) setHistoryOpen(false)
                 }}
               >
-                <Clock3 size={14} />
                 <span>{h.title || h.query}</span>
                 {h.mode === 'sample' && <small>예시</small>}
               </button>
@@ -443,42 +472,18 @@ function Workspace() {
             </div>
           ))}
         </div>
-        <div className="sample-controls">
-          <button onClick={() => setSamplesOpen(!samplesOpen)} aria-expanded={samplesOpen}>
-            <FlaskConical size={13} />
-            디자인 예시 둘러보기
-            <ChevronRight size={12} />
-          </button>
-          {samplesOpen && (
-            <div className="sample-menu">
-              {(['vector', 'fold', 'flight'] as const).map((kind, i) => (
-                <button
-                  key={kind}
-                  onClick={() => {
-                    state.sample(kind)
-                    if (window.innerWidth < 700) setHistoryOpen(false)
-                  }}
-                >
-                  {sampleTitles[i]}
-                  <span>가상 데이터</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </aside>
       {session && (
         <div className="canvas-heading">
           <div>
-            {session.mode === 'sample' && <span className="eyebrow">DESIGN PREVIEW</span>}
             <h1>{(session.title || session.query).split('\n')[0]}</h1>
           </div>
           <span>
             {session.protocol === 2
-              ? `${session.nodes.length}개의 응답`
+              ? `${session.nodes.filter((n) => n.type === 'response').length}개의 응답 · ${session.nodes.filter((n) => n.type === 'information').length}개 정보 · ${session.nodes.filter((n) => n.type === 'source').length}개 출처`
               : `${session.sources.length}개의 페이지`}
           </span>
-          {session.mode === 'sample' && <span className="sample-badge">디자인 예시 · 가상 데이터</span>}
+          {session.mode === 'sample' && <span className="sample-badge">이전 가상 데이터 기록</span>}
         </div>
       )}
       {session?.protocol !== 2 && <AnswerPanel />}
@@ -532,9 +537,7 @@ function Workspace() {
                     <ExternalLink size={14} />
                   </a>
                 )}
-                {session?.mode === 'sample' && (
-                  <p className="timestamp">디자인 예시에서는 실제 요청을 실행하지 않습니다.</p>
-                )}
+                {session?.mode === 'sample' && <p className="timestamp">이전 가상 데이터 기록입니다.</p>}
               </>
             ) : (
               selectedRelation && (
@@ -650,7 +653,7 @@ function Workspace() {
             rows={1}
             aria-label="메시지 입력"
             placeholder={
-              session?.protocol === 2 ? '이어서 질문하거나 다음 작업을 요청하세요' : '무엇을 함께 풀어볼까요?'
+              session?.protocol === 2 ? '이어서 질문하거나 다음 작업을 요청하세요' : '무엇이 궁금한가요?'
             }
             value={state.input}
             maxLength={2000}
@@ -695,7 +698,9 @@ function Workspace() {
           </div>
         )}
         {session?.mode === 'sample' && (
-          <p className="composer-note">디자인 예시입니다. 메시지를 보내면 새로운 대화를 시작합니다.</p>
+          <p className="composer-note">
+            이전 가상 데이터 기록입니다. 메시지를 보내면 새로운 대화를 시작합니다.
+          </p>
         )}
       </div>
       {session?.sources.length ? (

@@ -1,5 +1,5 @@
-import type { Graph, Session, Source } from '../types'
-import { layoutPages } from './layout'
+import type { Graph, Session, Source } from '../../src/types'
+import { layoutPages } from '../../src/lib/layout'
 export type SampleKind = 'vector' | 'fold' | 'flight'
 const content: Record<
   SampleKind,
