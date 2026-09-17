@@ -33,6 +33,7 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
   const entity = useStore((s) => s.session?.contentGraph?.entities[data.entityId])
   const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.excerpt.quote : `${entity?.source.content?.status ?? ''}:${entity?.source.content?.summary || entity?.source.content?.text || ''}`, data.collapsed)
   const collapsed = Boolean(data.collapsed && canCollapse)
+  const [imageFailed, setImageFailed] = useState(false)
   if (!entity) return null
   const source = entity.type === 'source' ? entity.source : null
   const content = source?.content
@@ -41,7 +42,7 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <article
-        className={`content-card ${arrivalFinished ? 'arrival-finished' : ''} ${entity.type}-card ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${collapsed ? 'is-collapsed' : ''}`}
+        className={`content-card ${source?.image ? 'image-card' : ''} ${arrivalFinished ? 'arrival-finished' : ''} ${entity.type}-card ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${collapsed ? 'is-collapsed' : ''}`}
         onAnimationEnd={(event) => {
           if (event.target === event.currentTarget && ['content-arrive', 'page-arrive'].includes(event.animationName)) setArrivalFinished(true)
         }}
@@ -49,9 +50,9 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
         aria-busy={pending}
       >
         <header>
-          <NodeTag kind={entity.type} />
+          <NodeTag kind={source?.image ? 'image' : entity.type} />
           {entity.type === 'information' && <small className="response-status">{kinds[entity.subtype]}</small>}
-          {source && <small className="response-status source-progress" role="status">
+          {source && !source.image && <small className="response-status source-progress" role="status">
             {pending && <RabbitLoader />}
             {content?.status === 'reading' ? '조회 중' : content?.status === 'summarizing' ? '요약 중' : content?.status === 'cancelled' ? '요약 중지됨' : content?.summary ? content.summary_error ? '일부 요약' : '요약 완료' : ''}
           </small>}
@@ -81,6 +82,16 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
                 {entity.excerpt.quote}
               </ReactMarkdown>
             </div>
+          </>
+        ) : entity.source.image ? (
+          <>
+            {imageFailed ? <p className="image-preview-placeholder">이미지를 불러오지 못했습니다.</p> : (
+              <a className="image-preview-link nodrag nopan" href={safeUrl(entity.source.url)} target="_blank" rel="noopener noreferrer">
+                <img className="image-preview" src={entity.source.image.thumbnail_url} alt={entity.source.title}
+                  loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setImageFailed(true)} />
+              </a>
+            )}
+            <h2 title={entity.source.title}>{entity.source.title}</h2>
           </>
         ) : (
           <>
@@ -120,7 +131,7 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
               target="_blank"
               rel="noopener noreferrer"
             >
-              페이지 열기 <ExternalLink size={13} />
+              {source.image ? '원본 페이지' : '페이지 열기'} <ExternalLink size={13} />
             </a>
           )}
           <PreviousNodeButton id={id} />

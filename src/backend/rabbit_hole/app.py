@@ -167,7 +167,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                     model=settings.openai_model,
                     context_turns=len(inputs),
                     context_chars=sum(len(t.content) for t in inputs),
-                    tools=3,
+                    tools=4,
                     max_turns=settings.max_model_turns,
                 )
                 async with asyncio.timeout(settings.job_timeout_seconds):
@@ -195,7 +195,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                 )
                 await emit("response_completed", {"id": response_id, "text": text})
                 status = "completed"
-                if getattr(service, "enrich_sources", None) and service.sources:
+                if getattr(service, "enrich_sources", None) and any(not s.image for s in service.sources[:settings.max_response_sources]):
                     # Isolate page failures from the completed answer, without extending the job deadline.
                     await emit("status", {"stage": "reading_sources"})
                     remaining = settings.job_timeout_seconds - (time.monotonic() - job.created)

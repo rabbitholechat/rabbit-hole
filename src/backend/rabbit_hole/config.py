@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     source_summary_timeout_seconds: float = Field(15, ge=1, le=60)
     max_source_concurrency: int = Field(3, ge=1, le=8)
     max_response_sources: int = Field(5, ge=1, le=50)
+    max_image_searches: int = Field(1, ge=0, le=5)
     max_web_searches: int = Field(2, ge=1, le=5)
     tool_timeout_seconds: float = Field(20, ge=1, le=60)
     max_page_bytes: int = Field(1_000_000, ge=1024, le=2_000_000)

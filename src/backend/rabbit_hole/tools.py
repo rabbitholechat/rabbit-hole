@@ -18,7 +18,7 @@ import httpx
 from agents import function_tool
 
 from .config import Settings
-from .models import SourceContent, ToolSource
+from .models import ImagePreview, SourceContent, ToolSource
 
 # Vendor DEBUG/HTTP logs may contain prompts, credentials, URLs and tool bodies.
 # Application diagnostics remain available through rabbit_hole.diagnostics.
@@ -138,6 +138,7 @@ class PageText(HTMLParser):
         self.parts: list[str] = []
         self.main: list[str] = []
         self.article: list[str] = []
+        self.image_url: str | None = None
 
     def append(self, text):
         self.parts.append(text)
@@ -148,6 +149,9 @@ class PageText(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
+        if tag == "meta" and (attrs.get("property") or attrs.get("name", "")).lower() in ("og:image", "twitter:image"):
+            if not self.image_url and attrs.get("content"):
+                self.image_url = attrs["content"]
         hidden = (any(hidden for _, hidden in self.stack)
                   or tag in ("script", "style", "noscript", "template", "nav", "footer", "aside", "svg")
                   or "hidden" in attrs or attrs.get("aria-hidden") == "true")
@@ -236,16 +240,25 @@ async def fetch_page(raw_url: str, settings: Settings) -> dict:
                     except LookupError:
                         raise ToolFailure("unsupported_encoding") from None
                     title = ""
+                    image_url = None
                     if mime != "text/plain":
                         parser = PageText()
                         parser.feed(text)
                         title = " ".join("".join(parser.title).split())[:500]
                         text = parser.text()
+                        if parser.image_url:
+                            try:
+                                candidate = public_url(urljoin(str(url), parser.image_url))
+                                if candidate.scheme == "https":
+                                    image_url = str(candidate)
+                            except ToolFailure:
+                                pass
                     text = text.strip()
                     if not text:
                         raise ToolFailure("page_size_limit" if byte_truncated else "empty_page")
                     return {"url": str(url), "title": title, "text": text[:settings.max_page_chars],
-                            "truncated": byte_truncated or len(text) > settings.max_page_chars}
+                            "truncated": byte_truncated or len(text) > settings.max_page_chars,
+                            **({"image_url": image_url} if image_url else {})}
     raise ToolFailure("redirect_limit")
 
 
@@ -255,6 +268,8 @@ class AgentTools:
         self.client = client
         self.calls = 0
         self.searches = 0
+        self.image_searches = 0
+        self.page_images_attempted = False
         self.sources: dict[str, ToolSource] = {}
         self.page_contents: dict[str, SourceContent] = {}
 
@@ -274,7 +289,7 @@ class AgentTools:
         if old and old.access == "page_read" and access == "search_result":
             return old
         source = ToolSource(id=source_id, url=url, title=title[:500] or (old.title if old else url), access=access,
-                            accessed_at=datetime.now(UTC).isoformat(), content=old.content if old else None)
+                            accessed_at=datetime.now(UTC).isoformat(), content=old.content if old else None, image=old.image if old else None)
         self.sources[source_id] = source
         return source
 
@@ -282,7 +297,57 @@ class AgentTools:
         self.consume()
         return {"result": calculate(expression), "precision": 40}
 
+    def displayed_sources(self):
+        values = list(self.sources.values())
+        images = [s for s in values if s.image]
+        pages = [s for s in values if not s.image]
+        limit = self.settings.max_response_sources
+        if not pages:
+            return images[:limit]
+        image_count = min(2, len(images), max(0, limit - 1))
+        return pages[:limit - image_count] + images[:image_count]
+
     async def web_search(self, query: str) -> dict:
+        result = await self._web_search(query)
+        # Automatic visual supplement is bounded once per request and cannot fail the web result.
+        if result["status"] == "ok" and self.image_searches < self.settings.max_image_searches:
+            try:
+                images = await self.image_search(query)
+                result["images"] = images["sources"]
+            except Exception:
+                result["images"] = []
+        if result["status"] == "ok" and not any(s.image for s in self.sources.values()) and not self.page_images_attempted:
+            self.page_images_attempted = True
+            await self.page_images(result["sources"])
+            result["images"] = [s.model_dump(exclude={"content"}) for s in self.displayed_sources() if s.image]
+        return result
+
+    async def page_images(self, sources):
+        """Use actual publisher image metadata when the image index has no matching result."""
+        async def read(item):
+            try:
+                self.consume()
+                page = await fetch_page(item["url"], self.settings)
+                source = self.sources.get(item["id"])
+                if not source:
+                    return
+                source.content = SourceContent(status="read", text=page["text"],
+                                               truncated=page["truncated"], final_url=page["url"])
+                source.access = "page_read"
+                source.accessed_at = datetime.now(UTC).isoformat()
+                if not page.get("image_url"):
+                    return
+                image_url = public_url(page["image_url"])
+                await public_address(image_url)
+                source.image = ImagePreview(thumbnail_url=str(image_url))
+            except Exception:
+                return
+
+        async with asyncio.TaskGroup() as group:
+            for item in sources[:min(2, self.settings.max_source_concurrency)]:
+                group.create_task(read(item))
+
+    async def _web_search(self, query: str) -> dict:
         self.consume(search=True)
         if not query.strip() or len(query) > 2000:
             raise ToolFailure("invalid_query")
@@ -333,6 +398,50 @@ class AgentTools:
             return {"status": "no_sources", "sources": [], "summary": ""}
         return {"status": "ok", "content_origin": "web_search_summary",
                 "summary": result.output_text[:12000], "sources": [s.model_dump(exclude={"content"}) for s in found.values()]}
+
+    async def image_search(self, query: str) -> dict:
+        if self.image_searches >= self.settings.max_image_searches:
+            raise ToolFailure("image_search_limit")
+        self.consume()
+        self.image_searches += 1
+        if not query.strip() or len(query) > 2000:
+            raise ToolFailure("invalid_query")
+        async with asyncio.timeout(self.settings.tool_timeout_seconds):
+            async with httpx.AsyncClient(trust_env=False, timeout=self.settings.tool_timeout_seconds) as client:
+                async with client.stream(
+                    "GET", "https://commons.wikimedia.org/w/api.php",
+                    params={"action": "query", "format": "json", "formatversion": 2,
+                            "generator": "search", "gsrsearch": query, "gsrnamespace": 6,
+                            "gsrlimit": self.settings.max_response_sources, "prop": "imageinfo",
+                            "iiprop": "url|mime|thumbmime", "iiurlwidth": 640},
+                    headers={"User-Agent": "RabbitHole/1.0 (https://github.com/rabbitholechat/rabbit-hole)"},
+                ) as response:
+                    if response.status_code != 200:
+                        raise ToolFailure("image_search_unavailable")
+                    body = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > self.settings.max_page_bytes:
+                            raise ToolFailure("image_search_limit")
+                    payload = json.loads(body)
+        if "error" in payload:
+            raise ToolFailure("image_search_unavailable")
+        results = []
+        for page in sorted(payload.get("query", {}).get("pages", []), key=lambda p: p.get("index", 0)):
+            info = (page.get("imageinfo") or [{}])[0]
+            try:
+                original = public_url(info.get("descriptionurl", ""))
+                preview = public_url(info.get("thumburl", ""))
+                if (original.scheme != "https" or original.host != "commons.wikimedia.org"
+                        or preview.scheme != "https" or preview.host not in ("upload.wikimedia.org", "thumb.wikimedia.org")
+                        or info.get("thumbmime", info.get("mime")) not in ("image/jpeg", "image/png", "image/webp", "image/gif")):
+                    continue
+                source = self.record(str(original), str(page.get("title", "")).removeprefix("File:"), "search_result")
+                source.image = ImagePreview(thumbnail_url=str(preview))
+                results.append(source.model_dump(exclude={"content"}))
+            except ToolFailure:
+                continue
+        return {"status": "ok" if results else "no_sources", "provider": "Wikimedia Commons", "sources": results}
 
     async def read_page(self, url: str) -> dict:
         self.consume()
@@ -388,7 +497,7 @@ class AgentTools:
     async def enrich_sources(self, on_update=None):
         """Publish page-specific progress; bound reads and summaries to this request."""
         semaphore = asyncio.Semaphore(self.settings.max_source_concurrency)
-        selected = list(self.sources.values())[:self.settings.max_response_sources]
+        selected = [s for s in self.displayed_sources() if not s.image]
         cached = {**self.page_contents, **{s.url: s.content for s in self.sources.values()
                   if s.content and s.content.status == "read"}}
         summary_calls = 0
@@ -509,4 +618,15 @@ class AgentTools:
             """
             return await invoke(self.read_page, url)
 
-        return [calculator, web_search, read_page]
+        @function_tool(failure_error_function=safe_error)
+        async def image_search(query: str) -> dict:
+            """Find images in Wikimedia Commons when images or visual references are requested.
+            Returns real thumbnails, titles and original file pages. Not a general web image index.
+            Prefer a focused English search query for coverage. Never invent an image URL.
+
+            Args:
+                query: Image search terms, at most 2000 characters.
+            """
+            return await invoke(self.image_search, query)
+
+        return [calculator, web_search, read_page, image_search]

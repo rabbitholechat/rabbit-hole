@@ -362,3 +362,24 @@ def test_page_enrichment_contract_preserves_answer_and_excludes_body_from_checkp
     assert content is None if fail else content["text"] == "PRIVATE_PAGE_TEST_TEXT"
     checkpoint = [e for e in result if e["type"] == "checkpoint"][-1]["data"]["continuation"]
     assert "PRIVATE_PAGE_TEST_TEXT" not in str(SnapshotSigner("x" * 32).verify(checkpoint).conversation)
+
+
+def test_image_sources_sse_contract():
+    from rabbit_hole.models import ImagePreview
+
+    class ImageService(FakeService):
+        sources = [ToolSource(
+            id="src_" + "a" * 24, title="Rabbit",
+            url="https://commons.wikimedia.org/wiki/File:Rabbit.jpg",
+            access="search_result", accessed_at="2026-09-17T00:00:00Z",
+            image=ImagePreview(thumbnail_url="https://upload.wikimedia.org/rabbit.jpg"),
+        )]
+
+        async def enrich_sources(self, on_update=None):
+            raise AssertionError("Image cards must not trigger page summaries")
+
+    result = events(TestClient(create_app(settings(), ImageService)).post("/api/agent", json=body()))
+    snapshot = next(e for e in result if e["type"] == "response_sources")
+    assert snapshot["data"]["sources"] == [ImageService.sources[0].model_dump()]
+    assert result[-1]["data"]["status"] == "completed"
+    assert not any(e["type"] == "status" and e["data"]["stage"] == "reading_sources" for e in result)

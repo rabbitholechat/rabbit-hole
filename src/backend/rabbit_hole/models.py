@@ -62,6 +62,11 @@ class SourceContent(BaseModel):
     summary_error: Literal["summary_unavailable", "summary_timeout", "summary_budget_exhausted"] | None = None
 
 
+class ImagePreview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    thumbnail_url: str = Field(max_length=4096)
+
+
 class ToolSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -71,3 +76,4 @@ class ToolSource(BaseModel):
     accessed_at: str
     verification: Literal["unverified"] = "unverified"
     content: SourceContent | None = None
+    image: ImagePreview | None = None

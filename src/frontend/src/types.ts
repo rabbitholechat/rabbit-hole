@@ -43,6 +43,7 @@ export type ToolSource = {
   access: 'search_result' | 'page_read'
   accessed_at: string
   verification: 'unverified'
+  image?: { thumbnail_url: string } | null
   content?: SourceContent | null
 }
 export type ResponseNode = Node<

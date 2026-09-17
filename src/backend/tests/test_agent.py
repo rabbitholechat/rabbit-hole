@@ -42,7 +42,7 @@ async def test_sdk_adapter_tools_only_public_text(monkeypatch):
         "**답변**",
         " 거절 설명",
     ]
-    assert [t.name for t in service.agent.tools] == ["calculator", "web_search", "read_page"]
+    assert [t.name for t in service.agent.tools] == ["calculator", "web_search", "read_page", "image_search"]
     assert run.call_args.kwargs["run_config"].tracing_disabled
     assert run.call_args.kwargs["max_turns"] == 6
     result.cancel.assert_called_once()
@@ -101,6 +101,8 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
     import httpx
     from openai import AsyncOpenAI
 
+    monkeypatch.setattr("rabbit_hole.tools.AgentTools.image_search", AsyncMock(return_value={"sources": []}))
+    monkeypatch.setattr("rabbit_hole.tools.AgentTools.page_images", AsyncMock())
     captured = []
     message = {
         "id": "msg_test",
@@ -218,7 +220,7 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
             assert service.sources == []
         assert captured[0]["stream"] is True
         assert captured[0]["store"] is False
-        assert [t["name"] for t in captured[0]["tools"]] == ["calculator", "web_search", "read_page"]
+        assert [t["name"] for t in captured[0]["tools"]] == ["calculator", "web_search", "read_page", "image_search"]
         assert captured[0]["parallel_tool_calls"] is False
         assert captured[0]["max_output_tokens"] == 4000
     finally:

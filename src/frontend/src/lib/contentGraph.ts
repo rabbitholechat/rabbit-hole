@@ -81,7 +81,7 @@ function withRelations(graph: ContentGraph, extra: ContentRelation[]) {
 function estimatedHeight(session: Session, node: CanvasNode) {
   if (node.measured?.height ?? node.height) return node.measured?.height ?? node.height!
   const entity = session.contentGraph?.entities[node.id]
-  return entity?.type === 'source' ? (entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
+  return entity?.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
 }
 function place(session: Session, ids: string[], response: ResponseNode): CanvasNode[] {
   const nodes = [...session.nodes]
@@ -89,12 +89,12 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
     const width = entity.type === 'information' ? 340 : 460
-    const height = entity.type === 'source' ? (entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
+    const height = entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
     const x =
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
       88 +
-      (entity.type === 'source' ? 428 : 0)
+      (entity.type === 'source' ? 428 + (entity.source.image ? 460 + 88 : 0) : 0)
     let y = response.position.y
     while (true) {
       const collisions = nodes.filter(
@@ -124,7 +124,7 @@ function mergeSource(kept: SourceEntity, incoming: SourceEntity): SourceEntity {
     ? kept.source
     : incoming.source.content ? incoming.source
       : kept.source.access === 'page_read' ? kept.source : incoming.source
-  return { ...kept, source: { ...source, id: kept.id }, observations: [...observations.values()] }
+  return { ...kept, source: { ...source, image: incoming.source.image ?? kept.source.image, id: kept.id }, observations: [...observations.values()] }
 }
 
 // Keep the first displayed card and its placement; retarget all references to that card.

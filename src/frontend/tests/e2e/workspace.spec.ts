@@ -889,3 +889,51 @@ test('source cards show lookup and summary spinners then persist the page summar
   await expect(card.locator('.source-body')).toContainText('이 페이지는 병렬 처리 방법')
   await expect(card.locator('.rabbit-loader')).toHaveCount(0)
 })
+
+test('image search cards show preview title and original page and restore without search', async ({ page }) => {
+  let requests = 0
+  await page.route('https://upload.wikimedia.org/**', (route) => route.fulfill({
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'),
+  }))
+  await page.route('**/api/title', (route) => route.fulfill({ status: 502, body: '{}' }))
+  await page.route('**/api/structure', (route) => route.fulfill({ status: 502, body: '{}' }))
+  await page.route('**/api/agent', async (route) => {
+    requests++
+    const request = route.request().postDataJSON()
+    const id = 'response_' + request.request_id
+    const events = [
+      ['response_started', { id }],
+      ['response_completed', { id, text: '이미지를 찾았습니다.' }],
+      ['response_sources', { id, sources: [{
+        id: 'src_' + 'a'.repeat(24), title: 'Rabbit.jpg',
+        url: 'https://commons.wikimedia.org/wiki/File:Rabbit.jpg',
+        access: 'search_result', accessed_at: '2026-09-17T00:00:00Z', verification: 'unverified',
+        image: { thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/rabbit.png' },
+      }] }],
+      ['checkpoint', { continuation: 'signed' }],
+      ['done', { status: 'completed', failed_parts: [] }],
+    ]
+    await route.fulfill({ contentType: 'text/event-stream', body: events.map(([type, data], i) =>
+      'data: ' + JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: i + 1, type, data }) + '\n\n',
+    ).join('') })
+  })
+  await page.goto('/')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('토끼 이미지')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  const card = page.locator('.source-card')
+  await expect(card.getByRole('heading', { name: 'Rabbit.jpg' })).toBeVisible()
+  await expect(card.locator('.node-tag')).toHaveText('이미지')
+  await expect(card).toHaveCSS('background-color', 'rgb(247, 242, 252)')
+  await expect(card.locator('.image-preview')).toHaveAttribute('referrerpolicy', 'no-referrer')
+  await expect(card.getByRole('link', { name: '원본 페이지', exact: true })).toHaveAttribute('href', 'https://commons.wikimedia.org/wiki/File:Rabbit.jpg')
+  await expect(card).not.toContainText('페이지 요약')
+  await page.reload()
+  await openHistory(page)
+  await page.getByRole('button', { name: '토끼 이미지', exact: true }).click()
+  await expect(card.locator('.image-preview')).toHaveCount(1)
+  expect(requests).toBe(1)
+  await card.locator('.image-preview').dispatchEvent('error')
+  await expect(card).toContainText('이미지를 불러오지 못했습니다.')
+  await expect(card.getByRole('link', { name: '원본 페이지', exact: true })).toHaveCount(1)
+})

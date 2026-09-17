@@ -21,6 +21,14 @@ export function parseToolSources(value: unknown): ToolSource[] | undefined {
       item.verification !== 'unverified'
     )
       return
+    let image: ToolSource['image']
+    if (item.image != null) {
+      const raw = item.image.thumbnail_url
+      if (typeof raw !== 'string' || raw.length > 4096 || !safeUrl(raw)) return
+      const thumbnail = new URL(raw)
+      if (thumbnail.protocol !== 'https:') return
+      image = { thumbnail_url: thumbnail.href }
+    }
     let content: SourceContent | undefined
     if (item.content != null) {
       const body = item.content
@@ -47,6 +55,7 @@ export function parseToolSources(value: unknown): ToolSource[] | undefined {
       accessed_at: item.accessed_at,
       verification: 'unverified',
       ...(content ? { content } : {}),
+      ...(image ? { image } : {}),
     })
   }
   return [...new Map(sources.map((s) => [s.id, s])).values()]

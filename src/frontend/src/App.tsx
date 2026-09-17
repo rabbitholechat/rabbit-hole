@@ -250,13 +250,16 @@ function Workspace() {
         // The forward conversation edge already displays this explicit selection.
         const response = responses.find((n) => n.id === edge.source)
         return !(edge.kind === 'uses_context' && response && responseParentId(session, response) === edge.target)
-      }).map((edge) => ({
+      }).map((edge) => {
+        const target = session.contentGraph?.entities[edge.target]
+        const isImage = target?.type === 'source' && !!target.source.image && ['consulted', 'cites'].includes(edge.kind)
+        return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
         type: 'content',
-        label: { has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고' }[edge.kind],
-        ariaLabel: {
+        label: isImage ? '관련 이미지' : { has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고' }[edge.kind],
+        ariaLabel: isImage ? '관련 이미지' : {
           has_extract: '응답에서 정보 추출',
           consulted: '응답에서 자료 조회',
           cites: '원문에 출처 표기',
@@ -268,7 +271,8 @@ function Workspace() {
           strokeDasharray: edge.kind === 'consulted' ? '4 4' : undefined,
         },
         selectable: false,
-      }))
+        }
+      })
       return [...conversationEdges, ...contentEdges]
     }
     return (
