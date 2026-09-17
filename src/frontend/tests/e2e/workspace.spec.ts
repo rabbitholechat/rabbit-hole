@@ -201,10 +201,10 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(progress).toHaveText('완료')
   await expect(page.locator('.information-card')).toHaveCount(1)
   await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'content-arrive')
-  await expect(page.locator('.react-flow__edge-content .connection-reveal').first()).toHaveCSS('animation-name', 'edge-arrive')
+  await expect(page.locator('.react-flow__edge-content[data-id^="has_extract:"] .connection-reveal')).toHaveCSS('animation-name', 'edge-arrive')
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'none')
-  await expect(page.locator('.connection-reveal').first()).toHaveCSS('animation-name', 'none')
+  await expect(page.locator('.connection-reveal')).toHaveCount(0)
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await expect(page.locator('.react-flow__node-response')).toHaveAttribute('style', before!)
   await expect(page.locator('.response-card')).toHaveCount(1)
@@ -239,6 +239,9 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(page.locator('.source-card header .response-status')).toHaveCSS('color', 'rgb(63, 115, 171)')
   await page.locator('.source-card').getByRole('button', { name: '다음 응답에 사용' }).click()
   await expect(page.locator('.source-card')).toHaveCSS('animation-name', 'none')
+  await expect(page.locator('.react-flow__edge-content[data-id^="has_extract:"] .react-flow__edge-path')).toHaveCSS('stroke', 'rgb(150, 116, 35)')
+  await expect(page.locator('.react-flow__edge-content[data-id^="cites:"] .react-flow__edge-path').first()).toHaveCSS('stroke', 'rgb(63, 115, 171)')
+  await expect(page.locator('.react-flow__edge-content .react-flow__edge-path').first()).toHaveCSS('stroke-width', '2.6px')
   await page.screenshot({ path: testInfo.outputPath('three-node-graph.png') })
   await expect(page.getByText('미검증', { exact: false })).toHaveCount(0)
   await expect(page.locator('.response-card').getByRole('button', { name: '이전 노드로' })).toBeDisabled()
@@ -1093,4 +1096,86 @@ test('digging rabbit accompanies list and selected conversation loading', async 
   await expect(canvasLoader).toHaveCount(0)
   await expect(page.locator('.response-card')).toContainText(saved.nodes[0].data.text)
   expect(modelCalls).toBe(0)
+})
+
+
+test('streaming responses reflect light and conversation edges animate only once', async ({ page }, testInfo) => {
+  await page.route('**/api/jobs/**', (route) => route.fulfill({ status: 204 }))
+  await page.addInitScript(() => {
+    const starts: Record<string, number> = {}
+    Object.assign(window, { edgeStarts: starts })
+    document.addEventListener('animationstart', (event) => {
+      const target = event.target as Element
+      if (event.animationName !== 'edge-arrive' || !target.matches('.connection-reveal')) return
+      const id = target.closest('.react-flow__edge')?.getAttribute('data-id') ?? ''
+      starts[id] = (starts[id] ?? 0) + 1
+    })
+    const original = window.fetch.bind(window)
+    window.fetch = async (input, init) => {
+      if (input !== '/api/agent') return original(input, init)
+      const request = JSON.parse(init!.body as string)
+      const id = `response_${request.request_id}`
+      const text = '생성 중에도 문장은 선명하게 읽을 수 있습니다. 빛은 카드 안쪽으로만 지나갑니다.\n\n'.repeat(5)
+      let seq = 0
+      return new Response(new ReadableStream({ start(controller) {
+        const emit = (type: string, data: object) => controller.enqueue(new TextEncoder().encode(
+          `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: ++seq, type, data })}\n\n`,
+        ))
+        emit('started', { access_token: 'token' })
+        emit('checkpoint', { continuation: request.continuation ?? 'before' })
+        emit('response_started', { id })
+        emit('response_delta', { id, delta: text })
+        Object.assign(window, { finishGlassResponse: () => {
+          emit('response_completed', { id, text })
+          emit('checkpoint', { continuation: 'signed' })
+          emit('done', { status: 'completed', failed_parts: [] })
+          controller.close()
+        } })
+      } }), { headers: { 'Content-Type': 'text/event-stream' } })
+    }
+  })
+  await page.goto('/')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('유리 반사 효과 확인')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  const card = page.locator('.response-card').first()
+  await expect(card).toHaveClass(/is-generating/)
+  await expect(card.locator('.response-glass')).toBeVisible()
+  await expect(card.locator('.response-glass')).toHaveCSS('pointer-events', 'none')
+  await expect.poll(() => card.locator('.response-glass').evaluate((el) => getComputedStyle(el, '::before').animationName)).toBe('response-glass-light')
+  await expect(card.locator('.response-content')).toHaveCSS('filter', 'none')
+  await expect(card).toHaveClass(/arrival-finished/)
+  await expect(card).toHaveCSS('opacity', '1')
+  await card.locator('.response-glass').evaluate((el) => {
+    const animation = el.getAnimations({ subtree: true }).find((animation) => (animation as CSSAnimation).animationName === 'response-glass-light')
+    if (animation) { animation.pause(); animation.currentTime = 2100 }
+  })
+  await page.screenshot({ path: testInfo.outputPath('streaming-glass.png') })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await expect.poll(() => card.locator('.response-glass').evaluate((el) => getComputedStyle(el, '::before').animationName)).toBe('none')
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.evaluate(() => (window as unknown as { finishGlassResponse: () => void }).finishGlassResponse())
+  await expect(card.locator('.response-glass')).toHaveCount(0)
+  await expect(card).not.toHaveClass(/is-generating/)
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('두 번째 응답')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  const second = page.locator('.response-card').last()
+  await expect(second).toHaveClass(/is-generating/)
+  await expect(card.locator('.response-glass')).toHaveCount(0)
+  const edge = page.locator('.react-flow__edge-conversation .react-flow__edge-path')
+  await expect(edge).toHaveCSS('stroke', 'rgb(69, 140, 128)')
+  await expect(edge).toHaveCSS('stroke-width', '2.6px')
+  const counts = () => page.evaluate(() => (window as unknown as { edgeStarts: Record<string, number> }).edgeStarts)
+  await expect.poll(async () => Object.values(await counts())).toEqual([1])
+  await expect(page.locator('.connection-reveal')).toHaveCount(0)
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await second.getByRole('button', { name: '응답 접기' }).click()
+  await second.getByRole('button', { name: '응답 확장' }).click()
+  await page.getByRole('button', { name: '응답 중지' }).click()
+  await expect(second.locator('.response-glass')).toHaveCount(0)
+  await openHistory(page)
+  await page.getByRole('button', { name: '유리 반사 효과 확인', exact: true }).click()
+  await expect(page.locator('.canvas-loading')).toHaveCount(0)
+  await expect(page.locator('.response-card')).toHaveCount(2)
+  await expect(page.locator('.connection-reveal')).toHaveCount(0)
+  expect(Object.values(await counts())).toEqual([1])
 })

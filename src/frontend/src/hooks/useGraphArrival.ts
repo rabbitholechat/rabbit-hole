@@ -1,19 +1,24 @@
 import { useRef, type CSSProperties } from 'react'
 import type { Edge } from '@xyflow/react'
+import type { EdgeArrival } from './useEdgeArrival'
 import type { CanvasNode } from '../types'
 
+const connectionKey = (edge: Edge) => JSON.stringify([edge.type, edge.source, edge.target])
+
 // Presentation-only state: never persisted or replayed when a saved canvas opens.
-export function useGraphArrival(sessionId: string | undefined, nodes: CanvasNode[], edges: Edge[]) {
+export function useGraphArrival(sessionId: string | undefined, nodes: CanvasNode[], edges: Edge[], restoring = false) {
   const timeline = useRef<{
     sessionId?: string
+    restoring?: boolean
     nodes: Map<string, number | null>
-    edges: Map<string, number | null>
+    edges: Map<string, EdgeArrival | undefined>
   }>({ nodes: new Map(), edges: new Map() })
-  if (timeline.current.sessionId !== sessionId) {
+  if (timeline.current.sessionId !== sessionId || restoring || timeline.current.restoring) {
     timeline.current = {
       sessionId,
+      restoring,
       nodes: new Map(nodes.map((node) => [node.id, null])),
-      edges: new Map(edges.map((edge) => [edge.id, null])),
+      edges: new Map(edges.map((edge) => [connectionKey(edge), undefined])),
     }
   }
   const seen = timeline.current
@@ -24,8 +29,9 @@ export function useGraphArrival(sessionId: string | undefined, nodes: CanvasNode
     }
   }
   for (const edge of edges) {
-    if (!seen.edges.has(edge.id)) {
-      seen.edges.set(edge.id, Math.max(seen.nodes.get(edge.source) ?? 0, seen.nodes.get(edge.target) ?? 0) + 120)
+    const key = connectionKey(edge)
+    if (!seen.edges.has(key)) {
+      seen.edges.set(key, { delay: Math.max(seen.nodes.get(edge.source) ?? 0, seen.nodes.get(edge.target) ?? 0) + 120, claimed: false })
     }
   }
   return {
@@ -40,7 +46,7 @@ export function useGraphArrival(sessionId: string | undefined, nodes: CanvasNode
     }),
     edges: edges.map((edge) => ({
       ...edge,
-      data: { ...edge.data, arrivalDelay: seen.edges.get(edge.id) },
+      data: { ...edge.data, arrival: seen.edges.get(connectionKey(edge)) },
     })),
   }
 }

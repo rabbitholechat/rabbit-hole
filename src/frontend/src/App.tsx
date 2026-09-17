@@ -43,6 +43,7 @@ import { ResponseCard } from './components/ResponseCard'
 import { ContentCard } from './components/ContentCard'
 import { ContentEdge } from './components/ContentEdge'
 import { Button } from './components/ui/button'
+import { NODE_ACCENTS, nodeAccent } from './lib/nodeAppearance'
 import { canvasBounds } from './lib/canvasBounds'
 import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
@@ -243,8 +244,8 @@ function Workspace() {
             ariaLabel: '이전 노드에서 이어진 응답',
             selectable: false,
             focusable: false,
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#7fa99c', width: 16, height: 16 },
-            style: { stroke: '#7fa99c', strokeWidth: 1.5 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: NODE_ACCENTS.response, markerUnits: 'userSpaceOnUse', width: 16, height: 16 },
+            style: { stroke: NODE_ACCENTS.response, strokeWidth: 2.6 },
           },
         ]
       })
@@ -254,6 +255,7 @@ function Workspace() {
         return !(edge.kind === 'uses_context' && response && responseParentId(session, response) === edge.target)
       }).map((edge) => {
         const target = session.contentGraph?.entities[edge.target]
+        const color = nodeAccent(session.nodes.find((node) => node.id === edge.target), session.contentGraph)
         const isImage = target?.type === 'source' && !!target.source.image && ['consulted', 'cites'].includes(edge.kind)
         return {
         id: edge.id,
@@ -268,9 +270,10 @@ function Workspace() {
           cites: '원문에 출처 표기',
           uses_context: '새 응답에서 선택한 노드를 맥락으로 참고',
         }[edge.kind],
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#91a69d', width: 14, height: 14 },
+        markerEnd: { type: MarkerType.ArrowClosed, color, markerUnits: 'userSpaceOnUse', width: 16, height: 16 },
         style: {
-          stroke: edge.kind === 'has_extract' ? '#bcab82' : '#91a69d',
+          stroke: color,
+          strokeWidth: 2.6,
           strokeDasharray: edge.kind === 'consulted' ? '4 4' : undefined,
         },
         selectable: false,
@@ -284,15 +287,12 @@ function Workspace() {
         source: e.source,
         target: e.target,
         type: 'relation',
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#94b2a6', width: 16, height: 16 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: NODE_ACCENTS.page, markerUnits: 'userSpaceOnUse', width: 16, height: 16 },
         label: e.label,
         hidden: e.strength === 'weak' && !weak,
         style: {
-          stroke:
-            e.source === state.selected || e.target === state.selected || state.selectedEdge === i
-              ? '#0F766E'
-              : '#becbc6',
-          strokeWidth: state.selectedEdge === i ? 2.4 : 1.35,
+          stroke: NODE_ACCENTS.page,
+          strokeWidth: state.selectedEdge === i ? 3.4 : 2.6,
           opacity: state.selected && e.source !== state.selected && e.target !== state.selected ? 0.3 : 1,
           strokeDasharray: e.strength === 'weak' ? '4 5' : undefined,
         },
@@ -307,7 +307,7 @@ function Workspace() {
     state.selectedEdge,
     weak,
   ])
-  const arrivingGraph = useGraphArrival(session?.id, nodes, edges)
+  const arrivingGraph = useGraphArrival(session?.id, nodes, edges, Boolean(state.loadingSessionId))
   const selectedSource = session?.sources.find((s) => s.id === state.selected)
   const selectedRelation =
     state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]

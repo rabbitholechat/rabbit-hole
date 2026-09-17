@@ -1133,11 +1133,6 @@ svg {
     transform: translateY(0) scale(1);
   }
 }
-.edge-reveal {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 0;
-  animation: edge-arrive 650ms ease-out 140ms backwards;
-}
 @keyframes edge-arrive {
   from {
     stroke-dashoffset: 1;
@@ -1146,9 +1141,7 @@ svg {
     stroke-dashoffset: 0;
   }
 }
-.edge-label {
-  animation: relation-arrive 240ms ease-out 400ms backwards;
-}
+
 @keyframes relation-arrive {
   from {
     opacity: 0;
@@ -1452,9 +1445,7 @@ svg {
 .response-content > :last-child {
   margin-bottom: 0;
 }
-.conversation-edge {
-  animation: relation-arrive 350ms ease-out backwards;
-}
+
 
 /* A narrow vertical tool rail leaves the composer on its natural bottom baseline. */
 .canvas-tools {
@@ -1732,6 +1723,8 @@ svg {
 .connection-reveal {
   stroke-dasharray: 1;
   stroke-dashoffset: 0;
+}
+.connection-reveal.is-arriving {
   animation: edge-arrive 680ms cubic-bezier(.4, 0, .2, 1) var(--arrival-delay, 0ms) backwards;
 }
 .connection-label-arriving {
@@ -2023,4 +2016,42 @@ svg {
 }
 .is-loading-content > .react-flow {
   pointer-events: none;
+}
+
+
+/* Reflected light stays behind the response text and inside the card boundary. */
+.response-card.is-generating {
+  position: relative;
+  isolation: isolate;
+}
+.response-glass {
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: 14px;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(135deg, #dceee6b0, #ffffff50 48%, #e2f1eba0);
+  box-shadow: inset 0 0 0 1px #ffffffa6;
+  backdrop-filter: blur(2px);
+}
+.response-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0 -50%;
+  background: linear-gradient(115deg, transparent 24%, #ffffffa6 32%, #ffffff18 35%, transparent 39%, #ffffff80 43%, transparent 49%);
+  animation: response-glass-light 4.2s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes response-glass-light {
+  0%, 12% { transform: translateX(-28%); }
+  75%, 100% { transform: translateX(35%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .response-glass::before { animation: none; transform: translateX(0); }
+}
+.content-edge-label {
+  color: var(--edge-color, #65736c);
+  border-color: color-mix(in srgb, var(--edge-color, #91a69d) 32%, white);
+  background: color-mix(in srgb, var(--edge-color, #91a69d) 7%, white);
 }
