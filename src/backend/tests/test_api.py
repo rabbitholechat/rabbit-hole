@@ -3,6 +3,7 @@ import json
 import logging
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from rabbit_hole import diagnostics
@@ -305,3 +306,17 @@ def test_selected_node_context_is_explicit_user_data_in_signed_conversation():
     signed = SnapshotSigner("x" * 32).verify(token)
     assert signed.conversation[-2].content == seen[-1].content
     assert client.post('/api/agent', json={**body(), "node_context": {**context, "text": "x" * 12001}}).status_code == 422
+
+
+@pytest.mark.parametrize("limit", [5, 2])
+def test_response_sources_have_server_configured_limit(limit):
+    class ManySources(FakeService):
+        sources = [ToolSource(id=f"src_{i:024x}", url=f"https://example.com/{i}", title=f"Page {i}",
+                              access="search_result", accessed_at="2026-09-17T00:00:00Z") for i in range(8)]
+    configured = settings(max_response_sources=limit)
+    result = events(TestClient(create_app(configured, ManySources)).post("/api/agent", json=body()))
+    sources = next(e["data"]["sources"] for e in result if e["type"] == "response_sources")
+    assert len(sources) == limit
+    assert sources[0]["id"] == "src_" + "0" * 24
+    assert len(ManySources.sources) == 8
+    assert Settings(_env_file=None).max_response_sources == 5

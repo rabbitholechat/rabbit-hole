@@ -178,3 +178,24 @@ async def test_page_cancellation_closes_connection(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert closed.is_set()
+
+
+@pytest.mark.parametrize(("hour", "utc_date", "seoul_date"), [
+    (14, "2040-12-31", "2040-12-31"), (15, "2040-12-31", "2041-01-01"),
+])
+def test_current_date_context_preserves_utc_and_seoul_midnight(monkeypatch, hour, utc_date, seoul_date):
+    from datetime import UTC, datetime
+
+    from rabbit_hole.tools import current_date_context
+
+    class Clock:
+        @staticmethod
+        def now(tz):
+            return datetime(2040, 12, 31, hour, 0, tzinfo=UTC)
+
+    monkeypatch.setattr("rabbit_hole.tools.datetime", Clock)
+    context = current_date_context()
+    assert f"Current date (UTC): {utc_date}" in context
+    assert f"Current date (Asia/Seoul, UTC+09:00): {seoul_date}" in context
+    assert "+09:00" in context
+    assert "unless the user specifies" in context

@@ -7,7 +7,7 @@ import ipaddress
 import json
 import logging
 import socket
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal, DecimalException, localcontext
 from html.parser import HTMLParser
 from urllib.parse import urljoin
@@ -30,9 +30,14 @@ class ToolFailure(Exception):
 
 
 def current_date_context() -> str:
+    now = datetime.now(UTC)
+    seoul = now.astimezone(timezone(timedelta(hours=9)))
     return (
-        f"\nCurrent date (UTC): {datetime.now(UTC).date().isoformat()}. "
-        "Interpret relative dates against this date unless the user specifies another date or timezone.\n"
+        f"\nCurrent date (UTC): {now.date().isoformat()}. "
+        f"Current date (Asia/Seoul, UTC+09:00): {seoul.date().isoformat()}. "
+        f"Request time: {seoul.isoformat(timespec='seconds')}. "
+        "Interpret today, latest, and other relative dates using Asia/Seoul unless the user specifies "
+        "another date or timezone. Use this as the reference time, not as evidence that a fact is current.\n"
     )
 
 

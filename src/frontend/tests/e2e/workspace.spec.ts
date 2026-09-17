@@ -170,9 +170,8 @@ test('completed response becomes three node types and retries do not duplicate o
     return el.parentElement === document.body && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight
   })).toBe(true)
   await page.keyboard.press('Escape')
-  await page.locator('.source-card').getByRole('button', { name: '노드 접기' }).click()
-  await expect(page.locator('.source-card').getByRole('link', { name: '페이지 열기' })).toHaveCount(0)
-  await page.locator('.source-card').getByRole('button', { name: '노드 펼치기' }).click()
+  await expect(page.locator('.source-card').getByRole('button', { name: '노드 접기' })).toBeDisabled()
+  await expect(page.locator('.information-card').getByRole('button', { name: '노드 접기' })).toBeDisabled()
   await expect(page.locator('.source-card').getByRole('link', { name: '페이지 열기' })).toBeVisible()
   await page.locator('.information-card').getByRole('button', { name: '다음 응답에 사용' }).click()
   await expect(page.locator('.reply-context')).toContainText('벡터 검색')
@@ -660,4 +659,59 @@ test('selecting a response focuses it and wheel over selected content still pans
   const panned = await transform()
   await card.locator('h2').click()
   await expect.poll(transform).not.toBe(panned)
+})
+
+test('long information collapses like a response while short sources cannot collapse', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(async () => {
+    const text = '자세한 정보와 조건을 보존하는 문장입니다.\n\n'.repeat(20)
+    const entities: Record<string, unknown> = {
+      info_long: { id: 'info_long', type: 'information', subtype: 'concept', responseId: 'r', textHash: 'a'.repeat(64),
+        title: { start: 0, end: 5, quote: '자세한 정보' }, excerpt: { start: 0, end: text.length, quote: text } },
+    }
+    const nodes: unknown[] = [
+      { id: 'r', type: 'response', position: { x: 0, y: 0 }, width: 560,
+        data: { prompt: '접기와 출처 표시', text: '짧은 답변', status: 'completed', continuation: 'signed' } },
+      { id: 'info_long', type: 'information', position: { x: 650, y: 0 }, width: 340, height: 130, data: { entityId: 'info_long' } },
+    ]
+    for (let i = 0; i < 8; i++) {
+      const id = `source_${i}`
+      entities[id] = { id, type: 'source', observations: [], source: { id, url: `https://example.com/${i}`,
+        title: `출처 ${i}`, access: 'search_result', accessed_at: '2026-09-17', verification: 'unverified' } }
+      nodes.push({ id, type: 'source', position: { x: 1100, y: i * 280 }, width: 460, height: 260, data: { entityId: id } })
+    }
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open('rabbit-hole', 1)
+      request.onsuccess = () => resolve(request.result)
+    })
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction('sessions', 'readwrite')
+      tx.objectStore('sessions').put({ id: 'collapse-test', query: '접기와 출처 표시', updatedAt: Date.now(),
+        mode: 'live', protocol: 2, nodes, sources: [], graph: { relations: [], clusters: [] }, answer: null,
+        pinned: [], status: 'completed', failedParts: [], fitted: true, viewport: { x: 0, y: 150, zoom: .7 },
+        contentGraph: { version: 1, entities, relations: [{ id: 'extract', source: 'r', target: 'info_long', kind: 'has_extract', responseId: 'r', spans: [] }], jobs: {} } })
+      tx.oncomplete = () => resolve()
+    })
+    db.close()
+  })
+  await page.reload()
+  await openHistory(page)
+  await page.getByRole('button', { name: '접기와 출처 표시', exact: true }).click()
+  await expect(page.locator('.source-card')).toHaveCount(8)
+  if (await page.getByRole('button', { name: '대화 기록 접기' }).isVisible()) await page.getByRole('button', { name: '대화 기록 접기' }).click()
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  const info = page.locator('.information-card')
+  await expect(info.getByRole('button', { name: '노드 접기' })).toBeEnabled()
+  await info.getByRole('button', { name: '노드 접기' }).click()
+  await expect(info).toHaveClass(/is-collapsed/)
+  await expect(info.locator('h2').first()).toHaveText('자세한 정보')
+  await expect(info.getByRole('button', { name: '이전 노드로' })).toBeVisible()
+  expect(await info.locator('.information-body').evaluate((el) => el.clientHeight <= 161 && el.scrollHeight > el.clientHeight)).toBe(true)
+  await info.getByRole('button', { name: '노드 펼치기' }).click()
+  expect(await info.locator('.information-body').evaluate((el) => el.clientHeight > 160)).toBe(true)
+  await expect(page.locator('.source-card').first().getByRole('button', { name: '노드 접기' })).toBeDisabled()
+  await page.reload()
+  await openHistory(page)
+  await page.getByRole('button', { name: '접기와 출처 표시', exact: true }).click()
+  await expect(page.locator('.source-card')).toHaveCount(8)
 })

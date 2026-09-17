@@ -286,10 +286,9 @@ export const useStore = create<State>((set, get) => ({
         nodes: session.nodes.map((node) => {
           if (node.type === 'source') {
             const { measured: _measured, ...rest } = node
-            return { ...rest, width: Math.max(node.width ?? 0, 460), height: node.data.collapsed ? 130 : (node.height === 280 || !node.height ? 260 : node.height) }
+            return { ...rest, data: { ...node.data, collapsed: false }, width: Math.max(node.width ?? 0, 460), height: 260 }
           }
-          if (node.type !== 'response') return node
-          // Older response cards stored a fixed height; remeasure content on restore.
+          // Remeasure expandable content; older records stored a fixed collapsed height.
           const { height: _height, measured: _measured, ...rest } = node
           return rest
         }),
@@ -359,10 +358,9 @@ export const useStore = create<State>((set, get) => ({
     if (!session) return
     commit({ ...session, nodes: session.nodes.map((node) => {
       if (node.id !== id || node.type === 'response') return node
-      const collapsed = !node.data.collapsed
-      const expandedHeight = node.data.expandedHeight ?? node.height ?? 280
-      return { ...node, height: collapsed ? 130 : expandedHeight,
-        data: { ...node.data, collapsed, expandedHeight } } as CanvasNode
+      if (node.type === 'source') return node
+      const { height: _height, ...rest } = node
+      return { ...rest, data: { ...node.data, collapsed: !node.data.collapsed } } as CanvasNode
     }) })
   },
   toggleResponse: (id) => {

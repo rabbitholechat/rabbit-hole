@@ -1,3 +1,4 @@
+import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { NodeActions } from './NodeActions'
 import { PreviousNodeButton } from './PreviousNodeButton'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
@@ -7,13 +8,15 @@ import { cn, safeUrl } from '../lib/utils'
 export function PageCard({ id, data, selected }: NodeProps<PageNode>) {
   const source = data.source,
     href = safeUrl(source.url)
+  const { contentRef, canCollapse } = useCollapsibleContent(source.summary, data.collapsed)
+  const collapsed = Boolean(data.collapsed && canCollapse)
   return (
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <article
         className={cn(
           'page-card',
-          data.collapsed && 'is-collapsed',
+          collapsed && 'is-collapsed',
           selected && 'is-selected',
           data.related && 'is-related',
           data.dimmed && 'is-dimmed',
@@ -39,9 +42,9 @@ export function PageCard({ id, data, selected }: NodeProps<PageNode>) {
             </a>
           )}
         </div>
-        <NodeActions id={id} collapsed={data.collapsed} />
+        <NodeActions id={id} collapsed={collapsed} canCollapse={canCollapse} />
         <h2>{source.title}</h2>
-        <p>{source.summary || '요약이 제공되지 않은 자료입니다.'}</p>
+        <div ref={contentRef} className={`page-summary response-content nodrag nopan ${collapsed ? 'nowheel' : ''}`} tabIndex={collapsed ? 0 : undefined}>{source.summary || '요약이 제공되지 않은 자료입니다.'}</div>
         <footer>
           <span className="tag">{source.tag}</span>
           <span>

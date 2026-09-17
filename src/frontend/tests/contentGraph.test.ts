@@ -254,9 +254,9 @@ it('selected information is sent as context and linked without replacing the que
   useStore.setState({ session: next, history: [next] })
   const info = next.nodes.find((n) => n.type === 'information')!
   useStore.getState().toggleNode(info.id)
-  expect(useStore.getState().session!.nodes.find((n) => n.id === info.id)?.height).toBe(130)
+  expect((useStore.getState().session!.nodes.find((n) => n.id === info.id)?.data as { collapsed?: boolean }).collapsed).toBe(true)
   useStore.getState().toggleNode(info.id)
-  expect(useStore.getState().session!.nodes.find((n) => n.id === info.id)?.height).toBe(280)
+  expect((useStore.getState().session!.nodes.find((n) => n.id === info.id)?.data as { collapsed?: boolean }).collapsed).toBe(false)
   useStore.getState().reply(info.id)
   useStore.getState().setInput('자세히 설명해줘')
   let resolve!: (response: Response) => void

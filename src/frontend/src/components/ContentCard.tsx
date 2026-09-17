@@ -1,3 +1,4 @@
+import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { NodeActions } from './NodeActions'
 import { PreviousNodeButton } from './PreviousNodeButton'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
@@ -12,24 +13,26 @@ import { NodeTag } from './NodeTag'
 const kinds = { concept: '개념', entity: '대상', claim: '주장', example: '예시', comparison: '비교' }
 export function ContentCard({ id, data, selected }: NodeProps<InformationNode | SourceNode>) {
   const entity = useStore((s) => s.session?.contentGraph?.entities[data.entityId])
+  const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.excerpt.quote : '', data.collapsed)
+  const collapsed = Boolean(data.collapsed && canCollapse)
   if (!entity) return null
   const source = entity.type === 'source' ? entity.source : null
   return (
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <article
-        className={`content-card ${entity.type}-card ${selected ? 'is-selected' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
+        className={`content-card ${entity.type}-card ${selected ? 'is-selected' : ''} ${collapsed ? 'is-collapsed' : ''}`}
         aria-label={source ? '출처 노드' : '정보 노드'}
       >
         <header>
           <NodeTag kind={entity.type} />
           {entity.type === 'information' && <small>{kinds[entity.subtype]}</small>}
-          <NodeActions id={id} collapsed={data.collapsed} />
+          <NodeActions id={id} collapsed={collapsed} canCollapse={canCollapse} />
         </header>
         {entity.type === 'information' ? (
           <>
             <h2 title={entity.title.quote}>{entity.title.quote}</h2>
-            <div className="information-body response-content nodrag nopan nowheel">
+            <div ref={contentRef} className={`information-body response-content nodrag nopan ${collapsed ? 'nowheel' : ''}`} tabIndex={collapsed ? 0 : undefined}>
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 skipHtml
@@ -62,7 +65,7 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
           </>
         )}
         <footer className="node-footer">
-          {source && !data.collapsed && (
+          {source && (
             <a
               className="source-link node-button nodrag nopan"
               href={safeUrl(source.url)}

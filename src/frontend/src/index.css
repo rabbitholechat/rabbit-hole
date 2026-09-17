@@ -1822,16 +1822,6 @@ svg {
 }
 
 .content-card > header .response-actions { margin-left: auto; }
-.content-card.is-collapsed > h2,
-.content-card.is-collapsed > .information-body,
-.content-card.is-collapsed > .source-domain,
-.content-card.is-collapsed > .source-access,
-.content-card.is-collapsed > .source-link { display: none; }
-.content-card.is-collapsed > .previous-node { margin-top: auto; }
-.page-card.is-collapsed > h2,
-.page-card.is-collapsed > p,
-.page-card.is-collapsed > footer { display: none; }
-
 .node-footer { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 12px; flex-shrink: 0; }
 .node-footer .previous-node { margin-top: 0; }
 .source-card .node-footer .source-link { margin: 0; padding: 7px 11px; }
@@ -1852,3 +1842,14 @@ svg {
   overflow-wrap: anywhere;
   box-shadow: 0 3px 12px #17291f20;
 }
+
+/* Shared collapse behavior: keep headers/actions and preview the first 160px of content. */
+.information-card, .page-card { height: auto; }
+.information-body { flex: none; overflow: visible; }
+.information-card.is-collapsed .information-body,
+.page-card.is-collapsed .page-summary {
+  max-height: var(--collapsed-content-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.page-summary { font-size: 12px; color: #7d887e; white-space: pre-wrap; }

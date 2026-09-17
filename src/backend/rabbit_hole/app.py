@@ -219,7 +219,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService) -
                         sources = getattr(service, "sources", []) if service else []
                         if sources:
                             await emit("response_sources", {"id": response_id,
-                                                           "sources": [s.model_dump() for s in sources]})
+                                                           "sources": [s.model_dump() for s in sources[:settings.max_response_sources]]})
                         await checkpoint()
                         await emit("done", {"status": status, "failed_parts": failed})
                 finally:

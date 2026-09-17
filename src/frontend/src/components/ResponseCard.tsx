@@ -1,6 +1,7 @@
+import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { PreviousNodeButton } from './PreviousNodeButton'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, Minimize2, Maximize2, MessageCirclePlus, LoaderCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -17,20 +18,7 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
   const cancelStructure = useStore((s) => s.cancelStructure)
   const graphJob = useStore((s) => s.session?.contentGraph?.jobs[id])
   const isReplyTarget = useStore((s) => s.replyTo === id)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const [canResize, setCanResize] = useState(false)
-  useLayoutEffect(() => {
-    const content = contentRef.current
-    if (!content) return
-    const measure = () => {
-      const limit = parseFloat(getComputedStyle(content).getPropertyValue('--collapsed-content-height'))
-      setCanResize(content.scrollHeight > limit + 1)
-    }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(content)
-    return () => observer.disconnect()
-  }, [data.text, data.collapsed])
+  const { contentRef, canCollapse: canResize } = useCollapsibleContent(data.text, data.collapsed)
   const [copyState, setCopyState] = useState('복사하기')
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(copyTimer.current), [])

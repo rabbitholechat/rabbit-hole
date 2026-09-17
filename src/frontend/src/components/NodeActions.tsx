@@ -3,7 +3,7 @@ import { Check, Copy, Maximize2, Minimize2, MessageCirclePlus } from 'lucide-rea
 import { useStore } from '../store'
 import { nodeContext, nodeText } from '../lib/nodeActions'
 
-export function NodeActions({ id, collapsed }: { id: string; collapsed?: boolean }) {
+export function NodeActions({ id, collapsed, canCollapse }: { id: string; collapsed?: boolean; canCollapse: boolean }) {
   const session = useStore((s) => s.session)
   const busy = useStore((s) => Boolean(s.activeRequest))
   const replyTo = useStore((s) => s.replyTo)
@@ -24,7 +24,7 @@ export function NodeActions({ id, collapsed }: { id: string; collapsed?: boolean
     <button aria-label={copyLabel} data-tooltip={copyLabel} onClick={() => void copy()}>
       {copied ? <Check size={17} /> : <Copy size={17} />}
     </button>
-    <button aria-label={collapsed ? '노드 펼치기' : '노드 접기'} data-tooltip={collapsed ? '노드 펼치기' : '노드 접기'}
+    <button aria-label={collapsed ? '노드 펼치기' : '노드 접기'} disabled={!canCollapse} data-tooltip={!canCollapse ? '내용이 짧아 크기를 조절할 필요가 없습니다' : collapsed ? '노드 펼치기' : '노드 접기'}
       aria-expanded={!collapsed} onClick={() => toggle(id)}>
       {collapsed ? <Maximize2 size={17} /> : <Minimize2 size={17} />}
     </button>

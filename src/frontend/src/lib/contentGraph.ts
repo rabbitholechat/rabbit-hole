@@ -102,7 +102,7 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
       if (!collisions.length) break
       y = Math.max(...collisions.map((n) => n.position.y + (n.measured?.height ?? n.height ?? 400))) + 48
     }
-    nodes.push({ id, type: entity.type, data: { entityId: id }, position: { x, y }, width, height })
+    nodes.push({ id, type: entity.type, data: { entityId: id }, position: { x, y }, width, ...(entity.type === 'source' ? { height } : {}) })
   }
   return nodes
 }
