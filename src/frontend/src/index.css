@@ -180,7 +180,7 @@ svg {
   min-width: 0;
   flex: 1;
   text-align: left;
-  padding: 11px 6px;
+  padding: 15px 12px;
   font-size: 12px;
 }
 .history-item span {
@@ -194,12 +194,13 @@ svg {
   color: #8b928e;
 }
 .history-delete {
-  padding: 6px;
+  padding: 10px;
+  margin-right: 4px;
   color: #9fa69f;
   opacity: 0;
 }
 .history-row:hover .history-delete,
-.history-row:focus-within .history-delete {
+.history-delete:focus-visible {
   opacity: 1;
 }
 .history-panel.collapsed {
@@ -226,33 +227,6 @@ svg {
   color: #8a918a;
   letter-spacing: -0.4px;
   margin: 0;
-}
-.suggestions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 33px;
-  pointer-events: auto;
-}
-.suggestions button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: #ffffffb8;
-  border: 1px solid #e1e5df;
-  border-radius: 24px;
-  padding: 10px 16px;
-  font-size: 12px;
-  color: #5e6a62;
-  transition: border-color 0.15s;
-}
-.suggestions button svg {
-  color: #9ba79e;
-}
-.suggestions button:hover {
-  border-color: #8daf9b;
-  background: white;
 }
 .canvas-heading {
   position: absolute;
@@ -678,14 +652,6 @@ svg {
   color: #728c6d;
   font-size: 10px;
 }
-.spin {
-  animation: spin 1.2s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .error-banner {
   padding: 10px 12px;
   margin-bottom: 10px;
@@ -723,13 +689,6 @@ svg {
     left: 57%;
     width: 70%;
   }
-  .suggestions {
-    gap: 7px;
-  }
-  .suggestions button {
-    font-size: 11px;
-    padding: 10px 11px;
-  }
   .answer-panel,
   .detail-panel {
     right: 16px;
@@ -761,9 +720,6 @@ svg {
   .history-panel.collapsed {
     width: 42px;
   }
-  .history-delete {
-    opacity: 1;
-  }
   .history-list {
     max-height: 33vh;
   }
@@ -777,16 +733,6 @@ svg {
   }
   .welcome > p {
     font-size: 14px;
-  }
-  .suggestions {
-    flex-direction: column;
-    align-items: center;
-    margin-top: 26px;
-    gap: 8px;
-  }
-  .suggestions button {
-    font-size: 12px;
-    padding: 10px 15px;
   }
   .composer-area {
     width: calc(100% - 28px);
@@ -999,14 +945,6 @@ svg {
 .composer > button {
   border-radius: 50%;
 }
-.suggestions {
-  margin-top: 20px;
-  gap: 8px;
-}
-.suggestions button {
-  padding: 9px 13px;
-  font-size: 11px;
-}
 .is-empty .composer-note {
   display: none;
 }
@@ -1091,16 +1029,6 @@ svg {
   .welcome > p {
     font-size: 14px;
   }
-  .suggestions {
-    flex-direction: row;
-    gap: 8px;
-    margin-top: 16px;
-  }
-  .suggestions button {
-    font-size: 10px;
-    padding: 8px 10px;
-    gap: 3px;
-  }
   .canvas-heading {
     left: 22px;
     top: 94px;
@@ -1112,8 +1040,7 @@ svg {
     top: auto;
     bottom: max(12px, env(safe-area-inset-bottom));
   }
-  .sidebar-open.is-empty .welcome,
-  .sidebar-open.is-empty .suggestions {
+  .sidebar-open.is-empty .welcome {
     display: none;
   }
 }
@@ -1590,8 +1517,7 @@ svg {
 }
 .workspace button:not(.brand):not(:disabled):not([aria-disabled='true']):hover,
 .workspace a[href]:hover,
-.history-row:hover,
-.history-row:focus-within {
+.history-row:hover {
   background-color: var(--interaction-hover-bg);
   color: var(--interaction-hover-text);
 }
@@ -1601,7 +1527,6 @@ svg {
   border-radius: 7px;
 }
 .history-row:hover .history-item,
-.history-row:focus-within .history-item,
 .history-row:hover .history-delete {
   color: var(--interaction-hover-text);
 }
@@ -1853,3 +1778,33 @@ svg {
   overscroll-behavior: contain;
 }
 .page-summary { font-size: 12px; color: #7d887e; white-space: pre-wrap; }
+
+.welcome-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 22px;
+  color: #263d32;
+  font-size: 25px;
+  font-weight: 650;
+  letter-spacing: -0.8px;
+}
+.welcome-brand svg {
+  width: 36px;
+  height: 44px;
+}
+.rabbit-loader {
+  display: inline-block;
+  width: 34px;
+  height: 28px;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.history-delete {
+  pointer-events: none;
+}
+.history-row:hover .history-delete,
+.history-delete:focus-visible {
+  pointer-events: auto;
+}

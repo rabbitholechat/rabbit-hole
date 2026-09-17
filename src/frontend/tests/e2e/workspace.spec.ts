@@ -7,15 +7,19 @@ async function openHistory(page: Page) {
   const expand = page.getByRole('button', { name: '대화 기록 펼치기' })
   if (await expand.isVisible()) await expand.click()
 }
-test('suggestions only fill input and design examples are absent', async ({ page }) => {
+test('welcome shows the brand without example question cards', async ({ page }, testInfo) => {
   let calls = 0
   await page.route('**/api/agent', async (route) => {
     calls++
     await route.abort()
   })
   await page.goto('/')
-  await page.getByRole('button', { name: '복잡한 개념을 쉽게 설명해줘', exact: true }).click()
-  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('복잡한 개념을 쉽게 설명해줘')
+  await expect(page.locator('.welcome-brand')).toHaveText('Rabbit Hole')
+  await expect(page.locator('.welcome-brand svg')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '호기심이 이어지는 곳' })).toBeVisible()
+  await expect(page.locator('.suggestions')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('welcome.png') })
+  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('')
   await openHistory(page)
   await expect(page.getByRole('button', { name: '디자인 예시 둘러보기' })).toHaveCount(0)
   await expect(page.locator('.sample-menu, .sample-controls')).toHaveCount(0)
@@ -60,6 +64,18 @@ test('history count follows its heading and long icon-free history scrolls insid
   await openHistory(page)
   await expect(page.locator('.history-panel h2')).toHaveText('최근 대화 60')
   await expect(page.locator('.history-item svg')).toHaveCount(0)
+  if (testInfo.project.name === 'desktop') {
+    const row = page.locator('.history-row').first()
+    const remove = row.locator('.history-delete')
+    await row.locator('.history-item').click()
+    await expect(remove).toHaveCSS('opacity', '1')
+    await page.mouse.move(800, 100)
+    await expect(remove).toHaveCSS('opacity', '0')
+    await page.keyboard.press('Tab')
+    await expect(remove).toBeFocused()
+    await expect(remove).toHaveCSS('opacity', '1')
+    await page.getByRole('textbox', { name: '메시지 입력' }).focus()
+  }
   const geometry = await page.locator('.history-panel h2').evaluate((el) => {
     const range = document.createRange()
     range.selectNodeContents(el.firstChild!)
@@ -353,7 +369,8 @@ test('streams into a canvas node, retains dragged placement, continues conversat
   await expect(card.getByRole('button', { name: '응답 접기' })).toBeDisabled()
   await expect(card).toHaveAttribute('aria-busy', 'true')
   await expect(card.locator('.response-status')).toHaveText('응답 중')
-  await expect(card.locator('.response-status .spin')).toBeVisible()
+  await expect(card.locator('.response-status .rabbit-loader')).toBeVisible()
+  await expect(card.locator('.rabbit-loader')).toHaveCount(1)
   await expect(page.getByRole('button', { name: '응답 중지' })).toBeVisible()
   const node = page.locator('.react-flow__node-response').first()
   await expect.poll(() => page.locator('.canvas-tools span').innerText()).not.toBe('100%')

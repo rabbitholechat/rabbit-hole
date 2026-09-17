@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="72" viewBox="0 0 64 72" fill="none">
+  <style>
+    .head { animation: nod .8s ease-in-out infinite; transform-origin: 32px 52px; }
+    .paw { animation: dig .8s ease-in-out infinite; }
+    .paw-back { animation-delay: -.4s; }
+    .soil { animation: soil .8s ease-out infinite; }
+    @keyframes nod { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
+    @keyframes dig { 0%, 100% { transform: translate(0, -2px); } 50% { transform: translate(-3px, 2px); } }
+    @keyframes soil { 0%, 40% { opacity: 0; transform: translate(0, 0); } 50% { opacity: .6; } 100% { opacity: 0; transform: translate(-7px, -3px); } }
+    @media (prefers-reduced-motion: reduce) { .head, .paw, .soil { animation: none; } .soil { opacity: .4; } }
+  </style>
+  <g stroke="#263d32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <g class="head">
+      <g transform="translate(10 2) scale(.8)">
+        <path d="M13 39C4 30 0 7 6 2c8 1 18 22 20 34C24 23 31 7 39 2c7 5 5 24-2 35 7 2 9 8 10 11l3 3c0 5-4 8-10 12H8C3 53 4 45 13 39Z" transform="translate(1 0) scale(.93)"/>
+        <circle cx="35" cy="45" r="2" fill="#263d32" stroke="none"/>
+      </g>
+    </g>
+    <path class="paw paw-back" d="M26 56q0 5-5 5"/>
+    <path class="paw" d="M39 56q0 5-5 5"/>
+    <path d="M22 66h22" opacity=".25"/>
+    <path class="soil" d="m17 63-2-1"/>
+  </g>
+</svg>

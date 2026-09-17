@@ -17,7 +17,6 @@ import {
   ArrowLeft,
   ArrowRight,
   PanelLeftClose,
-  ChevronRight,
   ExternalLink,
   Maximize,
   Minus,
@@ -28,10 +27,10 @@ import {
   Trash2,
   X,
   RotateCcw,
-  LoaderCircle,
 } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 import { useStore } from './store'
+import { RabbitLoader } from './components/RabbitLoader'
 import { RabbitIcon } from './components/RabbitIcon'
 import { PageCard } from './components/PageCard'
 import { ConversationEdge } from './components/ConversationEdge'
@@ -48,11 +47,6 @@ import type { CanvasNode } from './types'
 
 const nodeTypes = { page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard },
   edgeTypes = { relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
-const suggestions = [
-  '복잡한 개념을 쉽게 설명해줘',
-  '두 가지 선택지를 비교해줘',
-  '아이디어를 실행 계획으로 정리해줘',
-]
 function Workspace() {
   const state = useStore(),
     session = state.session
@@ -312,10 +306,6 @@ function Workspace() {
   function submit(event: FormEvent) {
     event.preventDefault()
     if (!composing.current && !busy) void state.run()
-  }
-  function fill(query: string) {
-    state.setInput(query)
-    inputRef.current?.focus()
   }
   return (
     <main
@@ -595,7 +585,7 @@ function Workspace() {
         )}
         {busy && (
           <div className="agent-status" role="status">
-            <LoaderCircle className="spin" size={14} />
+            <RabbitLoader />
             {state.stage}
             <span>받은 응답부터 캔버스에 표시합니다.</span>
           </div>
@@ -625,6 +615,7 @@ function Workspace() {
         )}
         {!session && (
           <section className="welcome">
+            <div className="welcome-brand"><RabbitIcon /><span>Rabbit Hole</span></div>
             <h1>호기심이 이어지는 곳</h1>
           </section>
         )}
@@ -692,16 +683,6 @@ function Workspace() {
             </Button>
           )}
         </form>
-        {!session && (
-          <div className="suggestions">
-            {suggestions.map((q) => (
-              <button key={q} onClick={() => fill(q)}>
-                {q}
-                <ChevronRight size={13} />
-              </button>
-            ))}
-          </div>
-        )}
         {session?.mode === 'sample' && (
           <p className="composer-note">
             이전 가상 데이터 기록입니다. 메시지를 보내면 새로운 대화를 시작합니다.

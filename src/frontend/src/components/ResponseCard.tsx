@@ -1,8 +1,9 @@
+import { RabbitLoader } from './RabbitLoader'
 import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { PreviousNodeButton } from './PreviousNodeButton'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { useEffect, useRef, useState } from 'react'
-import { Check, Copy, Minimize2, Maximize2, MessageCirclePlus, LoaderCircle } from 'lucide-react'
+import { Check, Copy, Minimize2, Maximize2, MessageCirclePlus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ResponseNode } from '../types'
@@ -44,7 +45,7 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
         <header>
           <NodeTag kind="response" />
           <small className="response-status" data-status={data.status}>
-            {data.status === 'streaming' && <LoaderCircle size={13} className="spin" aria-hidden="true" />}
+            {data.status === 'streaming' && <RabbitLoader />}
             {
               {
                 streaming: '응답 중',
@@ -130,7 +131,6 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
             <p className="response-placeholder">
               {data.status === 'streaming' ? (
                 <>
-                  <LoaderCircle className="spin" size={15} />
                   응답을 준비하고 있어요.
                 </>
               ) : (
@@ -142,7 +142,7 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
         {data.status === 'completed' && graphJob?.status !== 'completed' && (
           <footer className="structure-status nodrag nopan" aria-live="polite">
             <span className="structure-indicator">
-              {graphJob?.status === 'running' && <LoaderCircle size={14} className="spin" aria-hidden="true" />}
+              {graphJob?.status === 'running' && <RabbitLoader />}
               {graphJob?.status === 'running'
                 ? '정보 정리 중'
                 : graphJob?.status === 'failed'
