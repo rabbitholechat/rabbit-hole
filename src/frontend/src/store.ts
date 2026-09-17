@@ -283,6 +283,10 @@ export const useStore = create<State>((set, get) => ({
       const history = (await loadSessions()).map((session) => ({
         ...session,
         nodes: session.nodes.map((node) => {
+          if (node.type === 'source') {
+            const { measured: _measured, ...rest } = node
+            return { ...rest, width: Math.max(node.width ?? 0, 460), height: Math.max(node.height ?? 0, 280) }
+          }
           if (node.type !== 'response') return node
           // Older response cards stored a fixed height; remeasure content on restore.
           const { height: _height, measured: _measured, ...rest } = node

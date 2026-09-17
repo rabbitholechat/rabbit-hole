@@ -614,7 +614,7 @@ svg {
   font-size: 10px;
   color: #9aa591;
   line-height: 1.6;
-  margin: 6px 0;
+  margin-bottom: 6px;
 }
 .source-link {
   display: flex;
@@ -1659,9 +1659,18 @@ svg {
 .information-card {
   border-color: #d8cead;
   border-top-color: #a49464;
+  background: #fff9ea;
+  --node-accent: #967423;
+}
+.source-card {
+  padding: 22px;
+  border-color: #b8cfe8;
+  border-top-color: #588bc2;
+  background: #f0f6ff;
+  --node-accent: #3f73ab;
 }
 .content-card.is-selected {
-  outline: 2px solid #0f766e;
+  outline: 2px solid var(--node-accent);
   outline-offset: 2px;
 }
 .content-card > header {
@@ -1679,8 +1688,8 @@ svg {
   background: #f4efdf;
 }
 .source-card .node-tag {
-  color: #53796f;
-  background: #eaf1ee;
+  color: #35699f;
+  background: #dfeafb;
 }
 .content-card h2 {
   font-size: 15px;
@@ -1724,27 +1733,24 @@ svg {
 .source-access {
   font-size: 12px;
   margin-top: 8px;
-  color: #426f5f;
+  color: #416f9f;
 }
 .source-access span {
   color: #8e978d;
 }
+.source-card h2 {
+  font-size: 18px;
+  -webkit-line-clamp: 3;
+}
+.source-card .source-domain,
+.source-card .source-access {
+  font-size: 13px;
+}
 .source-card .source-link {
-  margin: 6px 0;
-}
-.source-observations {
-  font-size: 11px;
-  color: #81938a;
-  overflow: auto;
-  min-height: 0;
-}
-.source-observations summary {
-  cursor: pointer;
-}
-.source-observations button {
-  display: block;
-  padding: 3px 0;
-  color: #507765;
+  margin-top: auto;
+  padding-top: 12px;
+  color: #35699f;
+  margin-bottom: 6px;
 }
 .content-edge-label {
   position: absolute;

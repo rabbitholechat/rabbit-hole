@@ -114,7 +114,7 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 }
 ```
 
-위는 원문 `벡터 검색은 의미를 비교합니다.\n\n추가 설명입니다.`의 필드 설명용 결과입니다(실제 120자 미만 응답은 추출 생략). `key`는 `text_hash:start:end:subtype`의 SHA-256 앞 24자리입니다. 범위는 Unicode 코드 포인트 기준 `[start, end)`이며 JavaScript에서는 `Array.from(text)`로 슬라이스합니다. 제목은 발췌 안의 원문 일부여야 하고, 발췌는 원문에서 위치가 유일해야 합니다. 모델은 선택과 하위 유형만 판단하며 새 사실·설명·출처를 작성하지 않습니다. 서버가 원문 대조 후 오프셋과 키를 계산하고 프런트가 해시·범위·문자열을 재검증합니다. 정확한 복사 여부는 검증하지만 발췌의 의미적 완결성을 보증하지는 않습니다.
+위는 원문 `벡터 검색은 의미를 비교합니다.\n\n추가 설명입니다.`의 필드 설명용 결과입니다(실제 120자 미만 응답은 추출 생략). `key`는 `text_hash:start:end:subtype`의 SHA-256 앞 24자리입니다. 범위는 Unicode 코드 포인트 기준 `[start, end)`이며 JavaScript에서는 `Array.from(text)`로 슬라이스합니다. 모델에는 번호를 붙인 원문 줄 목록을 전달하며 `start_line`, `end_line`(양끝 포함), `title_line`, `subtype`만 반환하도록 합니다. 모델이 본문을 복사하거나 새 사실·설명·출처를 작성하지 않습니다. 서버는 유효한 줄 범위를 확인하고 원문에서 발췌와 제목을 직접 가져와 오프셋과 키를 계산합니다. 제목은 선택한 제목 줄의 앞쪽 Markdown 기호를 제외한 최대 100자입니다. 반복 문구도 줄 번호로 위치를 구분합니다. 프런트가 해시·범위·문자열을 재검증합니다. 정확한 복사 여부는 검증하지만 발췌의 의미적 완결성을 보증하지는 않습니다.
 
 - `subtype`: concept / entity / claim / example / comparison. 비교는 정보 노드의 하위 유형입니다.
 - 정보는 0..6개. 120자 미만은 모델 호출 없이 빈 배열, 전체 답변 복제·중복 발췌 제외. 긴 답변도 분리할 가치가 없으면 빈 배열입니다.
@@ -130,7 +130,7 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 | --- | --- | --- |
 | response | 기존 prompt, text, status, continuation, toolSources | 질문·전체 답변, 구조화 상태·중지·재시도 |
 | information | id, subtype, responseId, textHash, title/excerpt 범위 | 원문 제목·발췌, 원문 보기로 응답 위치 추적 |
-| source | id, ToolSource, observations(responseId, access, accessedAt, spans) | 페이지 제목·도메인·검색/본문 조회·미검증, 링크·응답별 조회 기록 |
+| source | id, ToolSource, observations(responseId, access, accessedAt, spans) | 페이지 제목·도메인·검색/본문 조회·미검증·링크. 응답별 조회 기록은 데이터로만 보존 |
 
 | 관계 | 방향 | 화면 라벨 | 생성 기준 |
 | --- | --- | --- | --- |
@@ -144,3 +144,7 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 `done(completed)` 후 signed checkpoint로 구조화를 시작하고 결과 전체 검증 후 원자적으로 추가합니다. 실패·중지는 기존 답변·출처·배치를 유지하며 사용자가 재시도할 수 있습니다. `jobs[responseId]`에 상태와 시도 ID를 저장해 중복 요청과 오래된 결과를 차단합니다. 완료된 작업은 재실행하지 않고 원문 해시·범위 기반 노드 ID와 관계 ID로 재적용을 중복 제거합니다. 새 노드만 기존 카드와 겹치지 않는 위치에 추가하고 사용자가 옮긴 좌표·viewport는 보존합니다.
 
 화면 전환/삭제는 해당 구조화를 취소합니다. IndexedDB 복원은 모델을 호출하지 않으며 중단된 작업은 cancelled로 복원합니다. 예전 v2 조회 메타데이터는 로컬에서 출처 노드로 표시할 수 있지만 과거 답변의 정보 추출은 자동 실행하지 않습니다. 구조화 실패가 원래 답변 표시와 후속 질문을 막지 않습니다.
+
+구조화 실패 로그는 원문 없이 `structure_invalid_selection`(범위/제목 줄 오류), `structure_invalid_schema`(출력 형식 오류), `structure_output_limit`(출력 토큰 제한), `structure_incomplete`(미완료), `structure_refused`(거절), `structure_missing_output`(파싱 결과 없음)을 구분합니다. HTTP 실패는 기존 502 계약을 유지합니다. 구조화 출력 방식은 [공식 OpenAI 구조화 출력 문서](https://developers.openai.com/api/docs/guides/structured-outputs)를 참고합니다.
+
+출처 카드 기본 크기는 460×280px입니다. 기존 작은 출처도 복원 시 이 크기로 확대하되 좌표·viewport는 그대로 유지합니다. 응답 카드는 투명 배경과 녹색 테두리, 정보 카드는 황토색, 출처 카드는 파란색으로 구분합니다.

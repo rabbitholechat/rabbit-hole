@@ -73,14 +73,6 @@ export function ContentCard({ data, selected }: NodeProps<InformationNode | Sour
             >
               페이지 열기 <ExternalLink size={13} />
             </a>
-            <details className="source-observations nodrag nopan nowheel">
-              <summary>연결된 응답 {entity.observations.length}개</summary>
-              {entity.observations.map((o, index) => (
-                <button key={o.responseId} onClick={() => reveal(o.responseId, o.spans[0]?.quote)}>
-                  응답 {index + 1} · {o.access === 'page_read' ? '본문 조회' : '검색 결과'}
-                </button>
-              ))}
-            </details>
           </>
         )}
       </article>

@@ -77,8 +77,8 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
   for (const id of ids) {
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
-    const width = entity.type === 'information' ? 340 : 300
-    const height = entity.type === 'information' ? 280 : 220
+    const width = entity.type === 'information' ? 340 : 460
+    const height = 280
     const x =
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
