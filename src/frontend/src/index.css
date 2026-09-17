@@ -873,7 +873,7 @@ svg {
   height: 31px;
 }
 .sidebar-open .brand {
-  cursor: default;
+  cursor: pointer;
 }
 .sidebar-header .sidebar-collapse {
   width: 32px;

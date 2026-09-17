@@ -399,11 +399,17 @@ function Workspace() {
           className="brand"
           aria-label={historyOpen ? 'Rabbit Hole' : '대화 기록 펼치기'}
           aria-expanded={historyOpen}
-          data-tooltip={historyOpen ? undefined : '대화 기록 펼치기 · Ctrl/⌘+B'}
+          data-tooltip={historyOpen ? '초기 화면으로' : '대화 기록 펼치기 · Ctrl/⌘+B'}
           aria-keyshortcuts="Control+b Meta+b"
           data-tooltip-position="bottom"
           onClick={() => {
-            if (!historyOpen) setHistoryOpen(true)
+            if (!historyOpen) {
+              setHistoryOpen(true)
+            } else {
+              state.newConversation()
+              if (window.innerWidth < 700) setHistoryOpen(false)
+              inputRef.current?.focus()
+            }
           }}
         >
           <RabbitIcon />
