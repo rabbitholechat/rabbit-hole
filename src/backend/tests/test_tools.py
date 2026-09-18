@@ -585,6 +585,8 @@ async def test_search_temporal_intent_uses_server_seoul_year_without_changing_hi
     assert result["reference_date"] == "2041-01-01"
     assert create.call_args.kwargs["tools"][0]["external_web_access"] is True
     assert "only historical results" in create.call_args.kwargs["instructions"]
+    assert "full reference_date" in create.call_args.kwargs["instructions"]
+    assert "Search ranking is not proof of freshness" in create.call_args.kwargs["instructions"]
 
 
 async def test_temporal_focus_function_tool_dispatches_and_rejects_unknown_scope():

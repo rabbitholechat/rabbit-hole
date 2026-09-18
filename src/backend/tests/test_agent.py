@@ -210,9 +210,12 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
             assert "PRIVATE" not in str(output["output"])
         if tool_case == "web_search":
             assert "Absence from one result set is not evidence of absence" in main_calls[0]["instructions"]
+            assert "do not infer freshness from search-result ranking alone" in main_calls[0]["instructions"]
+            assert "Do not run a second search mechanically" in main_calls[0]["instructions"]
             search_call = next(c for c in captured if not c.get("stream"))
             assert search_call["tools"][0]["search_context_size"] == "medium"
             assert "publication/event dates" in search_call["instructions"]
+            assert "Search ranking is not proof of freshness" in search_call["instructions"]
             assert "not-announced/nonexistent/rumor-only" in search_call["instructions"]
             search_input = json.loads(search_call["input"])
             assert search_input["query"] == "current information" and search_input["user_request"] == "안녕"

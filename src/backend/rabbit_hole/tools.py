@@ -328,6 +328,10 @@ class AgentTools:
                 "similarly spelled person or entity. Prefer original-language search for local topics. "
                 "For temporal_focus=current, find the latest established status as of reference_date. "
                 "Use the supplied current-year query to seek recent announcements, not only historical hits. "
+                "For a genuinely day-sensitive request, make the search reflect the full reference_date "
+                "or the user's explicit recent period; a bare word such as latest is not a date boundary. "
+                "Search ranking is not proof of freshness. Compare explicit publication/update dates and "
+                "the dates of the events each result describes before identifying the newest status. "
                 "Never interpret an old album/product article as the latest without checking for newer ones. "
                 "Do not restrict results to today's exact date: an earlier dated announcement can be latest. "
                 "If only historical results are found, report current status as unresolved and identify "
@@ -627,7 +631,8 @@ class AgentTools:
                 For unrelated results refine with exact-name quotes/topic or a supported alias within budget.
                 temporal_focus: Use current for new/latest/today/current-status requests, historical for
                     a user-specified past period, unspecified for other searches. Current adds server year
-                    to the query, not a hard date filter; do not use historical hits as latest evidence.
+                    to the query, not a hard date filter. Put the full reference date or a bounded recent
+                    period in day-sensitive queries; do not use ranking or historical hits as latest evidence.
             """
             return await invoke(self.web_search, query, temporal_focus=temporal_focus)
 
