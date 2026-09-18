@@ -2051,12 +2051,12 @@ svg {
   position: absolute;
   inset: 0 -50%;
   background: linear-gradient(115deg, transparent 24%, #ffffffa6 32%, #ffffff18 35%, transparent 39%, #ffffff80 43%, transparent 49%);
-  animation: response-glass-light 4.2s ease-in-out infinite;
+  animation: response-glass-light 4.2s linear infinite;
   will-change: transform;
 }
 @keyframes response-glass-light {
-  0%, 12% { transform: translateX(-28%); }
-  75%, 100% { transform: translateX(35%); }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 @media (prefers-reduced-motion: reduce) {
   .response-glass::before { animation: none; transform: translateX(0); }
