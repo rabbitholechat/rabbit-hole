@@ -1,28 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import type { CardPresentation, GroundedText } from '../types'
 
-function OriginalPassages({ value, close }: { value: GroundedText; close: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null)
-  useEffect(() => { dialog.current?.showModal() }, [])
-  return createPortal(<dialog ref={dialog} className="information-original-dialog" aria-label="답변 원문"
-    onClose={close} onCancel={close} onClick={(event) => {
-      event.stopPropagation()
-      if (event.target === event.currentTarget) close()
-    }}>
-    <header><h3>답변 원문</h3><button type="button" className="node-button" onClick={close}>닫기</button></header>
-    <p>{value.text}</p>
-    {value.references.map((ref, index) => <blockquote key={`${ref.start}:${ref.end}:${index}`}>{ref.quote}</blockquote>)}
-  </dialog>, document.body)
-}
 function GroundedValue({ value }: { value: GroundedText }) {
-  const [open, setOpen] = useState(false)
-  return <div className="grounded-value">
-    <span>{value.text}</span>
-    <button type="button" className="information-reference" aria-label={`원문 보기: ${value.text}`}
-      onClick={(event) => { event.stopPropagation(); setOpen(true) }}>원문</button>
-    {open && <OriginalPassages value={value} close={() => setOpen(false)} />}
-  </div>
+  return <div className="grounded-value">{value.text}</div>
 }
 export function InformationContent({ card }: { card: CardPresentation }) {
   return <div className="information-presentation">

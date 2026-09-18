@@ -2168,7 +2168,7 @@ svg {
   .sidebar-open .canvas-topbar .node-navigation { display: none; }
 }
 
-/* Structured cards keep content first; original passages are available per field. */
+/* Structured cards display reorganized content; references remain in stored data. */
 .information-presentation { line-height: 1.7; overflow-wrap: anywhere; }
 .information-summary { font-size: 13px; }
 .information-section { margin-top: 16px; }
@@ -2178,13 +2178,6 @@ svg {
 .information-steps li::marker { color: #967423; font-weight: 650; }
 .grounded-value { white-space: pre-wrap; }
 .information-text > .grounded-value + .grounded-value { margin-top: 10px; }
-.information-reference { display: block; margin-top: 3px; padding: 0; border: 0; background: transparent; cursor: pointer; color: #88733c; font-size: 10px; font-weight: 400; text-decoration: underline; text-underline-offset: 2px; }
-.information-original-dialog { width: min(640px, calc(100vw - 32px)); max-height: 75vh; box-sizing: border-box; padding: 24px; border: 1px solid #d8cead; border-radius: 14px; background: #fff9ea; color: #35483f; overflow: auto; box-shadow: 0 12px 40px #273a3326; }
-.information-original-dialog::backdrop { background: #20372f55; }
-.information-original-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.information-original-dialog h3 { margin: 0; font-size: 16px; }
-.information-original-dialog p { font-size: 13px; line-height: 1.7; }
-.information-original-dialog blockquote { margin: 12px 0 0; padding: 10px 12px; border-left: 2px solid #d8cead; font-size: 13px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
 .information-table-scroll { overflow-x: auto; max-width: 100%; margin: 12px 0; overscroll-behavior: contain; }
 .information-presentation table { display: table; width: 100%; max-width: none; margin: 0; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .information-presentation th, .information-presentation td { min-width: 90px; padding: 10px 8px; border: 1px solid #e4dac0; vertical-align: top; text-align: left; }

@@ -1303,11 +1303,8 @@ test('reorganized cards show comparisons and steps, preserve context and restore
   await expect(procedure.locator('ul')).toContainText('설정 전에는 실행하지 마세요.')
   // Center the cards with the existing canvas navigation, including on narrow screens.
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
-  const cardHeight = await comparison.evaluate((element) => element.clientHeight)
-  await comparison.getByLabel('원문 보기: 설치가 간단함', { exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '답변 원문' }).locator('blockquote')).toHaveText(/A는 설치가 간단하고 사용자 정의가 제한적/)
-  expect(await comparison.evaluate((element) => element.clientHeight)).toBe(cardHeight)
-  await page.getByRole('button', { name: '닫기', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^원문 보기:/ })).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: '답변 원문' })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('structured-cards.png') })
   await comparison.getByRole('button', { name: '다음 응답에 사용' }).click()
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('이 차이를 더 알려줘')
