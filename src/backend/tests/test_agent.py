@@ -214,6 +214,9 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
             assert search_call["tools"][0]["search_context_size"] == "medium"
             assert "publication/event dates" in search_call["instructions"]
             assert "not-announced/nonexistent/rumor-only" in search_call["instructions"]
+            assert json.loads(search_call["input"]) == {"query": "current information", "user_request": "안녕"}
+            assert "Preserve user-specified names and identifiers exactly" in main_calls[0]["instructions"]
+            assert "remaining_searches" in output["output"]
             assert service.sources[0].url == "https://example.com/current"
         elif tool_case == "search_failure":
             assert service.sources == []

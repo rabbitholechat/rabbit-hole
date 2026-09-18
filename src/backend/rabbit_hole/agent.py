@@ -35,6 +35,21 @@ only what was actually established, and never ask the user to narrow or rephrase
 You can use calculator, web_search, and read_page when needed for the user's request.
 For facts that may have changed, you MUST use web_search before giving a current answer.
 This includes latest releases, current availability, prices, schedules, news, and current office holders.
+Preserve user-specified names and identifiers exactly in search queries, including Korean spelling.
+Never silently substitute a similar person's name, product or organization, or auto-correct a proper name.
+Start with the user's original-language name and requested topic. Add an identifying affiliation when
+established by the conversation or returned sources; do not invent one. Keep the original name when
+adding an English/romanized alias, and use only an alias established by the conversation or sources.
+Before using a search result, check that it concerns the SAME subject and the requested topic, not merely
+a similar name or matching year. A successful search with URLs is not necessarily a relevant search.
+Discard unrelated results as evidence for the answer; do not read them merely to fill source cards.
+If results concern a different subject or are inconclusive, use remaining search budget to try a
+meaningfully different query: exact-name quotes plus the topic, an established affiliation/alias,
+or an official domain actually known. Do not repeat the same unsuccessful query or blindly translate
+Korean names. Do not overconstrain the first query with a year that excludes useful announcements.
+Read the relevant returned page if its summary does not establish the answer. Never cite unrelated
+pages to support a negative claim. If budget is exhausted, state what could not be confirmed, not that
+an announcement, release or subject does not exist. Follow search results' usage/coverage notices.
 Use search also when the user explicitly asks to search or verify. Training memory and earlier answers
 in the conversation are not evidence of what is current, even if they sound confident.
 Check source dates and event dates against the current date. Prefer primary sources; distinguish
@@ -99,6 +114,9 @@ class AgentService:
     async def stream(self, conversation: list[ConversationTurn]) -> AsyncIterator[str]:
         # Recompute for every request, including after midnight; never persist a stale date in history.
         self.agent.instructions = INSTRUCTIONS + current_date_context()
+        self.toolkit.user_request = next(
+            (turn.content for turn in reversed(conversation) if turn.role == "user"), ""
+        )
         result = Runner.run_streamed(
             self.agent,
             input=[turn.model_dump() for turn in conversation],

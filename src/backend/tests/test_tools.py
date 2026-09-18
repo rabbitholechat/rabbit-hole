@@ -511,3 +511,47 @@ async def test_page_image_is_published_only_after_summary(monkeypatch, unsafe):
     if not unsafe:
         assert source.page_image.thumbnail_url == "https://images.example.com/a.jpg"
     assert tools.calls == 1
+
+
+async def test_korean_subject_context_survives_wrong_name_candidates_and_query_refinement():
+    wrong = {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": [
+        {"url": "https://example.com/wrong-person", "title": "전효성 소속사 소식"}
+    ]}}]}
+    correct = {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": [
+        {"url": "https://example.com/album", "title": "전소연 새 앨범"}
+    ]}}]}
+    create = AsyncMock(side_effect=[
+        SimpleNamespace(status="completed", output_text="대상이 다른 결과로 확인 불가", model_dump=lambda: wrong),
+        SimpleNamespace(status="completed", output_text="전소연 관련 자료", model_dump=lambda: correct),
+    ])
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    tools.user_request = "전소연 새 앨범"
+    first = await tools.web_search("전소연 새 앨범")
+    assert first["remaining_searches"] == 1
+    assert first["remaining_tool_calls"] == 7
+    assert "not verified or necessarily relevant" in first["usage_notice"]
+    # Candidate metadata is preserved honestly, never relabelled as the requested person.
+    assert first["sources"][0]["title"] == "전효성 소속사 소식"
+    second = await tools.web_search('"전소연" 앨범 발매')
+    assert second["remaining_searches"] == 0
+    assert second["remaining_tool_calls"] == 6
+    assert second["sources"][0]["title"] == "전소연 새 앨범"
+    for call, query in zip(create.call_args_list, ["전소연 새 앨범", '"전소연" 앨범 발매'], strict=True):
+        args = call.kwargs
+        assert json.loads(args["input"]) == {"query": query, "user_request": "전소연 새 앨범"}
+        assert "never substitute" in args["instructions"]
+        assert "subject identity AND topic relevance" in args["instructions"]
+        assert args["max_tool_calls"] == 1 and args["store"] is False
+    with pytest.raises(ToolFailure, match="search_call_limit"):
+        await tools.web_search("세 번째 검색")
+    assert create.await_count == 2
+
+
+async def test_empty_search_reports_remaining_budget_without_exposing_uncited_summary():
+    create = AsyncMock(return_value=SimpleNamespace(status="completed", output_text="근거 없는 내용",
+        model_dump=lambda: {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": []}}]}))
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    result = await tools.web_search("한국어 검색")
+    assert result["status"] == "no_sources" and result["summary"] == ""
+    assert result["remaining_searches"] == 1
+    assert "no relevant results does not mean nonexistence" in result["usage_notice"]
