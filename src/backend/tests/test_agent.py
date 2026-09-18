@@ -221,6 +221,14 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
             assert 'temporal_focus="current"' in main_calls[0]["instructions"]
             assert "Preserve user-specified names and identifiers exactly" in main_calls[0]["instructions"]
             assert "remaining_searches" in output["output"]
+            # Check the real SDK sends synthesis policy on the continuation, not only the first turn.
+            for call in main_calls:
+                assert "synthesize the relevant retrieved facts into the response body" in call["instructions"]
+                assert "not a mandatory gate for every response" in call["instructions"]
+                assert "never relabel a publication date" in call["instructions"]
+                assert "never claim post-response source enrichment was already" in call["instructions"]
+            assert "not just article titles" in search_call["instructions"]
+            assert "Separate publication, announcement and release/event dates" in search_call["instructions"]
             assert service.sources[0].url == "https://example.com/current"
         elif tool_case == "search_failure":
             assert service.sources == []
