@@ -538,7 +538,9 @@ async def test_korean_subject_context_survives_wrong_name_candidates_and_query_r
     assert second["sources"][0]["title"] == "전소연 새 앨범"
     for call, query in zip(create.call_args_list, ["전소연 새 앨범", '"전소연" 앨범 발매'], strict=True):
         args = call.kwargs
-        assert json.loads(args["input"]) == {"query": query, "user_request": "전소연 새 앨범"}
+        payload = json.loads(args["input"])
+        assert payload["query"] == query and payload["user_request"] == "전소연 새 앨범"
+        assert payload["temporal_focus"] == "unspecified"
         assert "never substitute" in args["instructions"]
         assert "subject identity AND topic relevance" in args["instructions"]
         assert args["max_tool_calls"] == 1 and args["store"] is False
@@ -555,3 +557,45 @@ async def test_empty_search_reports_remaining_budget_without_exposing_uncited_su
     assert result["status"] == "no_sources" and result["summary"] == ""
     assert result["remaining_searches"] == 1
     assert "no relevant results does not mean nonexistence" in result["usage_notice"]
+
+
+@pytest.mark.parametrize("focus,query,expected", [
+    ("current", "전소연 새 앨범", "전소연 새 앨범 2041"),
+    ("current", "전소연 2041 앨범", "전소연 2041 앨범"),
+    ("historical", "전소연 2021 앨범", "전소연 2021 앨범"),
+    ("unspecified", "전소연 앨범", "전소연 앨범"),
+])
+async def test_search_temporal_intent_uses_server_seoul_year_without_changing_history(monkeypatch, focus, query, expected):
+    from datetime import UTC, datetime
+
+    class Clock:
+        @staticmethod
+        def now(tz):
+            return datetime(2040, 12, 31, 16, tzinfo=UTC)
+
+    monkeypatch.setattr("rabbit_hole.tools.datetime", Clock)
+    create = AsyncMock(return_value=SimpleNamespace(status="completed", output_text="",
+        model_dump=lambda: {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": []}}]}))
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    result = await tools.web_search(query, temporal_focus=focus)
+    payload = json.loads(create.call_args.kwargs["input"])
+    assert payload["query"] == expected
+    assert payload["reference_date"] == "2041-01-01"
+    assert payload["temporal_focus"] == focus
+    assert result["reference_date"] == "2041-01-01"
+    assert create.call_args.kwargs["tools"][0]["external_web_access"] is True
+    assert "only historical results" in create.call_args.kwargs["instructions"]
+
+
+async def test_temporal_focus_function_tool_dispatches_and_rejects_unknown_scope():
+    create = AsyncMock(return_value=SimpleNamespace(status="completed", output_text="",
+        model_dump=lambda: {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": []}}]}))
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    definition = tools.definitions()[1]
+    context = ToolContext(context=None, tool_name="web_search", tool_call_id="call_test", tool_arguments="{}")
+    result = await definition.on_invoke_tool(context, json.dumps({"query": "전소연 새 앨범", "temporal_focus": "current"}))
+    assert result["temporal_focus"] == "current"
+    assert json.loads(create.call_args.kwargs["input"])["temporal_focus"] == "current"
+    with pytest.raises(ToolFailure, match="invalid_temporal_focus"):
+        await tools.web_search("query", temporal_focus="unknown")
+    assert create.await_count == 1
