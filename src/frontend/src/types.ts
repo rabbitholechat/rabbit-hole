@@ -60,11 +60,18 @@ export type ResponseNode = Node<
   'response'
 >
 export type TextSpan = { start: number; end: number; quote: string }
-export type InformationKind = 'concept' | 'entity' | 'claim' | 'example' | 'comparison'
+export type InformationKind = 'concept' | 'entity' | 'claim' | 'example' | 'comparison' | 'procedure'
+export type GroundedText = { text: string; references: TextSpan[] }
+export type CardPresentation = {
+  heading: string
+  summary: GroundedText | null
+  sections: { heading: string | null; layout: 'text' | 'bullets' | 'steps'; items: GroundedText[] }[]
+  table: { columns: GroundedText[]; rows: (GroundedText | null)[][] } | null
+}
 export type StructureResult = {
-  version: 1
+  version: 1 | 2
   text_hash: string
-  items: { key: string; subtype: InformationKind; title: TextSpan; excerpt: TextSpan }[]
+  items: { key: string; subtype: InformationKind; title: TextSpan; excerpt: TextSpan; presentation?: CardPresentation | null }[]
 }
 export type InformationEntity = {
   id: string
@@ -74,6 +81,7 @@ export type InformationEntity = {
   textHash: string
   title: TextSpan
   excerpt: TextSpan
+  presentation?: CardPresentation | null
 }
 export type SourceEntity = {
   id: string

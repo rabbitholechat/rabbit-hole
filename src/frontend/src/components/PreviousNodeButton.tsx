@@ -50,7 +50,7 @@ export function PreviousNodeButton({ id }: { id: string }) {
     if (node.type === 'response') return `응답 · ${node.data.prompt}`
     if (node.type === 'page') return node.data.source.title
     const entity = session?.contentGraph?.entities[node.id]
-    return entity?.type === 'information' ? `정보 · ${entity.title.quote}` : '출처'
+    return entity?.type === 'information' ? `정보 · ${entity.presentation?.heading ?? entity.title.quote}` : '출처'
   }
   return (
     <div ref={rootRef} className="previous-node nodrag nopan" onClick={(event) => event.stopPropagation()}>

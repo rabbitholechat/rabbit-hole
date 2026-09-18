@@ -512,6 +512,160 @@
         ],
         "title": "CanvasNode"
       },
+      "CardPresentation_TextSpan_": {
+        "properties": {
+          "heading": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Heading"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GroundedText_TextSpan_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/CardSection_TextSpan_"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Sections"
+          },
+          "table": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CardTable_TextSpan_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "heading",
+          "summary",
+          "sections",
+          "table"
+        ],
+        "title": "CardPresentation[TextSpan]"
+      },
+      "CardSection_TextSpan_": {
+        "properties": {
+          "heading": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading"
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "text",
+              "bullets",
+              "steps"
+            ],
+            "title": "Layout"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedText_TextSpan_"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "heading",
+          "layout",
+          "items"
+        ],
+        "title": "CardSection[TextSpan]"
+      },
+      "CardTable_TextSpan_": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/GroundedText_TextSpan_"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 2,
+            "title": "Columns"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/GroundedText_TextSpan_"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "columns",
+          "rows"
+        ],
+        "title": "CardTable[TextSpan]"
+      },
+      "GroundedText_TextSpan_": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 800,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/TextSpan"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "References"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "references"
+        ],
+        "title": "GroundedText[TextSpan]"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -795,7 +949,8 @@
               "entity",
               "claim",
               "example",
-              "comparison"
+              "comparison",
+              "procedure"
             ],
             "title": "Subtype"
           },
@@ -804,6 +959,16 @@
           },
           "excerpt": {
             "$ref": "#/components/schemas/TextSpan"
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CardPresentation_TextSpan_"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -957,7 +1122,10 @@
         "properties": {
           "version": {
             "type": "integer",
-            "const": 1,
+            "enum": [
+              1,
+              2
+            ],
             "title": "Version",
             "default": 1
           },
@@ -970,6 +1138,7 @@
               "$ref": "#/components/schemas/InformationExtract"
             },
             "type": "array",
+            "maxItems": 6,
             "title": "Items"
           }
         },

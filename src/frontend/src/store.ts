@@ -265,8 +265,8 @@ export const useStore = create<State>((set, get) => ({
     try {
       const textHash = await hashText(response.data.text)
       if (abort.signal.aborted) return
-      let result: unknown = { version: 1, text_hash: textHash, items: [] }
-      if (Array.from(response.data.text).length >= 120) {
+      let result: unknown = { version: 2, text_hash: textHash, items: [] }
+      if (response.data.text.trim()) {
         if (!response.data.continuation) throw Error('missing_context')
         const res = await fetch('/api/structure', {
           method: 'POST',

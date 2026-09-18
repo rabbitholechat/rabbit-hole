@@ -15,9 +15,11 @@ from rabbit_hole.errors import StageFailure, error_code
 from rabbit_hole.models import ConversationTurn, Snapshot
 from rabbit_hole.security import SnapshotSigner
 from rabbit_hole.structure import (
+    CardSelections,
     ExtractSelection,
     ExtractSelections,
     numbered_lines,
+    resolve_cards,
     resolve_selections,
     text_hash,
 )
@@ -30,6 +32,15 @@ def candidates(start_line=3, end_line=3, title_line=3):
     return ExtractSelections(items=[ExtractSelection(
         subtype="concept", start_line=start_line, end_line=end_line, title_line=title_line)])
 
+
+def cards(start_line=3, end_line=3):
+    return CardSelections.model_validate({"items": [{"subtype": "concept", "presentation": {
+        "heading": "벡터 검색을 이해하는 방법",
+        "summary": {"text": "벡터 검색은 의미를 비교합니다.", "references": [{"start_line": start_line, "end_line": end_line}]},
+        "sections": [{"heading": "알아둘 점", "layout": "bullets", "items": [{
+            "text": "도메인에 따라 정확도가 달라집니다.", "references": [{"start_line": start_line, "end_line": end_line}]
+        }]}], "table": None,
+    }}]})
 
 def test_extracts_are_exact_codepoint_spans_and_deterministic():
     first = resolve_selections(TEXT, candidates())
@@ -64,17 +75,17 @@ def test_markdown_and_unicode_are_copied_without_model_rewriting():
         ExtractSelections.model_validate({"items": [{"subtype": "concept", "title": "invented", "excerpt": "invented"}]})
 
 
-async def test_structure_uses_no_tools_and_short_answers_need_no_call(monkeypatch):
-    parse = AsyncMock(return_value=SimpleNamespace(status="completed", output_parsed=candidates()))
+async def test_structure_uses_no_tools_and_blank_answers_need_no_call(monkeypatch):
+    parse = AsyncMock(return_value=SimpleNamespace(status="completed", output_parsed=cards()))
     client = SimpleNamespace(responses=SimpleNamespace(parse=parse), close=AsyncMock())
     monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: client)
     service = AgentService(Settings(_env_file=None, openai_api_key="fake"))
-    assert (await service.structure("짧은 답변")).items == []
+    assert (await service.structure("  ")).items == []
     parse.assert_not_called()
     assert (await service.structure(TEXT)).items[0].excerpt.quote == EXCERPT
-    assert json.loads(parse.call_args.kwargs["input"]) == numbered_lines(TEXT)
+    assert json.loads(parse.call_args.kwargs["input"]) == {"user_request": "", "answer_lines": numbered_lines(TEXT)}
     assert parse.call_args.kwargs["store"] is False and "tools" not in parse.call_args.kwargs
-    parse.return_value = SimpleNamespace(status="completed", output_parsed=candidates(3, 99, 3))
+    parse.return_value = SimpleNamespace(status="completed", output_parsed=cards(3, 99))
     with pytest.raises(StageFailure, match="structure_invalid_selection"):
         await service.structure(TEXT)
     await service.close()
@@ -102,9 +113,10 @@ def test_structure_contract_signed_text_and_failure_isolation():
 
     class Service:
         calls = 0
-        async def structure(self, text):
+        async def structure(self, text, user_request=""):
             Service.calls += 1
-            return resolve_selections(text, candidates())
+            assert user_request == "질문"
+            return resolve_cards(text, cards())
         async def close(self):
             pass
 
@@ -112,14 +124,14 @@ def test_structure_contract_signed_text_and_failure_isolation():
     body = {"request_id": str(uuid4()), "continuation": token, "text_hash": text_hash(TEXT)}
     response = client.post("/api/structure", json=body)
     assert response.status_code == 200
-    assert response.json() == resolve_selections(TEXT, candidates()).model_dump()
+    assert response.json() == resolve_cards(TEXT, cards()).model_dump()
     assert client.post("/api/structure", json={**body, "continuation": "forged"}).status_code == 409
     assert client.post("/api/structure", json={**body, "text_hash": "a" * 64}).status_code == 409
     assert client.post("/api/structure", json={**body, "text": "injected"}).status_code == 422
     assert Service.calls == 1
 
     class Failure(Service):
-        async def structure(self, text):
+        async def structure(self, text, user_request=""):
             raise RuntimeError("SECRET provider body")
 
     failed = TestClient(create_app(settings, lambda _: Failure())).post("/api/structure", json=body)
@@ -134,7 +146,7 @@ def test_structure_timeout_cancels_task_and_closes_client():
     state = {"cancelled": False, "closed": False}
 
     class Service:
-        async def structure(self, text):
+        async def structure(self, text, user_request=""):
             try:
                 await asyncio.Event().wait()
             finally:
@@ -155,7 +167,7 @@ async def test_real_sdk_parses_line_selection_without_copying_answer(monkeypatch
 
     def handler(request):
         payload = json.loads(request.content)
-        assert json.loads(payload["input"])[2]["text"].strip() == EXCERPT
+        assert json.loads(payload["input"])["answer_lines"][2]["text"].strip() == EXCERPT
         assert payload["text"]["format"]["strict"] is True
         assert "tools" not in payload
         return httpx.Response(200, json={
@@ -163,7 +175,7 @@ async def test_real_sdk_parses_line_selection_without_copying_answer(monkeypatch
             "status": "completed", "model": "gpt-4.1-mini", "parallel_tool_calls": True,
             "tool_choice": "auto", "tools": [],
             "output": [{"id": "msg_test", "type": "message", "role": "assistant", "status": "completed",
-                        "content": [{"type": "output_text", "text": candidates().model_dump_json(),
+                        "content": [{"type": "output_text", "text": cards().model_dump_json(),
                                      "annotations": []}]}],
         })
 
@@ -176,3 +188,53 @@ async def test_real_sdk_parses_line_selection_without_copying_answer(monkeypatch
         assert result.text_hash == text_hash(TEXT)
     finally:
         await service.close()
+
+
+def test_reorganized_cards_keep_discontinuous_field_references_and_conditions():
+    text = "🐇 A는 간단합니다.\n관련 없는 내용\nB는 복잡합니다. 단, 설정 후에는 편리합니다."
+    selected = cards(1, 1).model_dump()
+    presentation = selected["items"][0]["presentation"]
+    presentation["summary"]["references"].append({"start_line": 3, "end_line": 3})
+    presentation["sections"][0]["items"][0]["references"] = [{"start_line": 3, "end_line": 3}]
+    result = resolve_cards(text, CardSelections.model_validate(selected))
+    assert result.version == 2
+    references = result.items[0].presentation.summary.references
+    assert len(references) == 2
+    for ref in references:
+        assert text[ref.start:ref.end] == ref.quote
+    assert references[1].quote.endswith("설정 후에는 편리합니다.")
+    assert result == resolve_cards(text, CardSelections.model_validate(selected))
+    assert len(resolve_cards(text, CardSelections.model_validate({"items": selected["items"] * 2})).items) == 1
+
+
+@pytest.mark.parametrize("first,last", [(0, 1), (1, 99), (3, 1), (2, 2)])
+def test_reorganized_cards_reject_invalid_or_blank_references(first, last):
+    with pytest.raises((ValueError, StageFailure)):
+        resolve_cards(TEXT, cards(first, last))
+
+
+def test_cards_allow_whole_answer_transformation_but_not_empty_or_malformed_tables():
+    from pydantic import ValidationError
+    text = "먼저 설치하고 실행합니다."
+    assert resolve_cards(text, cards(1, 1)).items
+    raw = cards().model_dump()
+    card = raw["items"][0]["presentation"]
+    cell = card["summary"]
+    card["table"] = {"columns": [cell, cell], "rows": [[cell]]}
+    with pytest.raises(ValidationError):
+        CardSelections.model_validate(raw)
+    card["table"]["rows"] = [[cell, None]]
+    CardSelections.model_validate(raw)
+    card.update(summary=None, sections=[], table=None)
+    with pytest.raises(ValidationError):
+        CardSelections.model_validate(raw)
+
+
+async def test_short_comparison_uses_request_scope_without_tools(monkeypatch):
+    parse = AsyncMock(return_value=SimpleNamespace(status="completed", output_parsed=CardSelections(items=[])))
+    monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(responses=SimpleNamespace(parse=parse)))
+    result = await AgentService(Settings(_env_file=None, openai_api_key="fake")).structure("A는 쉽고 B는 복잡합니다.", user_request="차이만 짧게")
+    assert result.version == 2 and result.items == []
+    payload = parse.call_args.kwargs
+    assert json.loads(payload["input"])["user_request"] == "차이만 짧게"
+    assert "tools" not in payload and payload["store"] is False

@@ -1266,3 +1266,60 @@ test('streaming responses reflect light and conversation edges animate only once
   await expect(page.locator('.connection-reveal')).toHaveCount(0)
   expect(Object.values(await counts())).toEqual([1])
 })
+
+test('reorganized cards show comparisons and steps, preserve context and restore without structuring', async ({ page, context }, testInfo) => {
+  const { structuredAnswer, structuredResult } = await import('../fixtures/information')
+  const history = memoryHistoryApi()
+  await mockHistory(context, history)
+  let structureCalls = 0
+  let submittedContext: { title: string; text: string } | undefined
+  await page.route('**/api/structure', async (route) => {
+    structureCalls++
+    await route.fulfill({ json: structuredResult(route.request().postDataJSON().text_hash) })
+  })
+  await page.route('**/api/agent', async (route) => {
+    const request = route.request().postDataJSON()
+    submittedContext = request.node_context
+    const id = `response_${request.request_id}`
+    const events = [
+      ['response_started', { id }], ['response_completed', { id, text: structuredAnswer }],
+      ['checkpoint', { continuation: 'signed' }], ['done', { status: 'completed', failed_parts: [] }],
+    ]
+    await route.fulfill({ contentType: 'text/event-stream', body: events.map(([type, data], index) =>
+      `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: index + 1, type, data })}\n\n`).join('') })
+  })
+  await page.goto('/')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('차이와 실행 순서를 정리해줘')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  await expect(page.locator('.information-card')).toHaveCount(2)
+  const comparison = page.locator('.information-card').filter({ has: page.getByRole('heading', { name: 'A와 B의 차이', exact: true }) })
+  const procedure = page.locator('.information-card').filter({ has: page.getByRole('heading', { name: '설치부터 실행까지', exact: true }) })
+  await expect(comparison.locator('table tbody tr')).toHaveCount(2)
+  await expect(comparison.locator('table')).toHaveCSS('display', 'table')
+  await expect(comparison.locator('table')).toHaveCSS('table-layout', 'fixed')
+  await expect(comparison.locator('header')).toContainText('답변에서 재정리')
+  await expect(comparison.locator('header')).not.toContainText('비교')
+  await expect(procedure.locator('ol li')).toHaveCount(3)
+  await expect(procedure.locator('ul')).toContainText('설정 전에는 실행하지 마세요.')
+  // Center the cards with the existing canvas navigation, including on narrow screens.
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  const cardHeight = await comparison.evaluate((element) => element.clientHeight)
+  await comparison.getByLabel('원문 보기: 설치가 간단함', { exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '답변 원문' }).locator('blockquote')).toHaveText(/A는 설치가 간단하고 사용자 정의가 제한적/)
+  expect(await comparison.evaluate((element) => element.clientHeight)).toBe(cardHeight)
+  await page.getByRole('button', { name: '닫기', exact: true }).click()
+  await page.screenshot({ path: testInfo.outputPath('structured-cards.png') })
+  await comparison.getByRole('button', { name: '다음 응답에 사용' }).click()
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('이 차이를 더 알려줘')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  await expect.poll(() => submittedContext?.title).toBe('A와 B의 차이')
+  expect(submittedContext?.text).toContain('설치·설정 | 설치가 간단함 | 초기 설정이 복잡함')
+  await expect(page.locator('.information-card')).toHaveCount(4)
+  const callsBeforeRestore = structureCalls
+  await expect.poll(async () => (await history.list()).sessions[0]?.session.nodes.filter((node) => node.type === 'information').length).toBe(4)
+  await page.reload()
+  await openHistory(page)
+  await page.getByRole('button', { name: '차이와 실행 순서를 정리해줘', exact: true }).click()
+  await expect(page.locator('.information-card')).toHaveCount(4)
+  expect(structureCalls).toBe(callsBeforeRestore)
+})

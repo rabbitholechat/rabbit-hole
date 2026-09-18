@@ -333,3 +333,62 @@ it('page images remain separate from summaries and connect beside their source o
   expect(restored.contentGraph!.entities[page.id]).toBeDefined()
   expect(restored.contentGraph!.entities[image.id]).toBeDefined()
 })
+
+it('v2 cards preserve field references and only cite links in the selected passages', async () => {
+  const { structuredAnswer, structuredResult } = await import('./fixtures/information')
+  const { nodeText, nodeLabel, nodeContext } = await import('../src/lib/nodeActions')
+  const original = session()
+  const answer = original.nodes[0] as ResponseNode
+  answer.data.text = structuredAnswer
+  answer.data.toolSources!.push({ ...answer.data.toolSources![0], id: `src_${'f'.repeat(24)}`, url: 'https://example.com/unrelated' })
+  const payload = structuredResult(await hashText(structuredAnswer))
+  validateStructure(payload, structuredAnswer, payload.text_hash)
+  const next = attachInformation(attachSources(original, answer.id), answer.id, payload)
+  const id = `info_${answer.id}_${'d'.repeat(24)}`
+  expect(nodeLabel(next, id)).toBe('A와 B의 차이')
+  expect(nodeText(next, id)).toContain('설치·설정 | 설치가 간단함 | 초기 설정이 복잡함')
+  expect(nodeContext(next, id)?.text).toBe(nodeText(next, id))
+  expect(next.nodes.find((node) => node.id === id)?.width).toBe(460)
+  expect(next.contentGraph!.relations.filter((edge) => edge.source === id && edge.kind === 'cites').map((edge) => edge.target)).toEqual([
+    `src_${'a'.repeat(24)}`, `src_${'b'.repeat(24)}`,
+  ])
+  expect(next.viewport).toEqual(original.viewport)
+  expect(attachInformation(next, answer.id, payload).nodes).toEqual(next.nodes)
+  await saveSession(next)
+  const { loadSession } = await import('../src/lib/db')
+  const restored = await loadSession(next.id)
+  expect(restored?.contentGraph?.entities[id]).toEqual(next.contentGraph!.entities[id])
+})
+
+it('v2 rejects fabricated references, missing presentation and malformed tables atomically', async () => {
+  const { structuredAnswer, structuredResult } = await import('./fixtures/information')
+  const payload = structuredResult(await hashText(structuredAnswer))
+  const invalidReference = structuredClone(payload)
+  invalidReference.items[1].presentation!.sections[0].items[0].references[0].quote = '만들어낸 원문'
+  const invalidTable = structuredClone(payload)
+  invalidTable.items[0].presentation!.table!.rows[0].pop()
+  const missing = structuredClone(payload)
+  delete missing.items[1].presentation
+  const ungrounded = structuredClone(payload)
+  ungrounded.items[0].presentation!.table!.columns[0].references = []
+  for (const bad of [invalidReference, invalidTable, missing, ungrounded]) {
+    expect(() => validateStructure(bad, structuredAnswer, payload.text_hash)).toThrow('invalid_structure')
+  }
+  const allowedMissingCell = structuredClone(payload)
+  allowedMissingCell.items[0].presentation!.table!.rows[0][1] = null
+  expect(validateStructure(allowedMissingCell, structuredAnswer, payload.text_hash)).toEqual(allowedMissingCell)
+})
+
+it('short answers now reach independent structuring and may return no cards', async () => {
+  const initial = session()
+  const answer = initial.nodes[0] as ResponseNode
+  answer.data.text = 'A는 쉽고 B는 복잡합니다.'
+  useStore.setState({ session: initial, history: [initial] })
+  const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    version: 2, text_hash: await hashText(answer.data.text), items: [],
+  })))
+  await useStore.getState().structure(answer.id)
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(useStore.getState().session!.contentGraph!.jobs[answer.id].status).toBe('completed')
+  expect(useStore.getState().session!.nodes).toEqual(initial.nodes)
+})

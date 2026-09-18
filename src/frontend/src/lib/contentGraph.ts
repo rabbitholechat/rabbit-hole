@@ -13,6 +13,7 @@ import type {
   SourceEntity,
 } from '../types'
 import { safeUrl } from './utils'
+import { cardReferences, validPresentation } from './information'
 
 export const emptyContentGraph = (): ContentGraph => ({ version: 1, entities: {}, relations: [], jobs: {} })
 export const responseById = (session: Session, id: string) =>
@@ -88,7 +89,7 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
   for (const id of ids) {
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
-    const width = entity.type === 'information' ? 340 : 460
+    const width = entity.type === 'information' ? (entity.presentation?.table ? 460 : 340) : 460
     const height = entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
     const imageParentId = session.contentGraph!.relations.find((r) => r.kind === 'related_image' && r.target === id)?.source
     const imageParent = nodes.find((n) => n.id === imageParentId)
@@ -247,11 +248,11 @@ export function validateStructure(value: unknown, text: string, hash: string): S
     span.end > span.start &&
     span.end <= chars.length &&
     typeof span.quote === 'string' &&
-    span.quote.length <= max &&
+    Array.from(span.quote).length <= max &&
     chars.slice(span.start, span.end).join('') === span.quote
   if (
     !data ||
-    data.version !== 1 ||
+    ![1, 2].includes(data.version) ||
     data.text_hash !== hash ||
     !Array.isArray(data.items) ||
     data.items.length > 6
@@ -263,12 +264,13 @@ export function validateStructure(value: unknown, text: string, hash: string): S
       !item ||
       !/^[a-f0-9]{24}$/.test(item.key) ||
       seen.has(item.key) ||
-      !['concept', 'entity', 'claim', 'example', 'comparison'].includes(item.subtype) ||
+      !['concept', 'entity', 'claim', 'example', 'comparison', 'procedure'].includes(item.subtype) ||
       !checkSpan(item.title, 200) ||
       !checkSpan(item.excerpt, 12000) ||
       item.title.start < item.excerpt.start ||
       item.title.end > item.excerpt.end ||
-      item.excerpt.quote.trim() === text.trim()
+      (data.version === 1 && (item.excerpt.quote.trim() === text.trim() || item.presentation != null)) ||
+      (data.version === 2 && !validPresentation(item.presentation, checkSpan))
     )
       throw Error('invalid_structure')
     seen.add(item.key)
@@ -292,11 +294,13 @@ export function attachInformation(session: Session, responseId: string, result: 
       textHash: result.text_hash,
       title: item.title,
       excerpt: item.excerpt,
+      ...(item.presentation ? { presentation: item.presentation } : {}),
     }
     ids.push(id)
-    extra.push(relation(responseId, id, 'has_extract', responseId, [item.excerpt]))
+    const references = item.presentation ? cardReferences(item.presentation) : [item.excerpt]
+    extra.push(relation(responseId, id, 'has_extract', responseId, references))
     const links = markdownLinks(response.data.text).filter(
-      (link) => link.span.start >= item.excerpt.start && link.span.end <= item.excerpt.end,
+      (link) => references.some((ref) => link.span.start >= ref.start && link.span.end <= ref.end),
     )
     for (const entity of Object.values(entities)) {
       if (entity.type !== 'source' || entity.id.startsWith('image_')) continue

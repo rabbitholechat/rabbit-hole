@@ -99,30 +99,51 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 실패한 분기의 재시도는 같은 부모와 요청 전 문맥을 사용합니다.
 기존 기록 중 노드별 문맥이 없는 응답은 분기 버튼을 비활성화하며 문맥을 추측하지 않습니다.
 
-### POST `/api/structure` — 완료 응답의 정보 추출
+### POST `/api/structure` — 완료 응답의 정보 재구성
 
-요청: `request_id`(새 UUID), `continuation`(해당 응답 직후의 서버 서명 문맥), `text_hash`(공개 답변 UTF-8 SHA-256). 추가 필드는 거부합니다. 서버는 서명을 확인하고 마지막 assistant 답변의 해시와 비교합니다. 사용자가 바꾼 임의 텍스트는 구조화하지 않습니다.
+요청: `request_id`(새 UUID), `continuation`(해당 응답 직후의 서버 서명 문맥), `text_hash`(공개 답변 UTF-8 SHA-256). 추가 필드는 거부합니다. 서버는 서명과 마지막 assistant 답변의 해시를 검증합니다. 서명 문맥의 가장 최근 user 요청을 카드 선택·깊이 결정에 함께 사용하며, 사실 내용은 마지막 assistant 답변에서만 가져옵니다.
 
-```json
-{
-  "version": 1,
-  "text_hash": "c66e5e88fa09f898b3617cd3c44ea73b8e85dd223c71201ab898cb3a0a4a6012",
-  "items": [{
-    "key": "2091f76c4d5308a1d7bf1218",
-    "subtype": "concept",
-    "title": {"start": 0, "end": 5, "quote": "벡터 검색"},
-    "excerpt": {"start": 0, "end": 17, "quote": "벡터 검색은 의미를 비교합니다."}
-  }]
+응답 `version: 2`는 기존 `key/subtype/title/excerpt`에 `presentation`을 추가합니다. `title/excerpt`는 첫 원문 참조에서 가져온 호환용 앵커이며 화면 제목·본문은 `presentation`을 사용합니다. 기존 v1 기록은 원래 발췌 카드로 복원합니다.
+
+```typescript
+type TextSpan = { start: number, end: number, quote: string }
+type GroundedText = { text: string, references: TextSpan[] }
+type CardPresentation = {
+  heading: string,
+  summary: GroundedText | null,
+  sections: {
+    heading: string | null,
+    layout: 'text' | 'bullets' | 'steps',
+    items: GroundedText[]
+  }[],
+  table: {
+    columns: GroundedText[],
+    rows: (GroundedText | null)[][]
+  } | null
+}
+type StructureResult = {
+  version: 2,
+  text_hash: string,
+  items: {
+    key: string,
+    subtype: 'concept' | 'entity' | 'claim' | 'example' | 'comparison' | 'procedure',
+    title: TextSpan,
+    excerpt: TextSpan,
+    presentation: CardPresentation
+  }[]
 }
 ```
 
-위는 원문 `벡터 검색은 의미를 비교합니다.\n\n추가 설명입니다.`의 필드 설명용 결과입니다(실제 120자 미만 응답은 추출 생략). `key`는 `text_hash:start:end:subtype`의 SHA-256 앞 24자리입니다. 범위는 Unicode 코드 포인트 기준 `[start, end)`이며 JavaScript에서는 `Array.from(text)`로 슬라이스합니다. 모델에는 번호를 붙인 원문 줄 목록을 전달하며 `start_line`, `end_line`(양끝 포함), `title_line`, `subtype`만 반환하도록 합니다. 모델이 본문을 복사하거나 새 사실·설명·출처를 작성하지 않습니다. 서버는 유효한 줄 범위를 확인하고 원문에서 발췌와 제목을 직접 가져와 오프셋과 키를 계산합니다. 제목은 선택한 제목 줄의 앞쪽 Markdown 기호를 제외한 최대 100자입니다. 반복 문구도 줄 번호로 위치를 구분합니다. 프런트가 해시·범위·문자열을 재검증합니다. 정확한 복사 여부는 검증하지만 발췌의 의미적 완결성을 보증하지는 않습니다.
-
-- `subtype`: concept / entity / claim / example / comparison. 비교는 정보 노드의 하위 유형입니다.
-- 정보는 0..6개. 120자 미만은 모델 호출 없이 빈 배열, 전체 답변 복제·중복 발췌 제외. 긴 답변도 분리할 가치가 없으면 빈 배열입니다.
-- 모델: `OPENAI_STRUCTURE_MODEL` 기본 gpt-4.1-mini. Responses 구조화 출력 1회, 최대 4,000 출력 토큰, 도구 없음, 저장·자동 재시도 없음. 본문과 독립된 추가 모델 비용이 발생합니다.
-- `STRUCTURE_TIMEOUT_SECONDS` 기본 25초(1..60), 프런트 요청 제한 30초. 기존 요청 빈도·동시 실행 예산 공유. 연결 종료 시 작업 취소·클라이언트 종료.
-- 서명/해시 불일치 409, 검증 422, 요청 제한 429, 미설정 503, 추출/시간 초과 502. 오류에 원문을 노출하지 않습니다.
+- 내부 분류: 개념 이해 / 대상 살펴보기 / 핵심 포인트 / 사례 / 비교 / 진행 방법. 화면에서는 유형명 대신 내용 중심 제목과 필요한 표·설명·목록·순서를 표시합니다. 특정 주제 키워드로 분기하지 않습니다.
+- 모델 입력은 `user_request`, 번호를 붙인 `answer_lines`. 모델은 재서술된 내용과 각 항목의 `references: [{start_line, end_line}]`(1-based, 양끝 포함)을 반환합니다. 서로 떨어진 범위도 참조할 수 있습니다. 서버가 원문에서 `TextSpan`을 생성하며 프런트가 해시·범위·문자열을 재검증합니다. 범위는 Unicode 코드 포인트 `[start, end)`입니다.
+- 내용은 원문을 재구성할 수 있지만 새 사실·설명·추천·예시·추론을 추가하지 않습니다. 부정, 불확실성, 수치·단위, 조건·예외와 가상 사례 여부를 보존합니다. 제목·표 헤더도 원문에 부합해야 합니다. 참조 일치는 의미적 충실성이나 외부 사실 검증을 보증하지 않습니다.
+- 생성 문자열은 Markdown/HTML/클릭 가능한 링크가 아닌 평문으로 렌더링합니다. 각 항목에서 실제 원문을 별도 읽기 창으로 볼 수 있습니다. 원문 보기로 카드 크기나 기존 노드 위치를 변경하지 않습니다. 표의 `null` 셀은 답변에 정보가 없는 칸으로 `—` 표시하며 추측으로 채우지 않습니다.
+- 카드 0..6개, 제목 100자, 항목 800자, 항목별 참조 1..4개, 각 참조 6,000자 이하. 섹션 0..4개, 섹션 제목 80자, 섹션당 항목 1..8개. 표는 2..5열, 1..8행이며 모든 행의 열 수가 같아야 합니다. 카드당 전체 생성 텍스트 6,000자 이하이며 내용 없는 카드는 거부합니다.
+- 요청 목적에 맞는 카드만 선택합니다. 인사·확인 질문·재구성 가치가 없는 답변은 빈 배열이 가능합니다. 단일 주제·짧은 비교라도 유용한 표나 순서로 바꿀 수 있으면 카드 생성이 가능합니다. 빈 문자열만 모델 호출 없이 생략합니다. 그 외 짧은 응답도 구조화 비용이 발생할 수 있습니다.
+- v2 `key`는 `text_hash:subtype:정규화된 presentation JSON`의 SHA-256 앞 24자리입니다. 같은 결과 재적용은 중복 제거하며 완료 작업은 재호출하지 않습니다. 원문 참조와 생성 내용은 함께 저장합니다.
+- 모델: `OPENAI_STRUCTURE_MODEL` 기본 gpt-4.1-mini. Responses 구조화 출력 1회, 최대 4,000 출력 토큰, 도구 없음, 저장·자동 재시도 없음. 추가 검색·본문 조회·근거 검증·관계 생성 호출은 없습니다.
+- `STRUCTURE_TIMEOUT_SECONDS` 기본 25초(1..60), 프런트 제한 30초. 기존 요청 빈도·동시 실행 예산 공유. 연결 종료 시 작업 취소·클라이언트 종료.
+- 서명/해시 불일치 409, 검증 422, 요청 제한 429, 미설정 503, 구조화/시간 초과 502. 실패는 원래 응답과 격리하며 원문을 로그에 노출하지 않습니다.
 
 ### 캔버스 저장과 관계
 
@@ -131,23 +152,23 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 | 노드 | 의미 데이터 | 기본/상세 표시 |
 | --- | --- | --- |
 | response | 기존 prompt, text, status, continuation, toolSources | 질문·전체 답변, 구조화 상태·중지·재시도 |
-| information | id, subtype, responseId, textHash, title/excerpt 범위 | 원문 제목·발췌, 이전 노드로 이동 |
+| information | id, subtype, responseId, textHash, title/excerpt 범위, presentation | 재구성 제목·설명·비교표·단계, 항목별 원문 보기, 이전 노드로 이동 |
 | source | id, ToolSource, observations(responseId, access, accessedAt, spans) | 페이지 제목·도메인·검색/본문 조회·페이지 열기 버튼. 응답별 조회 기록은 데이터로만 보존 |
 
 | 관계 | 방향 | 화면 라벨 | 생성 기준 |
 | --- | --- | --- | --- |
 | 기존 대화 순서 | 부모 response → 후속 response | 기존 대화 순서 표시 | 사용자의 응답 분기 선택/실행 기록 |
-| has_extract | response → information | 정보 추출 | 모델이 선택한 원문 발췌를 서버/클라이언트 검증 |
+| has_extract | response → information | 정보 추출 | 항목별 원문 참조를 서버/클라이언트 검증. 생성 문구의 의미 검증은 아님 |
 | consulted | response → source | 조회 | 해당 응답의 실제 도구 조회 기록, 본문에 해당 링크 없음 |
-| cites | response 또는 information → source | 출처 표기 | 실제 Markdown 링크가 해당 도구 출처 URL과 일치. 코드 블록·이미지 제외, 참조식 링크 정의 지원 |
+| cites | response 또는 information → source | 출처 표기 | 응답 또는 정보 항목이 참조한 원문 범위 안의 실제 Markdown 링크가 해당 도구 출처 URL과 일치. 생성 문구에서 링크를 추론하지 않음. 코드 블록·이미지 제외, 참조식 링크 정의 지원 |
 
 출처 ID는 페이지별로 재사용하고 응답별 관찰 기록을 보존합니다. 출처가 없는 응답에는 출처 노드가 없습니다. 도구 메타데이터에 없는 생성 링크는 원래 답변에 남지만 출처 노드를 만들지 않습니다. `cites`도 자료 내용의 지지·인과·사실 검증을 의미하지 않습니다. 정보 간 의미 관계와 비교 대상 연결은 후순위입니다. 사용자가 선택한 노드의 맥락 참조는 아래 uses_context로 기록합니다.
 
-`done(completed)` 후 signed checkpoint로 구조화를 시작하고 결과 전체 검증 후 원자적으로 추가합니다. 실패·중지는 기존 답변·출처·배치를 유지하며 사용자가 재시도할 수 있습니다. `jobs[responseId]`에 상태와 시도 ID를 저장해 중복 요청과 오래된 결과를 차단합니다. 완료된 작업은 재실행하지 않고 원문 해시·범위 기반 노드 ID와 관계 ID로 재적용을 중복 제거합니다. 새 노드만 기존 카드와 겹치지 않는 위치에 추가하고 사용자가 옮긴 좌표·viewport는 보존합니다.
+`done(completed)` 후 signed checkpoint로 구조화를 시작하고 결과 전체 검증 후 원자적으로 추가합니다. 실패·중지는 기존 답변·출처·배치를 유지하며 사용자가 재시도할 수 있습니다. `jobs[responseId]`에 상태와 시도 ID를 저장해 중복 요청과 오래된 결과를 차단합니다. 완료된 작업은 재실행하지 않고 원문 해시·카드 내용 기반 노드 ID와 관계 ID로 재적용을 중복 제거합니다. 새 노드만 기존 카드와 겹치지 않는 위치에 추가하고 사용자가 옮긴 좌표·viewport는 보존합니다.
 
 화면 전환/삭제는 해당 구조화를 취소합니다. PostgreSQL 복원은 모델을 호출하지 않으며 중단된 작업은 cancelled로 복원합니다. 예전 v2 조회 메타데이터는 로컬에서 출처 노드로 표시할 수 있지만 과거 답변의 정보 추출은 자동 실행하지 않습니다. 구조화 실패가 원래 답변 표시와 후속 질문을 막지 않습니다.
 
-구조화 실패 로그는 원문 없이 `structure_invalid_selection`(범위/제목 줄 오류), `structure_invalid_schema`(출력 형식 오류), `structure_output_limit`(출력 토큰 제한), `structure_incomplete`(미완료), `structure_refused`(거절), `structure_missing_output`(파싱 결과 없음)을 구분합니다. HTTP 실패는 기존 502 계약을 유지합니다. 구조화 출력 방식은 [공식 OpenAI 구조화 출력 문서](https://developers.openai.com/api/docs/guides/structured-outputs)를 참고합니다.
+구조화 실패 로그는 원문 없이 `structure_invalid_selection`(원문 참조 범위 오류), `structure_invalid_schema`(출력 형식 오류), `structure_output_limit`(출력 토큰 제한), `structure_incomplete`(미완료), `structure_refused`(거절), `structure_missing_output`(파싱 결과 없음)을 구분합니다. HTTP 실패는 기존 502 계약을 유지합니다. 구조화 출력 방식은 [공식 OpenAI 구조화 출력 문서](https://developers.openai.com/api/docs/guides/structured-outputs)를 참고합니다.
 
 출처 카드 너비는 460px, 최소 높이는 260px이며 본문에 따라 높이가 늘어납니다. 긴 본문은 기본 160px 미리보기로 접고 펼칠 수 있습니다. 기존 작은 출처도 복원 시 너비를 확대하되 좌표·viewport는 그대로 유지합니다. 응답 카드는 투명 배경과 녹색 테두리, 정보 카드는 황토색, 출처 카드는 파란색으로 구분합니다.
 
@@ -157,7 +178,7 @@ provider_error, invalid_output, turn_limit, incomplete_response, output_limit, i
 
 동일 페이지의 관찰 기록·인용 범위를 합치고 본문 조회 상태를 보존하며, 응답/정보의 연결선을 남는 카드로 갱신합니다. 기존 위치·viewport는 그대로 유지합니다. 새 조회 때와 기록 복원 때 모두 적용하고 추가 모델/도구 API 호출은 없습니다. 기존 중복의 합쳐진 화면은 후속 저장 시 PostgreSQL에도 반영됩니다.
 
-모든 카드의 ‘이전 노드로’는 들어오는 연결선의 시작 노드로 이동합니다. 응답은 실제 parentId(구버전은 기존 대화 순서), 정보/출처는 해당 관계를 따릅니다. 여러 개면 선택 목록, 없으면 비활성 버튼입니다. 이동은 노드를 선택하고 현재 배율을 유지하여 화면을 해당 노드로 옮깁니다. 별도 원문 보기와 원문 발췌 패널은 제거했지만 추출 범위 데이터는 보존합니다.
+모든 카드의 ‘이전 노드로’는 들어오는 연결선의 시작 노드로 이동합니다. 응답은 실제 parentId(구버전은 기존 대화 순서), 정보/출처는 해당 관계를 따릅니다. 여러 개면 선택 목록, 없으면 비활성 버튼입니다. 이동은 노드를 선택하고 현재 배율을 유지하여 화면을 해당 노드로 옮깁니다. 기존 발췌 카드는 그대로 유지하며 새 재구성 카드는 항목별 원문 보기를 제공합니다. 다음 응답에 사용·복사 동작도 재구성된 제목과 내용을 사용합니다.
 
 ‘미검증’은 카드 표시에서만 제거하며 `verification=unverified` 계약은 유지합니다. 구조화 중에는 스피너와 중지 버튼을 표시하고 완료 문구는 숨깁니다. 새 정보·출처 카드는 짧은 페이드/이동 애니메이션을 적용하며 시스템의 동작 줄이기 설정에서는 끕니다.
 

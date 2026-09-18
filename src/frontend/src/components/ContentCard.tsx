@@ -10,6 +10,8 @@ import { ExternalLink } from 'lucide-react'
 import type { InformationNode, SourceNode } from '../types'
 import { useStore } from '../store'
 import { safeUrl } from '../lib/utils'
+import { InformationContent } from './InformationContent'
+import { cardText } from '../lib/information'
 import { NodeTag } from './NodeTag'
 
 const sourceErrors: Record<string, string> = {
@@ -23,7 +25,7 @@ const sourceErrors: Record<string, string> = {
   empty_page: '읽을 수 있는 본문이 없습니다.',
   unsafe_url: '안전하게 접근할 수 없는 링크입니다.',
 }
-const kinds = { concept: '개념', entity: '대상', claim: '주장', example: '예시', comparison: '비교' }
+const kinds = { concept: '개념', entity: '대상', claim: '주장', example: '예시', comparison: '비교', procedure: '진행 방법' }
 export function ContentCard({ id, data, selected }: NodeProps<InformationNode | SourceNode>) {
   const isReplyTarget = useStore((s) => s.replyTo === id)
   const [arrivalFinished, setArrivalFinished] = useState(false)
@@ -31,7 +33,7 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
     if (isReplyTarget) setArrivalFinished(true)
   }, [isReplyTarget])
   const entity = useStore((s) => s.session?.contentGraph?.entities[data.entityId])
-  const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.excerpt.quote : `${entity?.source.content?.status ?? ''}:${entity?.source.content?.summary || entity?.source.content?.text || ''}`, data.collapsed)
+  const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.presentation ? cardText(entity.presentation) : entity.excerpt.quote : `${entity?.source.content?.status ?? ''}:${entity?.source.content?.summary || entity?.source.content?.text || ''}`, data.collapsed)
   const collapsed = Boolean(data.collapsed && canCollapse)
   const [imageFailed, setImageFailed] = useState(false)
   if (!entity) return null
@@ -51,7 +53,7 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
       >
         <header>
           <NodeTag kind={source?.image ? 'image' : entity.type} />
-          {entity.type === 'information' && <small className="response-status">{kinds[entity.subtype]}</small>}
+          {entity.type === 'information' && <small className="response-status">{entity.presentation ? '답변에서 재정리' : kinds[entity.subtype]}</small>}
           {source && !source.image && <small className="response-status source-progress" role="status">
             {pending && <RabbitLoader />}
             {content?.status === 'reading' ? '조회 중' : content?.status === 'summarizing' ? '요약 중' : content?.status === 'cancelled' ? '요약 중지됨' : content?.summary ? content.summary_error ? '일부 요약' : '요약 완료' : ''}
@@ -60,9 +62,9 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
         </header>
         {entity.type === 'information' ? (
           <>
-            <h2 title={entity.title.quote}>{entity.title.quote}</h2>
+            <h2 title={entity.presentation?.heading ?? entity.title.quote}>{entity.presentation?.heading ?? entity.title.quote}</h2>
             <div ref={contentRef} className={`information-body response-content nodrag nopan ${collapsed ? 'nowheel' : ''}`} tabIndex={collapsed ? 0 : undefined}>
-              <ReactMarkdown
+              {entity.presentation ? <InformationContent card={entity.presentation} /> : <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 skipHtml
                 components={{
@@ -80,7 +82,7 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
                 }}
               >
                 {entity.excerpt.quote}
-              </ReactMarkdown>
+              </ReactMarkdown>}
             </div>
           </>
         ) : entity.source.image ? (

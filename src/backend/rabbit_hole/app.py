@@ -347,7 +347,9 @@ def create_app(settings: Settings | None = None, service_factory=AgentService, h
         try:
             async with asyncio.timeout(settings.structure_timeout_seconds):
                 service = service_factory(settings)
-                task = asyncio.create_task(service.structure(turns[-1].content))
+                task = asyncio.create_task(service.structure(turns[-1].content, user_request=next(
+                    (turn.content for turn in reversed(turns[:-1]) if turn.role == "user"), ""
+                )))
                 while not task.done():
                     await asyncio.wait({task}, timeout=0.2)
                     if await request.is_disconnected():
