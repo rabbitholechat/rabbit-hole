@@ -300,6 +300,7 @@ svg {
   color: #9aa39c;
 }
 .composer > button {
+  align-self: flex-end;
   width: 39px;
   height: 39px;
   border-radius: 9px;
@@ -2186,7 +2187,7 @@ svg {
 
 /* Per-message tool selection shares the composer without moving the canvas. */
 .composer.has-tool { flex-wrap: wrap; }
-.composer-tools { position: relative; flex: 0 0 auto; }
+.composer-tools { position: relative; flex: 0 0 auto; align-self: flex-end; margin-bottom: 2.5px; }
 .composer-tool-trigger {
   display: grid; place-items: center; width: 34px; height: 34px;
   border: 0; border-radius: 10px; background: transparent; color: #798b82;
