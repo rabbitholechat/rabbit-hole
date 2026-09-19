@@ -238,3 +238,19 @@ async def test_short_comparison_uses_request_scope_without_tools(monkeypatch):
     payload = parse.call_args.kwargs
     assert json.loads(payload["input"])["user_request"] == "차이만 짧게"
     assert "tools" not in payload and payload["store"] is False
+
+
+async def test_substantial_single_topic_answers_are_partitioned_by_information_role(monkeypatch):
+    parse = AsyncMock(return_value=SimpleNamespace(status="completed", output_parsed=CardSelections(items=[])))
+    monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(responses=SimpleNamespace(parse=parse)))
+    text = (
+        "# 개념\n벡터 검색은 의미 유사도를 이용합니다.\n"
+        "# 동작 원리\n문서를 임베딩한 뒤 가까운 벡터를 찾습니다.\n"
+        "# 비교\n키워드 검색은 단어 일치를 보고 벡터 검색은 의미를 비교합니다."
+    )
+    await AgentService(Settings(_env_file=None, openai_api_key="fake")).structure(text)
+    instructions = parse.call_args.kwargs["instructions"]
+    assert "partition the answer by independently useful information role" in instructions
+    assert "SHOULD produce multiple cards" in instructions
+    assert "even when every part concerns one overall topic" in instructions
+    assert "Use a single card only when" in instructions
