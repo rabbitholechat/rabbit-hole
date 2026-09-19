@@ -2058,11 +2058,16 @@ svg {
   position: relative;
   isolation: isolate;
 }
+.response-card.is-generating > :not(.response-glass) {
+  position: relative;
+  z-index: 1;
+}
 .response-glass {
   position: absolute;
-  inset: 1px;
-  z-index: -1;
-  border-radius: 14px;
+  inset: 0;
+  min-height: 100%;
+  z-index: 0;
+  border-radius: inherit;
   overflow: hidden;
   pointer-events: none;
   background: linear-gradient(135deg, #dceee6b0, #ffffff50 48%, #e2f1eba0);

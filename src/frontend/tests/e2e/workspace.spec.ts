@@ -1210,6 +1210,7 @@ test('streaming responses reflect light and conversation edges animate only once
       const request = JSON.parse(init!.body as string)
       const id = `response_${request.request_id}`
       const text = '생성 중에도 문장은 선명하게 읽을 수 있습니다. 빛은 카드 안쪽으로만 지나갑니다.\n\n'.repeat(5)
+      let accumulated = text
       let seq = 0
       return new Response(new ReadableStream({ start(controller) {
         const emit = (type: string, data: object) => controller.enqueue(new TextEncoder().encode(
@@ -1219,12 +1220,19 @@ test('streaming responses reflect light and conversation edges animate only once
         emit('checkpoint', { continuation: request.continuation ?? 'before' })
         emit('response_started', { id })
         emit('response_delta', { id, delta: text })
-        Object.assign(window, { finishGlassResponse: () => {
-          emit('response_completed', { id, text })
-          emit('checkpoint', { continuation: 'signed' })
-          emit('done', { status: 'completed', failed_parts: [] })
-          controller.close()
-        } })
+        Object.assign(window, {
+          growGlassResponse: () => {
+            const growth = '길어진 응답에서도 반사 효과는 카드 하단까지 이어져야 합니다.\n\n'.repeat(18) + '응답 확장 끝.'
+            accumulated += growth
+            emit('response_delta', { id, delta: growth })
+          },
+          finishGlassResponse: () => {
+            emit('response_completed', { id, text: accumulated })
+            emit('checkpoint', { continuation: 'signed' })
+            emit('done', { status: 'completed', failed_parts: [] })
+            controller.close()
+          },
+        })
       } }), { headers: { 'Content-Type': 'text/event-stream' } })
     }
   })
@@ -1239,6 +1247,13 @@ test('streaming responses reflect light and conversation edges animate only once
   await expect(card.locator('.response-content')).toHaveCSS('filter', 'none')
   await expect(card).toHaveClass(/arrival-finished/)
   await expect(card).toHaveCSS('opacity', '1')
+  await page.evaluate(() => (window as unknown as { growGlassResponse: () => void }).growGlassResponse())
+  await expect(card.locator('.response-content')).toContainText('응답 확장 끝.')
+  await expect.poll(() => card.evaluate((element) => {
+    const glass = element.querySelector('.response-glass')!.getBoundingClientRect()
+    const bounds = element.getBoundingClientRect()
+    return Math.abs(glass.bottom - bounds.bottom)
+  })).toBeLessThan(1.5)
   await card.locator('.response-glass').evaluate((el) => {
     const animation = el.getAnimations({ subtree: true }).find((animation) => (animation as CSSAnimation).animationName === 'response-glass-light')
     if (animation) { animation.pause(); animation.currentTime = 2100 }
