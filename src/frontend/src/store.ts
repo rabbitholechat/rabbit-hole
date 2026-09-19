@@ -190,6 +190,7 @@ function restoreSession(session: Session): Session {
       const { height: _height, measured: _measured, ...rest } = node
       if (node.type === 'source')
         return { ...rest, type: 'source', data: { ...node.data, collapsed: node.data.collapsed ?? true }, width: Math.max(node.width ?? 0, 460) } as CanvasNode
+      if (node.type === 'entity') return { ...rest, width: Math.max(node.width ?? 0, 340) }
       return rest
     }),
   }

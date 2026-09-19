@@ -17,7 +17,7 @@ export function EntityCard({ id, data, selected }: NodeProps<EntityNode>) {
   return <>
     <Handle type="target" position={Position.Left} isConnectable={false} />
     <article className={`entity-card ${selected ? 'is-selected' : ''} ${replyTo === id ? 'is-reply-target' : ''}`} aria-label={`엔티티 · ${entity.name}`}>
-      <header><NodeTag kind="entity" detail={ENTITY_KIND_LABELS[entity.subtype] ?? '기타'} />
+      <header><NodeTag kind="entity" /><small className="entity-type">{ENTITY_KIND_LABELS[entity.subtype] ?? '기타'}</small>
         <NodeActions id={id} collapsed={data.collapsed} canCollapse={canExpand} /></header>
       <h2>{entity.name}</h2>
       <p className="entity-count">관련 정보 {informationIds.length}</p>

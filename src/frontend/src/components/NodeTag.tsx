@@ -8,12 +8,12 @@ const nodeKinds = {
   source: { label: '출처', Icon: Globe2, Image },
 } as const
 
-export function NodeTag({ kind, detail }: { kind: keyof typeof nodeKinds; detail?: string }) {
+export function NodeTag({ kind }: { kind: keyof typeof nodeKinds }) {
   const { label, Icon } = nodeKinds[kind]
   return (
     <span className="node-tag">
       <Icon size={18} aria-hidden="true" />
-      {label}{detail && ` · ${detail}`}
+      {label}
     </span>
   )
 }

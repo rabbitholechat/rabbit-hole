@@ -1588,12 +1588,13 @@ svg {
   width: 100%; padding: 16px; border: 1px solid #dda598; border-radius: 16px;
   background: #fff1eb; color: #743e32; box-shadow: 0 4px 16px #bc604e12;
 }
-.entity-card header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.entity-card header { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
+.entity-card .entity-type { color: #a16e62; font-size: 11px; white-space: nowrap; }
 .entity-card .node-tag { color: #a94e3e; background: #f9d9cf; font-size: 11px; }
-.entity-card h2 { margin: 12px 0 6px; font-size: 17px; overflow-wrap: anywhere; }
+.entity-card h2 { margin: 12px 0 8px; font-size: 17px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; }
 .entity-qualifier { margin: 0 0 8px; font-size: 12px; overflow-wrap: anywhere; }
 .entity-count { margin: 0; color: #a16e62; font-size: 12px; }
-.entity-card .response-actions { gap: 2px; margin-left: auto; }
+.entity-card .response-actions { gap: 4px; margin-left: auto; flex-shrink: 0; }
 .entity-card .response-actions button { width: 23px; height: 24px; color: #944a39; }
 .entity-card .node-button { color: #944a39; border-color: #dda598; }
 .entity-card.is-reply-target { box-shadow: 0 0 0 3px #bc604e55; }

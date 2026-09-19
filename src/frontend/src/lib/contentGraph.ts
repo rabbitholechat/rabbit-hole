@@ -92,7 +92,7 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
   for (const id of ids) {
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
-    const width = entity.type === 'entity' ? 280 : entity.type === 'information' ? (entity.presentation?.table ? 460 : 340) : 460
+    const width = entity.type === 'entity' ? 340 : entity.type === 'information' ? (entity.presentation?.table ? 460 : 340) : 460
     const height = entity.type === 'entity' ? 160 : entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
     const imageParentId = session.contentGraph!.relations.find((r) => r.kind === 'related_image' && r.target === id)?.source
     const imageParent = nodes.find((n) => n.id === imageParentId)
@@ -103,8 +103,8 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
       88 +
-      (entity.type === 'information' && hasSubjects ? 368 : entity.type === 'source' ? 916 + (entity.source.image ? 460 + 88 : 0) : 0)
-    const x = Math.max(baseX, ...subjectParents.map((n) => n.position.x + (n.measured?.width ?? n.width ?? 280) + 88))
+      (entity.type === 'information' && hasSubjects ? 428 : entity.type === 'source' ? 976 + (entity.source.image ? 460 + 88 : 0) : 0)
+    const x = Math.max(baseX, ...subjectParents.map((n) => n.position.x + (n.measured?.width ?? n.width ?? 340) + 88))
     let y = imageParent?.position.y ?? (subjectParents.length ? Math.max(response.position.y, subjectParents[0].position.y) : response.position.y)
     while (true) {
       const collisions = nodes.filter(
