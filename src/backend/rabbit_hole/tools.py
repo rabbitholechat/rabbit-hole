@@ -351,6 +351,8 @@ class AgentTools:
                 "Supply the relevant concrete details needed to answer user_request, not just article titles "
                 "or offers to provide details later. Match its requested scope and depth; do not omit useful "
                 "supported details solely because the retrieved source is reporting rather than official. "
+                "Cite only pages that directly support the requested answer. Never cite tangential search "
+                "results or add citations merely to fill a source count. "
                 "Attribute reported claims, and never represent a search summary as a verified page quote. "
                 "Separate publication, announcement and release/event dates: label a date only as the source "
                 "does, and mark its role unclear if unresolved. Preserve uncertainties and contradictions. "
@@ -365,7 +367,7 @@ class AgentTools:
                                   "temporal_focus": temporal_focus, "reference_date": reference_date}, ensure_ascii=False),
                 tools=[{"type": "web_search", "search_context_size": "medium", "external_web_access": True}],
                 tool_choice="required", max_tool_calls=1, parallel_tool_calls=False,
-                include=["web_search_call.action.sources"], max_output_tokens=1500, store=False,
+                max_output_tokens=1500, store=False,
             )
         if result.status != "completed":
             raise ToolFailure("search_incomplete")
@@ -375,15 +377,13 @@ class AgentTools:
             raise ToolFailure("search_not_executed")
         found: dict[str, ToolSource] = {}
         cited = []
-        discovered = []
         for item in payload.get("output", []):
-            if item.get("type") == "web_search_call":
-                discovered.extend((item.get("action") or {}).get("sources") or [])
             if item.get("type") == "message":
                 for content in item.get("content", []):
                     cited.extend(a for a in content.get("annotations", []) if a.get("type") == "url_citation")
-        # Preserve cited pages before truncating a long discovery list.
-        for item in (cited + discovered)[:40]:
+        # Raw discovery candidates can be unrelated to the answer. Only citations selected into the
+        # search summary are eligible for public source nodes.
+        for item in cited[:40]:
             if not isinstance(item.get("url"), str):
                 continue
             try:
@@ -396,8 +396,9 @@ class AgentTools:
             "temporal_focus": temporal_focus,
             "remaining_searches": max(0, self.settings.max_web_searches - self.searches),
             "remaining_tool_calls": max(0, self.settings.max_tool_calls - self.calls),
-            "usage_notice": "URLs are discovery candidates, not verified or necessarily relevant evidence. "
-            "Check the same subject and topic before citing/reading. If unrelated or inconclusive, "
+            "usage_notice": "Returned URLs were cited by the search summary, but are not verified evidence. "
+            "Raw discovery candidates are excluded. Check the same subject and topic before citing/reading. "
+            "If a cited page is unrelated or inconclusive, do not use it or create a source node; "
             "refine the query within remaining budget; no relevant results does not mean nonexistence. "
             "Old hits do not establish the latest status; use current focus and read relevant dated pages.",
         }

@@ -124,9 +124,10 @@ async def test_search_real_metadata_only_and_page_identity(monkeypatch):
         status="completed", output_text="Search summary", model_dump=lambda: payload))
     tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
     result = await tools.web_search("test query")
-    assert len(result["sources"]) == 2
+    assert len(result["sources"]) == 1
     assert all(s["access"] == "search_result" and s["verification"] == "unverified" for s in result["sources"])
     assert result["sources"][0]["title"] == "Page A"
+    assert "https://example.com/b" not in {s.url for s in tools.sources.values()}
     source = tools.record("https://example.com/a#section", "Page A", "page_read")
     assert source.id == result["sources"][0]["id"]
     assert tools.record("https://example.com/a", "", "search_result").access == "page_read"
@@ -201,7 +202,7 @@ def test_current_date_context_preserves_utc_and_seoul_midnight(monkeypatch, hour
     assert "unless the user specifies" in context
 
 
-async def test_cited_primary_page_is_not_lost_behind_discovered_sources(monkeypatch):
+async def test_only_cited_primary_page_is_kept_from_discovered_sources(monkeypatch):
     monkeypatch.setattr(AgentTools, "image_search", AsyncMock(return_value={"sources": []}))
     cited_url = "https://example.com/official-announcement"
     payload = {"output": [
@@ -216,10 +217,10 @@ async def test_cited_primary_page_is_not_lost_behind_discovered_sources(monkeypa
                                                   model_dump=lambda: payload))
     tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
     result = await tools.web_search("current announcement")
-    assert len(result["sources"]) == 40
+    assert len(result["sources"]) == 1
     assert result["sources"][0]["url"] == cited_url
     assert tools.record(cited_url, "", "search_result").title == "Dated official announcement"
-    assert list(tools.sources.values())[0].url == cited_url
+    assert [source.url for source in tools.sources.values()] == [cited_url]
 
 
 @pytest.mark.asyncio
