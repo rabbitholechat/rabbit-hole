@@ -197,15 +197,11 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(progress.locator('.rabbit-loader')).toBeVisible()
   await expect(progress).toHaveCSS('color', 'rgb(114, 144, 123)')
   await expect(page.locator('.response-card')).toHaveClass(/is-generating/)
-  await expect(page.locator('.response-card .response-glass')).toBeVisible()
-  const pendingInformation = page.locator('.information-pending')
-  await expect(pendingInformation).toBeVisible()
-  await expect(pendingInformation).toContainText('생성 중')
+  await expect(page.locator('.response-card')).toHaveCSS('animation-name', 'response-grow')
+  await expect(page.locator('.information-card')).toHaveCount(0)
   await expect(page.locator('.response-card footer')).toHaveCount(0)
   finishStructure()
   await expect(progress).toHaveText('완료')
-  await expect(page.locator('.response-card .response-glass')).toHaveCount(0)
-  await expect(pendingInformation).toHaveCount(0)
   await expect(page.locator('.information-card')).toHaveCount(1)
   await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'content-arrive')
   await expect(page.locator('.react-flow__edge-content[data-id^="has_extract:"] .connection-reveal')).toHaveCSS('animation-name', 'edge-arrive')
@@ -1193,7 +1189,7 @@ test('digging rabbit accompanies list and selected conversation loading', async 
 })
 
 
-test('streaming responses reflect light and conversation edges animate only once', async ({ page }, testInfo) => {
+test('streaming responses grow into place and conversation edges animate only once', async ({ page }) => {
   await page.route('**/api/jobs/**', (route) => route.fulfill({ status: 204 }))
   await page.addInitScript(() => {
     const starts: Record<string, number> = {}
@@ -1209,7 +1205,7 @@ test('streaming responses reflect light and conversation edges animate only once
       if (input !== '/api/agent') return original(input, init)
       const request = JSON.parse(init!.body as string)
       const id = `response_${request.request_id}`
-      const text = '생성 중에도 문장은 선명하게 읽을 수 있습니다. 빛은 카드 안쪽으로만 지나갑니다.\n\n'.repeat(5)
+      const text = '생성 중에도 문장은 선명하게 읽을 수 있습니다.\n\n'.repeat(5)
       let accumulated = text
       let seq = 0
       return new Response(new ReadableStream({ start(controller) {
@@ -1221,12 +1217,12 @@ test('streaming responses reflect light and conversation edges animate only once
         emit('response_started', { id })
         emit('response_delta', { id, delta: text })
         Object.assign(window, {
-          growGlassResponse: () => {
-            const growth = '길어진 응답에서도 반사 효과는 카드 하단까지 이어져야 합니다.\n\n'.repeat(18) + '응답 확장 끝.'
+          growResponse: () => {
+            const growth = '길어진 응답도 같은 노드 안에서 계속 표시됩니다.\n\n'.repeat(18) + '응답 확장 끝.'
             accumulated += growth
             emit('response_delta', { id, delta: growth })
           },
-          finishGlassResponse: () => {
+          finishResponse: () => {
             emit('response_completed', { id, text: accumulated })
             emit('checkpoint', { continuation: 'signed' })
             emit('done', { status: 'completed', failed_parts: [] })
@@ -1237,39 +1233,32 @@ test('streaming responses reflect light and conversation edges animate only once
     }
   })
   await page.goto('/')
-  await page.getByRole('textbox', { name: '메시지 입력' }).fill('유리 반사 효과 확인')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('노드 확대 효과 확인')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   const card = page.locator('.response-card').first()
   await expect(card).toHaveClass(/is-generating/)
-  await expect(card.locator('.response-glass')).toBeVisible()
-  await expect(card.locator('.response-glass')).toHaveCSS('pointer-events', 'none')
-  await expect.poll(() => card.locator('.response-glass').evaluate((el) => getComputedStyle(el, '::before').animationName)).toBe('response-glass-light')
+  await expect(card.locator('.response-glass')).toHaveCount(0)
+  await expect(card).toHaveCSS('animation-name', 'response-grow')
+  expect(await card.evaluate((element) => {
+    const animation = element.getAnimations().find((item) => (item as CSSAnimation).animationName === 'response-grow')
+    return (animation?.effect as KeyframeEffect | null)?.getKeyframes().map((frame) => frame.transform)
+  })).toEqual(['scale(0.9)', 'scale(1)'])
   await expect(card.locator('.response-content')).toHaveCSS('filter', 'none')
   await expect(card).toHaveClass(/arrival-finished/)
   await expect(card).toHaveCSS('opacity', '1')
-  await page.evaluate(() => (window as unknown as { growGlassResponse: () => void }).growGlassResponse())
+  await page.evaluate(() => (window as unknown as { growResponse: () => void }).growResponse())
   await expect(card.locator('.response-content')).toContainText('응답 확장 끝.')
-  await expect.poll(() => card.evaluate((element) => {
-    const glass = element.querySelector('.response-glass')!.getBoundingClientRect()
-    const bounds = element.getBoundingClientRect()
-    return Math.abs(glass.bottom - bounds.bottom)
-  })).toBeLessThan(1.5)
-  await card.locator('.response-glass').evaluate((el) => {
-    const animation = el.getAnimations({ subtree: true }).find((animation) => (animation as CSSAnimation).animationName === 'response-glass-light')
-    if (animation) { animation.pause(); animation.currentTime = 2100 }
-  })
-  await page.screenshot({ path: testInfo.outputPath('streaming-glass.png') })
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await expect.poll(() => card.locator('.response-glass').evaluate((el) => getComputedStyle(el, '::before').animationName)).toBe('none')
+  await expect(card).toHaveCSS('animation-name', 'none')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
-  await page.evaluate(() => (window as unknown as { finishGlassResponse: () => void }).finishGlassResponse())
+  await page.evaluate(() => (window as unknown as { finishResponse: () => void }).finishResponse())
   await expect(card.locator('.response-glass')).toHaveCount(0)
   await expect(card).not.toHaveClass(/is-generating/)
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('두 번째 응답')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   const second = page.locator('.response-card').last()
   await expect(second).toHaveClass(/is-generating/)
-  await expect(card.locator('.response-glass')).toHaveCount(0)
+  await expect(second).toHaveCSS('animation-name', 'response-grow')
   const edge = page.locator('.react-flow__edge-conversation .react-flow__edge-path')
   await expect(edge).toHaveCSS('stroke', 'rgb(69, 140, 128)')
   await expect(edge).toHaveCSS('stroke-width', '2.6px')
@@ -1282,7 +1271,7 @@ test('streaming responses reflect light and conversation edges animate only once
   await page.getByRole('button', { name: '응답 중지' }).click()
   await expect(second.locator('.response-glass')).toHaveCount(0)
   await openHistory(page)
-  await page.getByRole('button', { name: '유리 반사 효과 확인', exact: true }).click()
+  await page.getByRole('button', { name: '노드 확대 효과 확인', exact: true }).click()
   await expect(page.locator('.canvas-loading')).toHaveCount(0)
   await expect(page.locator('.response-card')).toHaveCount(2)
   await expect(page.locator('.connection-reveal')).toHaveCount(0)

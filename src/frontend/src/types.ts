@@ -111,7 +111,6 @@ export type ContentGraph = {
 }
 export type InformationNode = Node<{
   entityId: string
-  pendingForResponseId?: string
   collapsed?: boolean
   expandedHeight?: number
 }, 'information'>

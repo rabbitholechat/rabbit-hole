@@ -6,7 +6,6 @@ import type {
   CanvasNode,
   ContentGraph,
   ContentRelation,
-  InformationNode,
   ResponseNode,
   Session,
   StructureResult,
@@ -19,7 +18,6 @@ import { cardReferences, validPresentation } from './information'
 export const emptyContentGraph = (): ContentGraph => ({ version: 1, entities: {}, relations: [], jobs: {} })
 export const responseById = (session: Session, id: string) =>
   session.nodes.find((n): n is ResponseNode => n.type === 'response' && n.id === id)
-export const pendingInformationId = (responseId: string) => `information_pending_${responseId}`
 export async function hashText(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
@@ -115,45 +113,6 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
     nodes.push({ id, type: entity.type, data: { entityId: id, ...(entity.type === 'source' ? { collapsed: true } : {}) }, position: { x, y }, width })
   }
   return nodes
-}
-
-// Structure output is not streamed, so a presentation-only node reserves the eventual information
-// position while the single structure request is running. It is never persisted in the session.
-export function pendingInformationNodes(session: Session): InformationNode[] {
-  const placed: CanvasNode[] = [...session.nodes]
-  const pending: InformationNode[] = []
-  for (const [responseId, job] of Object.entries(session.contentGraph?.jobs ?? {})) {
-    if (job.status !== 'running') continue
-    const response = responseById(session, responseId)
-    if (!response) continue
-    const id = pendingInformationId(responseId)
-    const width = 340
-    const height = 240
-    const x = response.position.x + (response.measured?.width ?? response.width ?? 560) + 88
-    let y = response.position.y
-    while (true) {
-      const collisions = placed.filter((node) =>
-        x < node.position.x + (node.measured?.width ?? node.width ?? 560) + 32 &&
-        x + width + 32 > node.position.x &&
-        y < node.position.y + estimatedHeight(session, node) + 32 &&
-        y + height + 32 > node.position.y)
-      if (!collisions.length) break
-      y = Math.max(...collisions.map((node) => node.position.y + estimatedHeight(session, node))) + 48
-    }
-    const node: InformationNode = {
-      id,
-      type: 'information',
-      data: { entityId: id, pendingForResponseId: responseId },
-      position: { x, y },
-      width,
-      height,
-      draggable: false,
-      selectable: false,
-    }
-    placed.push(node)
-    pending.push(node)
-  }
-  return pending
 }
 
 function mergeSource(kept: SourceEntity, incoming: SourceEntity): SourceEntity {

@@ -12,8 +12,6 @@ import {
   attachInformation,
   hashText,
   markdownLinks,
-  pendingInformationId,
-  pendingInformationNodes,
   validateStructure,
 } from '../src/lib/contentGraph'
 import type { ResponseNode, Session, StructureResult } from '../src/types'
@@ -88,28 +86,6 @@ beforeEach(() => {
   useStore.getState().newConversation()
   useStore.setState({ history: [], session: null })
   vi.restoreAllMocks()
-})
-
-it('shows a presentation-only information node while structure output is pending', () => {
-  const current = session()
-  current.contentGraph = {
-    version: 1,
-    entities: {},
-    relations: [],
-    jobs: { [response.id]: { status: 'running', attemptId: 'attempt' } },
-  }
-  const pending = pendingInformationNodes(current)
-  expect(pending).toHaveLength(1)
-  expect(pending[0]).toEqual(expect.objectContaining({
-    id: pendingInformationId(response.id),
-    type: 'information',
-    draggable: false,
-    selectable: false,
-    data: { entityId: pendingInformationId(response.id), pendingForResponseId: response.id },
-  }))
-  expect(current.nodes).toHaveLength(1)
-  current.contentGraph.jobs[response.id].status = 'completed'
-  expect(pendingInformationNodes(current)).toEqual([])
 })
 
 it('sources are page-level nodes with retrieval/citation edges and no relocation on replay', () => {

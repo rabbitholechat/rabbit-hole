@@ -63,12 +63,11 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
       <article
         className={`response-card ${isGenerating ? 'is-generating' : ''} ${arrivalFinished ? 'arrival-finished' : ''} ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
         onAnimationEnd={(event) => {
-          if (event.target === event.currentTarget && ['content-arrive', 'page-arrive'].includes(event.animationName)) setArrivalFinished(true)
+          if (event.target === event.currentTarget && ['content-arrive', 'page-arrive', 'response-grow'].includes(event.animationName)) setArrivalFinished(true)
         }}
         aria-label="에이전트 응답"
         aria-busy={data.status === 'streaming' || isStructuring || readingSources}
       >
-        {isGenerating && <div className="response-glass" aria-hidden="true" />}
         <header>
           <NodeTag kind="response" />
           <small className="response-status" data-status={status} role="status">

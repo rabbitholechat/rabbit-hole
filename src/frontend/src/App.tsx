@@ -31,7 +31,6 @@ import {
 } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 import { useStore } from './store'
-import { pendingInformationNodes } from './lib/contentGraph'
 import { RabbitLoader } from './components/RabbitLoader'
 import { RabbitIcon } from './components/RabbitIcon'
 import { HistoryLoading } from './components/HistoryLoading'
@@ -218,7 +217,7 @@ function Workspace() {
   )
   const nodes = useMemo(
     () =>
-      [...(session?.nodes ?? []), ...(session ? pendingInformationNodes(session) : [])].map((n): CanvasNode =>
+      (session?.nodes ?? []).map((n): CanvasNode =>
         n.type !== 'page'
           ? { ...n, selected: n.id === state.selected }
           : {
