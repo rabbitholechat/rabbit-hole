@@ -433,6 +433,21 @@
     "schemas": {
       "AgentRequest": {
         "properties": {
+          "requested_tool": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "web_search",
+                  "read_page"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Tool"
+          },
           "node_context": {
             "anyOf": [
               {

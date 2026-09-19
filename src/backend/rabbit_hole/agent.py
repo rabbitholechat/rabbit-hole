@@ -3,6 +3,7 @@
 import contextlib
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 from agents import Agent, ModelSettings, OpenAIResponsesModel, RunConfig, Runner, set_tracing_disabled
 from openai import AsyncOpenAI, LengthFinishReasonError
@@ -10,7 +11,7 @@ from pydantic import ValidationError
 
 from .config import Settings
 from .errors import StageFailure
-from .models import ConversationTurn
+from .models import ConversationTurn, RequestedTool
 from .structure import (
     StructureResult,
     card_selections_format,
@@ -184,9 +185,27 @@ class AgentService:
     async def enrich_sources(self, on_update=None):
         await self.toolkit.enrich_sources(on_update)
 
-    async def stream(self, conversation: list[ConversationTurn]) -> AsyncIterator[str]:
+    async def stream(self, conversation: list[ConversationTurn], *, requested_tool: RequestedTool | None = None) -> AsyncIterator[str]:
         # Recompute for every request, including after midnight; never persist a stale date in history.
         self.agent.instructions = INSTRUCTIONS + current_date_context()
+        # The SDK reserves "web_search" for its hosted tool choice. Use an unambiguous
+        # local function alias only for explicitly selected search requests.
+        selected_name = "selected_web_search" if requested_tool == "web_search" else requested_tool
+        self.agent.tools = [
+            replace(tool, name="selected_web_search") if requested_tool == "web_search" and tool.name == "web_search" else tool
+            for tool in self.toolkit.definitions()
+        ]
+        self.agent.model_settings.tool_choice = selected_name or "auto"
+        self.toolkit.attempted_tools.clear()
+        if requested_tool:
+            self.agent.instructions += (
+                f"\nFor this request the user explicitly selected {requested_tool}; its callable name is {selected_name}. "
+                "Use that callable wherever these instructions refer to the selected tool. Call it first "
+                "using the user's question (or an exact supplied URL for read_page), then answer from "
+                "its result. Other tools remain available as needed after that first attempt. "
+                "A failed tool attempt is not successful retrieval: explain the limitation without "
+                "inventing results. This selection applies only to this request."
+            )
         self.toolkit.user_request = next(
             (turn.content for turn in reversed(conversation) if turn.role == "user"), ""
         )
@@ -199,18 +218,31 @@ class AgentService:
         events = result.stream_events()
         completed = False
         answer_parts = []
+        pending_parts = []
         try:
             async for event in events:
+                if pending_parts and requested_tool in self.toolkit.attempted_tools:
+                    for part in pending_parts:
+                        answer_parts.append(part)
+                        yield part
+                    pending_parts.clear()
                 if event.type != "raw_response_event":
                     continue
                 data = event.data
                 if data.type in {"response.output_text.delta", "response.refusal.delta"}:
+                    if requested_tool and requested_tool not in self.toolkit.attempted_tools:
+                        # A model may emit a preface before its forced call. Hold it until the
+                        # function actually starts; never expose a skipped-tool answer.
+                        pending_parts.append(data.delta)
+                        continue
                     answer_parts.append(data.delta)
                     yield data.delta
                 elif data.type == "response.completed":
                     completed = data.response.status == "completed"
                 elif data.type in {"response.incomplete", "response.failed", "error"}:
                     raise StageFailure("response", "incomplete_response")
+            if requested_tool and requested_tool not in self.toolkit.attempted_tools:
+                raise StageFailure("response", "required_tool_not_used")
             if not completed:
                 raise StageFailure("response", "incomplete_response")
         finally:

@@ -92,6 +92,7 @@ def error_code(error: Exception) -> str:
 
 
 MESSAGES = {
+    "required_tool_not_used": "선택한 도구가 실행되지 않아 응답을 완료하지 못했습니다. 다시 시도해 주세요.",
     "timeout": "응답 시간이 초과되었습니다.",
     "connection_error": "모델 서비스에 연결하지 못했습니다.",
     "provider_auth_error": "모델 서비스의 API 키 또는 접근 권한을 확인하세요.",

@@ -2180,3 +2180,42 @@ svg {
 .information-presentation table { display: table; width: 100%; max-width: none; margin: 0; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .information-presentation th, .information-presentation td { min-width: 90px; padding: 10px 8px; border: 1px solid #e4dac0; vertical-align: top; text-align: left; }
 .information-presentation th { background: #f3ecd9; font-weight: 650; }
+
+/* Per-message tool selection shares the composer without moving the canvas. */
+.composer.has-tool { flex-wrap: wrap; }
+.composer-tools { position: relative; flex: 0 0 auto; }
+.composer-tool-trigger {
+  display: grid; place-items: center; width: 34px; height: 34px;
+  border: 0; border-radius: 10px; background: transparent; color: #798b82;
+}
+.composer-tool-trigger:hover, .composer-tool-trigger[aria-expanded="true"] { background: #edf4f0; color: #28775c; }
+.composer-tool-trigger.is-selected { color: #28775c; }
+.composer-tool-trigger:focus-visible, .composer-tool-menu button:focus-visible, .composer-tool-chip button:focus-visible {
+  outline: 2px solid #368c70; outline-offset: 2px;
+}
+.composer-tool-menu {
+  position: absolute; bottom: calc(100% + 18px); left: -8px; width: min(286px, calc(100vw - 64px));
+  padding: 8px; border: 1px solid #dce7e1; border-radius: 16px; background: #fff;
+  box-shadow: 0 10px 36px #253a2d20; z-index: 30;
+  max-height: min(390px, 65dvh); overflow-y: auto;
+}
+.composer-tool-menu > p { margin: 5px 9px 8px; font-size: 11px; color: #7a8981; }
+.composer-tool-menu > button {
+  display: flex; align-items: center; gap: 11px; width: 100%; padding: 11px 10px;
+  border: 0; border-radius: 9px; text-align: left; background: transparent; color: #416452;
+}
+.composer-tool-menu > button:hover:not(:disabled), .composer-tool-menu > button[aria-pressed="true"] { background: #eef7f1; }
+.composer-tool-menu > button > span { flex: 1; }
+.composer-tool-menu strong { display: block; font-size: 13px; font-weight: 550; }
+.composer-tool-menu small { display: block; font-size: 11px; color: #8a9890; margin-top: 2px; }
+.composer-tool-menu > button:disabled { opacity: .55; cursor: default; }
+.composer-tool-divider { height: 1px; margin: 6px 8px; background: #edf1ee; }
+.composer-tool-menu > .composer-tool-hint { margin-top: 10px; line-height: 1.5; }
+.composer-tool-slot { flex: 0 0 100%; min-width: 0; }
+.composer-tool-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 7px 4px 9px;
+  border: 1px solid #c5dfd1; border-radius: 999px; color: #28775c; background: #eff8f2; font-size: 12px;
+}
+.composer-tool-chip button { display: grid; place-items: center; background: transparent; border: 0; padding: 3px; border-radius: 50%; color: inherit; }
+.composer-tool-chip button:hover { background: #dceee3; }
+.composer-tool-trigger:disabled { opacity: .45; }

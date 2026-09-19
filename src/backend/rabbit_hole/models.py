@@ -17,7 +17,11 @@ class NodeContext(BaseModel):
     text: str = Field(min_length=1, max_length=12000)
 
 
+RequestedTool = Literal["web_search", "read_page"]
+
+
 class AgentRequest(BaseModel):
+    requested_tool: RequestedTool | None = None
     node_context: NodeContext | None = None
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=2000)

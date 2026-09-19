@@ -47,12 +47,21 @@ export type ToolSource = {
   page_image?: { thumbnail_url: string } | null
   content?: SourceContent | null
 }
+export type RequestedTool = 'web_search' | 'read_page'
+export type AgentRequest = {
+  query: string
+  request_id: string
+  continuation?: string
+  node_context?: NodeContext
+  requested_tool?: RequestedTool
+}
 export type ResponseNode = Node<
   {
     parentId?: string | null
     continuation?: string
     collapsed?: boolean
     prompt: string
+    requestedTool?: RequestedTool
     text: string
     toolSources?: ToolSource[]
     status: 'streaming' | 'completed' | 'partial' | 'failed' | 'cancelled'
@@ -161,6 +170,7 @@ export type Session = {
   titleRequested?: boolean
   lastParentId?: string | null
   lastQuery?: string
+  lastRequestedTool?: RequestedTool
   updatedAt: number
   mode: 'live' | 'sample'
   protocol?: 2

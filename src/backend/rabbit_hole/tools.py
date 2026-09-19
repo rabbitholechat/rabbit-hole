@@ -269,6 +269,7 @@ class AgentTools:
         self.settings = settings
         self.client = client
         self.user_request = ""
+        self.attempted_tools: set[str] = set()
         self.calls = 0
         self.searches = 0
         self.image_searches = 0
@@ -732,6 +733,7 @@ class AgentTools:
                     reference_date separately without rewriting query. Put the full reference date or a bounded recent
                     period in day-sensitive queries; do not use ranking or historical hits as latest evidence.
             """
+            self.attempted_tools.add("web_search")
             return await invoke(self.web_search, query, temporal_focus=temporal_focus)
 
         @function_tool(failure_error_function=safe_error)
@@ -741,6 +743,7 @@ class AgentTools:
             Args:
                 url: An exact URL from the user or search results; never guess a URL.
             """
+            self.attempted_tools.add("read_page")
             return await invoke(self.read_page, url)
 
         @function_tool(failure_error_function=safe_error)

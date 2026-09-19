@@ -93,8 +93,11 @@ async def test_sdk_incomplete_response_and_generator_close_cancel_runner(monkeyp
     result.cancel.assert_called_once()
 
 
-@pytest.mark.parametrize("tool_case", ["none", "calculator", "web_search", "search_failure"])
-async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
+@pytest.mark.parametrize("tool_case,requested_tool", [
+    ("none", None), ("calculator", None), ("web_search", None), ("search_failure", None),
+    ("web_search", "web_search"), ("search_failure", "web_search"), ("read_page", "read_page"),
+])
+async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case, requested_tool):
     """Exercise installed Agents + OpenAI SDK, without a paid/network request."""
     import json
 
@@ -102,6 +105,9 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
     from openai import AsyncOpenAI
 
     monkeypatch.setattr("rabbit_hole.tools.AgentTools.image_search", AsyncMock(return_value={"sources": []}))
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", AsyncMock(return_value={
+        "url": "https://example.com/current", "title": "Current page", "text": "Actual page text", "truncated": False,
+    }))
     captured = []
     message = {
         "id": "msg_test",
@@ -166,10 +172,13 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
             ]})
         batch = wire_events
         if tool_case != "none" and len(captured) == 1:
-            name = "calculator" if tool_case == "calculator" else "web_search"
-            arguments = '{"expression":"0.1 + 0.2"}' if name == "calculator" else '{"query":"current information"}'
+            name = tool_case if tool_case in {"calculator", "read_page"} else "web_search"
+            arguments = json.dumps({"calculator": {"expression": "0.1 + 0.2"},
+                                    "read_page": {"url": "https://example.com/current"},
+                                    "web_search": {"query": "current information"}}[name])
             call = {"id": "fc_test", "type": "function_call", "call_id": "call_calc",
-                    "name": name, "arguments": arguments, "status": "completed"}
+                    "name": "selected_web_search" if requested_tool == "web_search" else name,
+                    "arguments": arguments, "status": "completed"}
             batch = [
                 {"type": "response.created", "sequence_number": 0,
                  "response": {**response, "status": "in_progress", "output": []}},
@@ -183,6 +192,8 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
                 {"type": "response.completed", "sequence_number": 5,
                  "response": {**response, "output": [call]}},
             ]
+            if requested_tool:
+                batch.insert(1, {**wire_events[1], "delta": "자료를 확인할게요. "})
         payload = "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in batch)
         return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=payload)
 
@@ -194,12 +205,16 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
     monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: client)
     service = AgentService(Settings(_env_file=None, openai_api_key="test-only"))
     try:
-        assert [delta async for delta in service.stream([ConversationTurn(role="user", content="안녕")])] == [
-            "**응답**"
-        ]
+        assert [delta async for delta in service.stream([ConversationTurn(role="user", content="안녕")], requested_tool=requested_tool)] == (["자료를 확인할게요. "] if requested_tool else []) + ["**응답**"]
         main_calls = [c for c in captured if c.get("stream")]
         assert len(main_calls) == (1 if tool_case == "none" else 2)
-        assert len(captured) == {"none": 1, "calculator": 2, "web_search": 3, "search_failure": 3}[tool_case]
+        assert len(captured) == {"none": 1, "calculator": 2, "web_search": 3, "search_failure": 3, "read_page": 2}[tool_case]
+        assert main_calls[0]["tool_choice"] == (
+            {"type": "function", "name": "selected_web_search" if requested_tool == "web_search" else requested_tool} if requested_tool else "auto"
+        )
+        if requested_tool:
+            assert main_calls[1].get("tool_choice", "auto") == "auto"
+            assert requested_tool in service.toolkit.attempted_tools
         today = datetime.now(UTC).date().isoformat()
         for call in captured:
             instructions = call.get("instructions") or str(call["input"])
@@ -208,7 +223,7 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
             output = next(i for i in main_calls[1]["input"] if i.get("type") == "function_call_output")
             assert output["call_id"] == "call_calc"
             expected = {"calculator": "0.3", "web_search": "https://example.com/current",
-                        "search_failure": "tool_failed"}[tool_case]
+                        "search_failure": "tool_failed", "read_page": "Actual page text"}[tool_case]
             assert expected in str(output["output"])
             assert "PRIVATE" not in str(output["output"])
         if tool_case == "web_search":
@@ -240,7 +255,9 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
             assert service.sources == []
         assert captured[0]["stream"] is True
         assert captured[0]["store"] is False
-        assert [t["name"] for t in captured[0]["tools"]] == ["calculator", "web_search", "read_page", "image_search"]
+        assert [t["name"] for t in captured[0]["tools"]] == [
+            "calculator", "selected_web_search" if requested_tool == "web_search" else "web_search", "read_page", "image_search",
+        ]
         assert captured[0]["parallel_tool_calls"] is False
         assert captured[0]["max_output_tokens"] == 4000
     finally:
@@ -296,4 +313,19 @@ async def test_title_uses_independent_model_and_rejects_incomplete_output(monkey
     create.return_value = SimpleNamespace(status="incomplete", output_text="partial")
     with pytest.raises(StageFailure):
         await service.title(turns)
+    await service.close()
+
+
+@pytest.mark.parametrize("requested_tool", ["web_search", "read_page"])
+async def test_selected_tool_cannot_be_skipped_before_public_text(monkeypatch, requested_tool):
+    monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(close=AsyncMock()))
+    result = StreamResult([event("response.output_text.delta", delta="도구 없이 생성한 답변")])
+    monkeypatch.setattr("rabbit_hole.agent.Runner.run_streamed", Mock(return_value=result))
+    service = AgentService(Settings(_env_file=None, openai_api_key="fake"))
+    chunks = []
+    with pytest.raises(StageFailure, match="required_tool_not_used"):
+        async for chunk in service.stream([ConversationTurn(role="user", content="질문")], requested_tool=requested_tool):
+            chunks.append(chunk)
+    assert chunks == []
+    result.cancel.assert_called_once()
     await service.close()

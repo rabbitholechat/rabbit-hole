@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import secrets
 import time
 from collections import defaultdict, deque
@@ -111,6 +112,10 @@ def create_app(settings: Settings | None = None, service_factory=AgentService, h
         },
     )
     async def respond(body: AgentRequest, request: Request):
+        if body.requested_tool == "read_page" and not re.search(
+            r"https?://[^\s<>]+", body.query + (body.node_context.text if body.node_context else "")
+        ):
+            raise HTTPException(422, "URL 접근을 사용하려면 질문에 http:// 또는 https:// 주소를 넣어 주세요.")
         conversation = []
         if body.continuation:
             try:
@@ -175,7 +180,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService, h
                 )
                 async with asyncio.timeout(settings.job_timeout_seconds):
                     service = service_factory(settings)
-                    async with contextlib.aclosing(service.stream(inputs)) as deltas:
+                    async with contextlib.aclosing(service.stream(inputs, requested_tool=body.requested_tool)) as deltas:
                         async for delta in deltas:
                             if not delta:
                                 continue

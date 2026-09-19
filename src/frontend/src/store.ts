@@ -1,7 +1,7 @@
 import { nodeContext } from './lib/nodeActions'
 import { create } from 'zustand'
 import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
-import type { CanvasNode, Envelope, Session, ResponseNode } from './types'
+import type { CanvasNode, Envelope, Session, ResponseNode, RequestedTool, AgentRequest } from './types'
 import { deleteSession, loadSession, loadSessions, saveSession } from './lib/db'
 import { consumeSSE } from './lib/sse'
 import { parseToolSources } from './lib/toolSources'
@@ -53,6 +53,8 @@ interface State {
   loadingSessionId: string | null
   failedSessionId: string | null
   input: string
+  requestedTool: RequestedTool | null
+  setRequestedTool: (tool: RequestedTool | null) => void
   selected: string | null
   selectedEdge: number | null
   activeRequest: string | null
@@ -350,13 +352,15 @@ export const useStore = create<State>((set, get) => ({
     return initialization
   },
   setInput: (input) => set({ input }),
+  requestedTool: null,
+  setRequestedTool: (requestedTool) => set({ requestedTool }),
   newConversation: () => {
     historyController?.abort()
     historyController = undefined
     set({ loadingSessionId: null, failedSessionId: null })
     cancelSessionStructures()
     get().stop()
-    set({ session: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
+    set({ session: null, requestedTool: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
   },
   open: async (id) => {
     if (get().loadingSessionId === id) return
@@ -373,7 +377,7 @@ export const useStore = create<State>((set, get) => ({
       set((state) => ({
         session,
         history: [session, ...state.history.filter((item) => item.id !== id)].sort((a, b) => b.updatedAt - a.updatedAt),
-        input: '', error: null, replyTo: null, serverError: false,
+        input: '', requestedTool: null, error: null, replyTo: null, serverError: false,
       }))
     } catch {
       if (!abort.signal.aborted) set({ serverError: true, failedSessionId: id })
@@ -453,6 +457,11 @@ export const useStore = create<State>((set, get) => ({
     }
     const session = reusable ? { ...before.session! } : emptySession(query)
     const context = options.retry ? session.lastNodeContext : nodeContext(before.session, before.replyTo)
+    const requestedTool = options.retry ? session.lastRequestedTool : before.requestedTool ?? undefined
+    if (requestedTool === 'read_page' && !/https?:\/\/[^\s<>]+/.test(query + (context?.text ?? ''))) {
+      set({ error: 'URL 접근을 사용하려면 질문에 http:// 또는 https:// 주소를 넣어 주세요.' })
+      return
+    }
     const parentId = options.retry
       ? session.lastParentId
       : (before.replyTo ??
@@ -471,6 +480,7 @@ export const useStore = create<State>((set, get) => ({
 
     session.lastNodeContext = context
     session.lastQuery = query
+    session.lastRequestedTool = requestedTool
     session.status = 'running'
     session.updatedAt = Date.now()
     session.failedParts = []
@@ -491,6 +501,7 @@ export const useStore = create<State>((set, get) => ({
       selected: null,
       selectedEdge: null,
       input: '',
+      requestedTool: null,
     })
     try {
       const response = await fetch('/api/agent', {
@@ -502,7 +513,8 @@ export const useStore = create<State>((set, get) => ({
           node_context: context,
           request_id: requestId,
           continuation: reusable ? continuation : undefined,
-        }),
+          requested_tool: requestedTool,
+        } satisfies AgentRequest),
       })
       await consumeSSE(response, get().receive, abort.signal)
     } catch {
@@ -568,6 +580,7 @@ export const useStore = create<State>((set, get) => ({
           data: {
             parentId: state.pendingParentId,
             prompt: state.pendingQuery,
+            requestedTool: session.lastRequestedTool,
             text: '',
             status: 'streaming',
           },

@@ -21,7 +21,7 @@ class FakeService:
     def __init__(self, settings):
         pass
 
-    async def stream(self, conversation):
+    async def stream(self, conversation, *, requested_tool=None):
         self.inputs.append(conversation)
         yield "안녕하세요. **"
         yield "응답**입니다."
@@ -126,7 +126,7 @@ def test_body_limit():
 @pytest.mark.parametrize("partial", [False, True])
 def test_partial_failure_preserves_text_but_does_not_commit_unfinished_turn(caplog, failure_kind, partial):
     class FailingService(FakeService):
-        async def stream(self, conversation):
+        async def stream(self, conversation, *, requested_tool=None):
             if partial:
                 yield "받은 내용"
             if failure_kind == "provider_error":
@@ -168,7 +168,7 @@ def test_partial_failure_preserves_text_but_does_not_commit_unfinished_turn(capl
 
 def test_timeout_and_empty_response():
     class Slow(FakeService):
-        async def stream(self, conversation):
+        async def stream(self, conversation, *, requested_tool=None):
             await asyncio.sleep(5)
             yield "too late"
 
@@ -178,7 +178,7 @@ def test_timeout_and_empty_response():
     assert next(e["data"]["code"] for e in data if e["type"] == "part_error") == "timeout"
 
     class Empty(FakeService):
-        async def stream(self, conversation):
+        async def stream(self, conversation, *, requested_tool=None):
             yield ""
 
     data = events(TestClient(create_app(settings(), Empty)).post("/api/agent", json=body()))
@@ -190,7 +190,7 @@ def test_output_limit_context_budget_and_expiry():
     from rabbit_hole.app import trim_context
 
     class Long(FakeService):
-        async def stream(self, conversation):
+        async def stream(self, conversation, *, requested_tool=None):
             yield "first"
             yield "x" * 64000
 
@@ -213,7 +213,7 @@ async def test_disconnect_cancels_work_and_closes_service():
     closed, sent, blocked = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
     class Slow(FakeService):
-        async def stream(self, conversation):
+        async def stream(self, conversation, *, requested_tool=None):
             yield "first"
             await blocked.wait()
             raise AssertionError("work continued")
@@ -313,7 +313,7 @@ def test_branch_uses_selected_signed_response_context():
 def test_selected_node_context_is_explicit_user_data_in_signed_conversation(kind):
     seen = []
     class ContextService(FakeService):
-        async def stream(self, conversation):
+        async def stream(self, conversation, *, requested_tool=None):
             seen.extend(conversation)
             yield "선택한 자료에 대한 답변"
     context = {"node_id": "node_test", "kind": kind, "title": "개념", "text": "대상과 연결된 정보 내용"}
@@ -429,3 +429,33 @@ def test_summarized_page_image_sse_contract():
     assert snapshots[-1]["page_image"] == {"thumbnail_url": "https://example.com/photo.jpg"}
     assert snapshots[-1]["content"]["summary"] == "페이지 요약"
     assert snapshots[-1]["image"] is None
+
+
+@pytest.mark.parametrize("requested_tool,query", [
+    (None, "일반 질문"), ("web_search", "웹에서 찾아줘"), ("read_page", "https://example.com 내용을 정리해줘"),
+])
+def test_requested_tool_contract_is_request_scoped(requested_tool, query):
+    selected = []
+
+    class SelectedService(FakeService):
+        async def stream(self, conversation, *, requested_tool=None):
+            selected.append(requested_tool)
+            yield "답변"
+
+    client = TestClient(create_app(settings(), SelectedService))
+    response = client.post("/api/agent", json=body(query=query, requested_tool=requested_tool))
+    assert response.status_code == 200
+    token = [e["data"]["continuation"] for e in events(response) if e["type"] == "checkpoint"][-1]
+    client.post("/api/agent", json=body(query="다음 질문", continuation=token))
+    assert selected == [requested_tool, None]
+
+
+@pytest.mark.parametrize("requested_tool,query", [
+    ("read_page", "주소 없는 질문"), ("read_page", "file:///etc/passwd"),
+    ("image", "질문"), ("calculator", "질문"), (["web_search", "read_page"], "질문"),
+])
+def test_invalid_tool_selection_rejected_without_model_call(requested_tool, query):
+    client = TestClient(create_app(settings(), FakeService))
+    count = len(FakeService.inputs)
+    assert client.post("/api/agent", json=body(query=query, requested_tool=requested_tool)).status_code == 422
+    assert len(FakeService.inputs) == count

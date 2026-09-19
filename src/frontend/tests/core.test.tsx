@@ -434,3 +434,37 @@ it('clears the content loader on failure and retries the selected record', async
   expect(useStore.getState().failedSessionId).toBeNull()
   get.mockRestore()
 })
+
+it('sends tool selection once, preserves it on retry, and resets new messages to auto', async () => {
+  useStore.getState().newConversation()
+  useStore.getState().setInput('웹에서 찾아줘')
+  useStore.getState().setRequestedTool('web_search')
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 503 }))
+  try {
+    await useStore.getState().run()
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string).requested_tool).toBe('web_search')
+    expect(useStore.getState().requestedTool).toBeNull()
+    useStore.getState().setRequestedTool('read_page')
+    await useStore.getState().run({ retry: true })
+    expect(JSON.parse(fetchMock.mock.calls[1][1]!.body as string).requested_tool).toBe('web_search')
+    useStore.getState().setInput('다음 질문')
+    await useStore.getState().run()
+    expect(JSON.parse(fetchMock.mock.calls[2][1]!.body as string).requested_tool).toBeUndefined()
+  } finally { fetchMock.mockRestore() }
+})
+
+it('keeps URL mode and the draft when a target URL is missing without issuing a request', async () => {
+  useStore.getState().newConversation()
+  useStore.getState().setInput('요약해줘')
+  useStore.getState().setRequestedTool('read_page')
+  const fetchMock = vi.spyOn(globalThis, 'fetch')
+  try {
+    await useStore.getState().run()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(useStore.getState().input).toBe('요약해줘')
+    expect(useStore.getState().requestedTool).toBe('read_page')
+    expect(useStore.getState().error).toContain('주소를 넣어')
+    useStore.getState().newConversation()
+    expect(useStore.getState().requestedTool).toBeNull()
+  } finally { fetchMock.mockRestore() }
+})

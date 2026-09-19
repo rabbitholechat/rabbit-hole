@@ -22,7 +22,6 @@ import {
   Maximize,
   Minus,
   Plus,
-  MessageCircle,
   MessageCirclePlus,
   Square,
   Trash2,
@@ -45,6 +44,7 @@ import { ResponseTimer } from './components/ResponseTimer'
 import { ContentCard } from './components/ContentCard'
 import { EntityCard } from './components/EntityCard'
 import { ContentEdge } from './components/ContentEdge'
+import { ComposerTools } from './components/ComposerTools'
 import { Button } from './components/ui/button'
 import { NODE_ACCENTS, nodeAccent } from './lib/nodeAppearance'
 import { canvasBounds } from './lib/canvasBounds'
@@ -687,7 +687,7 @@ function Workspace() {
           <Plus />
         </Button>
       </nav>}
-        <form className={`composer panel ${state.replyTo ? 'has-reply' : ''}`} onSubmit={submit}>
+        <form className={`composer panel ${state.replyTo ? 'has-reply' : ''} ${state.requestedTool ? 'has-tool' : ''}`} onSubmit={submit}>
           {state.replyTo && (
             <div className="reply-slot">
               <div className="reply-context" aria-label="이어서 질문할 응답">
@@ -711,13 +711,15 @@ function Workspace() {
               </div>
             </div>
           )}
-          <MessageCircle size={21} />
+          <ComposerTools selected={state.requestedTool} onSelect={state.setRequestedTool}
+            disabled={busy} focusInput={() => inputRef.current?.focus()} />
           <textarea
             ref={inputRef}
             rows={1}
             aria-label="메시지 입력"
             placeholder={
-              session?.protocol === 2 ? '이어서 질문하거나 다음 작업을 요청하세요' : '무엇이 궁금한가요?'
+              state.requestedTool === 'read_page' ? 'URL과 궁금한 내용을 입력하세요' :
+                session?.protocol === 2 ? '이어서 질문하거나 다음 작업을 요청하세요' : '무엇이 궁금한가요?'
             }
             value={state.input}
             maxLength={2000}

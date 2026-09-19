@@ -3,7 +3,7 @@
 동일 origin `/api`, JSON 본문 상한 2,100,000바이트, continuation 최대 2,000,000자.
 
 - `GET /api/health`: status, configured, api_version=2. 비밀값 없음.
-- `POST /api/agent`: query(공백 제외 1..2000자), request_id(UUID), continuation(선택). 추가 필드 거부.
+- `POST /api/agent`: query(공백 제외 1..2000자), request_id(UUID), continuation(선택), node_context(선택), requested_tool(선택: web_search/read_page/null). 추가 필드 거부.
 - `DELETE /api/jobs/{job_id}`: started의 access_token을 Bearer 헤더로 전달. 주 취소 경로는 fetch AbortController/연결 종료. 다른 서버 인스턴스의 작업은 404.
 
 ```json
@@ -35,6 +35,18 @@ SSE envelope: `{version:2, request_id, job_id, seq, type, data}`. `id: seq`, `ev
 에이전트 응답 1개 = 응답 태그·아이콘을 가진 캔버스 노드 1개. 높이는 Markdown 내용에 맞춰 증가합니다. 이어지는 응답은 오른쪽에 배치하고 클라이언트에서 대화 순서 화살표로 연결합니다. 이는 내용 근거 관계가 아닙니다. 완료 후 아래의 독립 구조화 요청으로 정보 노드를 추가합니다. 근거 검증·의미 관계 생성 호출은 없습니다. SDK의 공개 output_text/refusal delta와 제한된 조회 메타데이터만 전달하고 내부 추론·도구 인자·원시 도구 이벤트는 전달하지 않습니다. 출처 카드에는 아래 한도 내에서 실제 읽은 페이지 본문을 전달합니다.
 
 ## 에이전트 도구
+
+채팅 바 왼쪽 `+` 메뉴에서 웹 검색 또는 URL 접근을 질문마다 하나 선택할 수 있습니다. 선택하지 않거나 null이면 기존 자동 도구 선택을 유지합니다. 선택은 입력창 칩으로 표시하고 해제할 수 있으며, 전송 후 다음 질문은 자동 선택으로 돌아갑니다. 실패/중지 후 재시도는 해당 질문의 선택을 유지합니다. 새 대화·기록 열기는 입력창 선택을 초기화하며 저장된 기록을 열기만 해서는 도구를 호출하지 않습니다. 파일/이미지 첨부는 현재 준비 중인 비활성 메뉴이며 업로드 요청을 보내지 않습니다.
+
+`requested_tool`은 이번 요청의 SDK `ModelSettings.tool_choice`에 함수 이름으로 전달합니다. SDK가 web_search를 호스팅 도구 이름으로 해석하므로 명시적 웹 검색 요청에만 동일한 로컬 함수의 selected_web_search 별칭을 사용합니다. 공개 API 값은 web_search로 유지합니다. 첫 모델 턴에는 해당 함수 호출을 강제하고 SDK 기본 `reset_tool_choice=True`로 이후 턴은 자동 선택으로 복귀합니다. 일반 에이전트의 다른 도구도 유지하며 도구/검색/시간 예산, 취소, URL 안전 검사를 우회하지 않습니다. 선택한 도구의 실제 함수 진입을 추적하고 실행 전 공개 텍스트는 버퍼에 보관하고 함수 진입 후에만 전달합니다. 호출 없이 종료되면 해당 텍스트를 공개하지 않고 `required_tool_not_used`로 실패 처리합니다. 함수 호출 실패는 성공한 조회가 아니며 모델에 안전한 실패 코드로 전달하여 한계를 설명합니다. 모델/API 자체 실패 또는 취소 시 실행 성공을 보장하지 않습니다.
+
+URL 접근 선택 시 이번 query 또는 node_context.text에 `http://`/`https://` 주소가 있어야 하며 누락하면 프런트 전송 전 안내, 직접 API 요청은 422입니다. 실제 URL 접근은 기존 `read_page`의 URL·DNS·리디렉션·용량 검사에 따릅니다. 선택 때문에 URL을 생성하거나 주소 없는 질문을 검색으로 대체하지 않습니다.
+
+```json
+{"query":"https://example.com/report 내용을 정리해줘","request_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","requested_tool":"read_page"}
+```
+
+프런트 `AgentRequest.requested_tool`과 백엔드 `AgentRequest.requested_tool`의 허용값은 같습니다. 기록의 `Session.lastRequestedTool`과 `ResponseNode.data.requestedTool`은 선택적인 재시도/표시 메타데이터입니다. 기존 기록에 없으면 자동 선택으로 취급합니다. 도구 선택은 서명 continuation의 대화 원문에 삽입하지 않으므로 다음 질문에 강제 선택이 누적되지 않습니다. SSE envelope는 변경하지 않습니다.
 
 성공한 검색의 관련 정보를 일반 응답 본문에서 종합하며 링크 목록이나 후속 조사 제안으로 대체하지 않습니다. 요청에 맞는 범위·깊이로 주요 내용과 날짜를 설명하고 주장 가까이에 출처 링크를 둡니다. 관련 검색 요약은 보도에 근거한 설명으로 사용할 수 있으나 공식 확인·본문 인용·사실 검증으로 표시하지 않습니다. 공식 페이지 미조회만으로 확보한 정보를 생략하지 않고, 중요한 모호함·충돌·누락이 있으면 남은 예산 내에서 관련 페이지 조회 또는 재검색을 수행합니다. 기사 게시일·발표일·실제 발매/출시일을 구분하며 불확실성은 해당 항목에 표시합니다. 응답 이후 출처 보강은 이미 답변에 사용한 본문 조회로 취급하지 않습니다.
 
