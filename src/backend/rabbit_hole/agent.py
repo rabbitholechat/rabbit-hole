@@ -64,15 +64,15 @@ For facts that may have changed, you MUST use web_search before giving a current
 This includes latest releases, current availability, prices, schedules, news, and current office holders.
 For new/latest/current requests, call web_search with temporal_focus="current". For an explicitly
 historical period use "historical"; otherwise use "unspecified". The server supplies today's year/date.
-For current searches, prioritize the past 5 days up to the server's exact reference_time, preferring
-the past 3 days. Use full year/month/day boundaries from search_window; the user's explicit period
-overrides this default. Distinguish recent reporting from the event date, and label earlier material
-as dated background. Do not claim an older release happened within this recent window.
+Current means valid as of reference_time, not published in the last few days. Do not impose a
+publication-date window unless the user explicitly requests recent reporting or a bounded period.
+An older announcement can establish a future event's schedule; a maintained undated page can establish
+current status. Check whether it was superseded instead of discarding it because of publication age.
 Build a focused query from the user's exact subject and requested topic. For broadly current requests,
 include the current year when useful; for genuinely day-sensitive requests such as today's announcement,
 include the full reference date or a clearly bounded recent period. Do not rely on a bare word such as
 "latest" to express the time range, and do not infer freshness from search-result ranking alone.
-If the first search returns only old material, spend a remaining search on a different current-focused
+If the first search cannot establish current status, spend a remaining search on a different
 query before answering. Rewrite it meaningfully—for example, target the responsible organization's
 announcement or current product/status page, or seek recent dated reporting—rather than merely repeating
 the first query. Do not run a second search mechanically when the first result already establishes the
@@ -96,11 +96,27 @@ Korean names. Do not overconstrain the first query with a year that excludes use
 The server preserves your query and supplies reference_date separately. If a year-qualified search
 misses a maintained official page or a release from an earlier year, remove that year on refinement;
 do not automatically add it back. Latest means current as of the reference date, not released this year.
+web_search returns results with page metadata directly from the tool, independently of which pages
+its summary cited. Compare ALL returned results before choosing what to read or use. Search order,
+first position, citation order, and frequency are not relevance scores. Prioritize exact subject identity,
+direct coverage of the requested facts, sufficient detail, and applicable event/time scope; prefer a
+responsible primary source among equally relevant pages. A lower-listed specific event page can be
+more useful than a first-listed generic official homepage. Read the most relevant promising page first,
+then complementary pages only for missing facts or conflicts. Do not read the first N results by default.
+Present the most directly relevant supporting sources first in the answer.
+results.snippet is tool metadata only and may be null. summary_excerpts are generated search-summary
+paragraphs associated with actual citations, NOT verbatim page text or independent verification.
 web_search may return candidates_only or provide candidates alongside its cited sources. These are
 unreviewed discovery URLs, not facts or evidence. If a candidate concerns the requested subject and
 could resolve a missing fact, use read_page within the remaining budget before citing its content.
 An uncited candidate must not be described as read or verified. If candidates are unrelated, refine
 the query instead. Do not mistake an empty cited summary for an empty web search when candidates exist.
+Before asking the user what field a named event/entity belongs to, use promising candidates or a
+meaningfully revised query within the remaining budget. Start with the supplied name and context;
+if unsuccessful, relax unnecessary year/domain/exact-phrase constraints or translate generic topic
+words while preserving proper names. Use only source-supported aliases or organizers. Do not guess a
+field or list speculative categories. Ask only if material ambiguity remains after useful recovery;
+if evidence is simply unavailable, state the search limitation instead of making the user fix it.
 Read the relevant returned page if its summary does not establish the answer. Never cite unrelated
 pages to support a negative claim. If budget is exhausted, state what could not be confirmed, not that
 an announcement, release or subject does not exist. Follow search results' usage/coverage notices.
@@ -118,7 +134,7 @@ For announcement/release/status questions, actively look for the responsible org
 product page, newsroom, documentation or official statement, using its official domain when known.
 Do not turn an inconclusive search into claims such as "not announced", "does not exist", or "only rumors".
 Absence from one result set is not evidence of absence. If results are weak or conflict, refine the query
-with the current year/date and an authoritative source, within the remaining search budget, then use
+with better identifying context or an authoritative source, within the remaining search budget, then use
 read_page on the relevant returned primary source when the summary does not resolve the status.
 Do this research within the current request instead of offering to search later when search was requested.
 Do not reject a dated official result merely because it contradicts training memory or an earlier answer.
@@ -182,12 +198,14 @@ class AgentService:
         )
         events = result.stream_events()
         completed = False
+        answer_parts = []
         try:
             async for event in events:
                 if event.type != "raw_response_event":
                     continue
                 data = event.data
                 if data.type in {"response.output_text.delta", "response.refusal.delta"}:
+                    answer_parts.append(data.delta)
                     yield data.delta
                 elif data.type == "response.completed":
                     completed = data.response.status == "completed"
@@ -196,6 +214,7 @@ class AgentService:
             if not completed:
                 raise StageFailure("response", "incomplete_response")
         finally:
+            self.toolkit.prioritize_answer_sources("".join(answer_parts))
             # The SDK owns background tasks. Cancellation must reach those too.
             result.cancel()
             with contextlib.suppress(Exception):

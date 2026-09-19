@@ -6,6 +6,7 @@ import hashlib
 import ipaddress
 import json
 import logging
+import re
 import socket
 import time
 import zlib
@@ -299,6 +300,18 @@ class AgentTools:
         self.consume()
         return {"result": calculate(expression), "precision": 40}
 
+    def prioritize_answer_sources(self, answer: str):
+        """Keep actual retrieved URLs used in the answer ahead of unused search citations.
+
+        This is display selection, not a semantic relevance score or a citation relation.
+        Generated URLs cannot create sources; path/query prefixes do not match another page.
+        """
+        def position(source):
+            match = re.search(re.escape(source.url) + r"(?=$|[\s<>\"'\]\)#])", answer)
+            return match.start() if match else len(answer) + 1
+
+        self.sources = dict(sorted(self.sources.items(), key=lambda item: position(item[1])))
+
     def displayed_sources(self):
         values = list(self.sources.values())
         images = [s for s in values if s.image]
@@ -318,12 +331,6 @@ class AgentTools:
         reference_time = datetime.now(UTC).astimezone(timezone(timedelta(hours=9)))
         reference_date = reference_time.date().isoformat()
         search_window = None
-        if temporal_focus == "current":
-            search_window = {
-                "since": (reference_time - timedelta(days=5)).isoformat(timespec="seconds"),
-                "prefer_since": (reference_time - timedelta(days=3)).isoformat(timespec="seconds"),
-                "until": reference_time.isoformat(timespec="seconds"),
-            }
         # Keep time context separate: forcing this year's token can hide evergreen official pages
         # or the previous year's announcement that is still the latest release.
         async with asyncio.timeout(self.settings.tool_timeout_seconds):
@@ -340,12 +347,12 @@ class AgentTools:
                 "not a mandatory query token or publication-year filter. Latest can be an earlier year's "
                 "release still listed on a current official product/status page. An undated maintained "
                 "official page can establish current status without establishing an announcement date. "
-                "For current focus, prioritize search_window: the past 5 days through the exact reference_time, "
-                "preferring the past 3 days. Express that full year/month/day interval in the actual search. "
-                "Use the user's explicit time range if one is given. Compare source publication and event "
-                "timestamps to this window; do not treat a future time, recent crawl or undated result as "
-                "a recent announcement. If no in-window evidence resolves the question, report the gap and "
-                "label any earlier announcement as dated background; never pretend it occurred in this window. "
+                "Current means valid as of reference_time, not published within a recent window. "
+                "search_window is null: do not impose a publication-date restriction unless the user "
+                "explicitly requests recent reporting or a bounded period. Honor that requested period "
+                "in the query, distinguishing publication dates from event dates. Older announcements "
+                "can establish future schedules and maintained pages can establish current status; "
+                "check for superseding evidence instead of rejecting them due to age alone. "
                 "For a genuinely day-sensitive request, make the search reflect the full reference_date "
                 "or the user's explicit recent period; a bare word such as latest is not a date boundary. "
                 "Search ranking is not proof of freshness. Compare explicit publication/update dates and "
@@ -369,6 +376,12 @@ class AgentTools:
                 "Supply the relevant concrete details needed to answer user_request, not just article titles "
                 "or offers to provide details later. Match its requested scope and depth; do not omit useful "
                 "supported details solely because the retrieved source is reporting rather than official. "
+                "Compare all available results by subject identity, direct coverage of requested facts, "
+                "detail sufficiency and applicable event/time scope, not their search rank or order. "
+                "Prefer primary sources among equally relevant pages; a specific relevant page outranks "
+                "a generic official homepage. Present the most relevant evidence first. Keep each "
+                "source's useful facts in its own short paragraph with its citation, so the caller can "
+                "compare pages without confusing generated summary text with actual page text. "
                 "Cite only pages that directly support the requested answer. Never cite tangential search "
                 "results or add citations merely to fill a source count. "
                 "Attribute reported claims, and never represent a search summary as a verified page quote. "
@@ -398,12 +411,32 @@ class AgentTools:
         found: dict[str, ToolSource] = {}
         cited = []
         discovered = []
+        excerpts: dict[str, list[str]] = {}
         for item in payload.get("output", []):
             if item.get("type") == "web_search_call" and item.get("status") == "completed":
                 discovered.extend((item.get("action") or {}).get("sources") or [])
             if item.get("type") == "message":
                 for content in item.get("content", []):
-                    cited.extend(a for a in content.get("annotations", []) if a.get("type") == "url_citation")
+                    annotations = [a for a in content.get("annotations", []) if a.get("type") == "url_citation"]
+                    cited.extend(annotations)
+                    # Preserve citation-associated generated text; never manufacture a page snippet.
+                    body = content.get("text", "")
+                    for annotation in annotations:
+                        start, end = annotation.get("start_index"), annotation.get("end_index")
+                        if (not isinstance(body, str) or not isinstance(start, int) or not isinstance(end, int)
+                                or not 0 <= start < end <= len(body)):
+                            continue
+                        url = annotation.get("url")
+                        if not isinstance(url, str):
+                            continue
+                        try:
+                            url = str(public_url(url))
+                        except ToolFailure:
+                            continue
+                        paragraph = body[body.rfind("\n", 0, start) + 1:end][:2000]
+                        bucket = excerpts.setdefault(url, [])
+                        if paragraph and paragraph not in bucket and len(bucket) < 3:
+                            bucket.append(paragraph)
         # Raw discovery candidates can be unrelated to the answer. Only citations selected into the
         # search summary are eligible for public source nodes.
         for item in cited[:40]:
@@ -414,24 +447,33 @@ class AgentTools:
             except ToolFailure:
                 continue
             found[source.id] = source
-        # Discovery metadata is a navigation aid for the main agent, never a public source or
-        # factual summary. A candidate becomes a source only after a successful read_page call.
-        candidates = {}
-        cited_urls = {source.url for source in found.values()}
-        for item in discovered:
+        # Pass through discovery metadata even when the summary omitted a page. Its order is not
+        # a relevance judgment. Citation metadata can supply a missing title, never a raw snippet.
+        results = {}
+        cited_sources = {source.url: source for source in found.values()}
+        for item in [*discovered, *cited]:
             if not isinstance(item, dict) or not isinstance(item.get("url"), str) or len(item["url"]) > 2048:
                 continue
             try:
                 url = str(public_url(item["url"]))
             except ToolFailure:
                 continue
-            if url in cited_urls or url in candidates:
-                continue
-            title = item.get("title")
-            candidates[url] = {"url": url, "title": title[:500] if isinstance(title, str) else "",
-                               "content_origin": "discovery_metadata", "verification": "unverified"}
-            if len(candidates) == 20:
-                break
+            if url not in results:
+                if len(results) >= 40:
+                    continue
+                results[url] = {"url": url, "title": "", "snippet": None,
+                                "content_origin": "citation_metadata" if item.get("type") == "url_citation" else "discovery_metadata",
+                                "verification": "unverified", "cited_in_summary": url in cited_sources,
+                                "summary_excerpts": excerpts.get(url, [])}
+            entry = results[url]
+            if isinstance(item.get("title"), str) and item["title"]:
+                entry["title"] = item["title"][:500]
+            # url_citation text/summary is not a provider snippet.
+            if item.get("type") != "url_citation" and isinstance(item.get("snippet"), str):
+                entry["snippet"] = item["snippet"][:2000]
+            if url in cited_sources and not entry["title"]:
+                entry["title"] = cited_sources[url].title
+        candidates = [entry for url, entry in results.items() if url not in cited_sources][:20]
         coverage = {
             "reference_date": reference_date,
             "reference_time": reference_time.isoformat(timespec="seconds"),
@@ -439,15 +481,20 @@ class AgentTools:
             "temporal_focus": temporal_focus,
             "remaining_searches": max(0, self.settings.max_web_searches - self.searches),
             "remaining_tool_calls": max(0, self.settings.max_tool_calls - self.calls),
-            "candidates": list(candidates.values()),
+            "results": list(results.values()),
+            "candidates": candidates,
             "usage_notice": "sources were cited by the search summary, but are not verified evidence. "
             "candidates are unreviewed discovery URLs, not facts, citations or public source nodes. "
+            "Compare all results by subject identity, requested-fact coverage, detail and applicable time; "
+            "search order is not relevance. Read the best-matching page first, not the first listed URL. "
+            "snippet may be absent; summary_excerpts are generated citation-associated summaries, not page text. "
             "Check the same subject and topic before reading a promising candidate with read_page. "
             "Do not infer facts or freshness from a candidate title/URL. If no useful candidate is present, "
             "refine the query, relaxing an unhelpful year or domain restriction within remaining budget. "
             "If a cited page is unrelated or inconclusive, do not use it or create a source node; "
             "refine the query within remaining budget; no relevant results does not mean nonexistence. "
-            "Old hits do not establish the latest status; use current focus and read relevant dated pages.",
+            "Old publication dates alone do not invalidate a current schedule/status. Before asking for "
+            "clarification, inspect promising results or revise an unsuccessful query within the budget.",
         }
         if not found:
             # An uncited generated summary must not become a fabricated search result.
@@ -672,7 +719,9 @@ class AgentTools:
         async def web_search(query: str, temporal_focus: Literal["current", "historical", "unspecified"] = "unspecified") -> dict:
             """Search public web sources. Required before answering facts that may have changed,
             current/latest information, or an explicit request to search. Returns a search summary
-            and page source IDs, plus unreviewed candidate URLs for targeted read_page recovery.
+            and page source IDs, plus direct result metadata and citation-associated summary excerpts.
+            Compare results by relevance to the user's requested facts, never by list position.
+            Read the best matching candidate or refine an unsuccessful query within the remaining budget.
             Candidate metadata alone is not evidence; search results alone do not establish recency or truth.
 
             Args:

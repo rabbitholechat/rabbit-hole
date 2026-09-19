@@ -594,9 +594,8 @@ async def test_search_temporal_intent_uses_server_seoul_year_without_changing_hi
     assert payload["temporal_focus"] == focus
     assert result["reference_date"] == "2041-01-01"
     assert payload["reference_time"] == "2041-01-01T01:00:00+09:00"
-    expected_window = {"since": "2040-12-27T01:00:00+09:00", "prefer_since": "2040-12-29T01:00:00+09:00",
-                       "until": "2041-01-01T01:00:00+09:00"} if focus == "current" else None
-    assert payload["search_window"] == expected_window == result["search_window"]
+    assert payload["search_window"] is None and result["search_window"] is None
+    assert "do not impose a publication-date restriction" in create.call_args.kwargs["instructions"]
     assert create.call_args.kwargs["tools"][0]["external_web_access"] is True
     assert "only historical results" in create.call_args.kwargs["instructions"]
     assert "full reference_date" in create.call_args.kwargs["instructions"]
@@ -652,3 +651,79 @@ async def test_temporal_focus_function_tool_dispatches_and_rejects_unknown_scope
     with pytest.raises(ToolFailure, match="invalid_temporal_focus"):
         await tools.web_search("query", temporal_focus="unknown")
     assert create.await_count == 1
+
+
+async def test_search_passes_direct_results_even_when_summary_prefers_another_page(monkeypatch):
+    generic = "https://example.com/home"
+    relevant = "https://example.com/event"
+    body = "행사 일정은 이전 공지에 있습니다. [행사](https://example.com/event)"
+    start = body.index("[행사]")
+    payload = {"output": [
+        {"type": "web_search_call", "status": "completed", "action": {"sources": [
+            {"url": generic, "title": "홈페이지"},
+            {"url": relevant, "title": "행사 일정", "snippet": "실제 도구 스니펫"},
+            {"url": "https://example.com/uncited", "title": "세부 참가 방법", "snippet": "참가 안내"},
+            {"url": "http://127.0.0.1/private", "snippet": "unsafe"},
+        ]}},
+        {"type": "message", "content": [{"text": body, "annotations": [
+            {"type": "url_citation", "url": relevant, "title": "행사 일정", "start_index": start,
+             "end_index": len(body), "snippet": "not provider metadata"},
+            {"type": "url_citation", "url": generic, "start_index": -1, "end_index": 99999},
+        ]}]},
+    ]}
+    create = AsyncMock(return_value=SimpleNamespace(status="completed", output_text=body, model_dump=lambda: payload))
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    result = await tools.web_search("Wanted 2026 Championship Korea", temporal_focus="current")
+    by_url = {entry["url"]: entry for entry in result["results"]}
+    assert set(by_url) == {generic, relevant, "https://example.com/uncited"}
+    assert by_url[generic]["snippet"] is None and by_url[generic]["summary_excerpts"] == []
+    assert by_url[relevant]["snippet"] == "실제 도구 스니펫"
+    assert by_url[relevant]["summary_excerpts"] == [body]
+    assert by_url[relevant]["cited_in_summary"] is True
+    assert result["candidates"] == [by_url["https://example.com/uncited"]]
+    assert all(s.url != "https://example.com/uncited" for s in tools.displayed_sources())
+    # A lower-listed result is available for targeted reading without a new search or reranker.
+    fetch = AsyncMock(return_value={"url": relevant, "title": "행사 일정", "text": "실제 본문", "truncated": False})
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", fetch)
+    read = await tools.read_page(by_url[relevant]["url"])
+    assert read["text"] == "실제 본문" and tools.searches == 1 and tools.calls == 2
+    assert create.await_count == 1
+
+
+async def test_direct_result_metadata_limits_and_uncited_summary_isolation():
+    payload = {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": [
+        {"url": f"https://example.com/{i}", "title": "t" * 900, "snippet": "s" * 3000} for i in range(60)
+    ]}}]}
+    create = AsyncMock(return_value=SimpleNamespace(status="completed", output_text="uncited claim", model_dump=lambda: payload))
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    result = await tools.web_search("event")
+    assert len(result["results"]) == 40 and len(result["candidates"]) == 20
+    assert all(len(r["title"]) == 500 and len(r["snippet"]) == 2000 for r in result["results"])
+    assert all(r["summary_excerpts"] == [] and not r["cited_in_summary"] for r in result["results"])
+    assert result["summary"] == "" and result["sources"] == [] and tools.displayed_sources() == []
+
+
+async def test_answer_selected_source_wins_display_cap_and_enrichment(monkeypatch):
+    tools = AgentTools(settings(max_response_sources=1), None)
+    generic = tools.record("https://example.com/event", "Generic", "search_result")
+    relevant = tools.record("https://example.com/event/details", "Specific", "search_result")
+    tools.prioritize_answer_sources(
+        "[가짜](https://unseen.example.com/) [구체적인 일정](https://example.com/event/details#schedule)"
+    )
+    assert tools.displayed_sources() == [relevant]
+    assert len(tools.sources) == 2  # Generated links never become source metadata.
+    fetch = AsyncMock(return_value={"url": relevant.url, "title": relevant.title,
+                                   "text": "실제 일정", "truncated": False})
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", fetch)
+    await tools.enrich_sources()
+    fetch.assert_awaited_once_with(relevant.url, tools.settings)
+    assert generic.content is None
+
+
+def test_answer_source_priority_does_not_confuse_query_pages():
+    tools = AgentTools(settings(), None)
+    plain = tools.record("https://example.com/event", "", "search_result")
+    first = tools.record("https://example.com/event?id=1", "", "search_result")
+    second = tools.record("https://example.com/event?id=10", "", "search_result")
+    tools.prioritize_answer_sources("[일정](https://example.com/event?id=10)")
+    assert tools.displayed_sources() == [second, plain, first]
