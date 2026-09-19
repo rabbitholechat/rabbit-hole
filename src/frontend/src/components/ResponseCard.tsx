@@ -21,7 +21,8 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
   const readingSources = useStore((s) => s.responseId === id && Boolean(s.activeRequest) && s.stage === '출처 본문을 읽고 있어요')
   const showStructureAction = data.status === 'completed' && !readingSources && graphJob?.status !== 'completed'
   const isStructuring = data.status === 'completed' && graphJob?.status === 'running'
-  const isGenerating = data.status === 'streaming' || isStructuring || readingSources
+  const requestRunning = useStore((s) => s.responseId === id && Boolean(s.activeRequest))
+  const isGenerating = data.status === 'streaming' || isStructuring || requestRunning
   const status = isStructuring || readingSources ? 'structuring' : data.status
   const statusText = readingSources ? '출처 읽는 중' : isStructuring
     ? '정보 정리 중'
@@ -38,10 +39,6 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
           }[data.status]
   const structureActionLabel = isStructuring ? '구조화 중지' : graphJob ? '구조화 재시도' : '구조화'
   const isReplyTarget = useStore((s) => s.replyTo === id)
-  const [arrivalFinished, setArrivalFinished] = useState(false)
-  useEffect(() => {
-    if (isReplyTarget) setArrivalFinished(true)
-  }, [isReplyTarget])
   const { contentRef, canCollapse: canResize } = useCollapsibleContent(data.text, data.collapsed)
   const [copyState, setCopyState] = useState('복사하기')
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -61,12 +58,9 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <article
-        className={`response-card ${isGenerating ? 'is-generating' : ''} ${arrivalFinished ? 'arrival-finished' : ''} ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
-        onAnimationEnd={(event) => {
-          if (event.target === event.currentTarget && ['content-arrive', 'page-arrive', 'response-grow'].includes(event.animationName)) setArrivalFinished(true)
-        }}
+        className={`response-card ${isGenerating ? 'is-generating' : ''} ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
         aria-label="에이전트 응답"
-        aria-busy={data.status === 'streaming' || isStructuring || readingSources}
+        aria-busy={isGenerating}
       >
         <header>
           <NodeTag kind="response" />

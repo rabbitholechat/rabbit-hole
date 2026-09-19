@@ -86,6 +86,19 @@ def test_migration_is_idempotent_and_never_overwrites_newer_history():
     assert client.get("/api/sessions").json()["sessions"][0]["session"]["query"] == "공용 기록"
 
 
+def test_response_timings_round_trip_and_validate_without_model_calls():
+    client = TestClient(create_app(Settings(_env_file=None), history_repository=MemoryHistory()))
+    timings = {
+        "request-1": {"responseId": "r", "startedAt": 1000, "durationMs": 12500, "status": "completed"},
+        "request-2": {"startedAt": 20000, "status": "running"},
+    }
+    original = session(responseTimings=timings)
+    assert client.put("/api/sessions/shared-session", json={"session": original, "revision": 0}).status_code == 200
+    assert client.get("/api/sessions/shared-session").json()["session"]["responseTimings"] == timings
+    timings["request-1"]["durationMs"] = -1
+    assert client.put("/api/sessions/shared-session", json={"session": original, "revision": 1}).status_code == 422
+
+
 def test_validation_and_separate_history_body_limit():
     client = TestClient(create_app(Settings(_env_file=None, max_history_bytes=10000), history_repository=MemoryHistory()))
     assert client.put("/api/sessions/other", json={"session": session(), "revision": 0}).status_code == 422

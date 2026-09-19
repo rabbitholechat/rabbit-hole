@@ -146,7 +146,14 @@ export type SourceNode = Node<{ entityId: string; collapsed?: boolean; expandedH
 export type EntityNode = Node<{ entityId: string; collapsed?: boolean }, 'entity'>
 export type CanvasNode = PageNode | ResponseNode | InformationNode | SourceNode | EntityNode
 export type NodeContext = { node_id: string; kind: 'information' | 'source' | 'entity'; title: string; text: string }
+export type ResponseTiming = {
+  responseId?: string
+  startedAt: number
+  durationMs?: number
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
+}
 export type Session = {
+  responseTimings?: Record<string, ResponseTiming>
   lastNodeContext?: NodeContext
   id: string
   query: string

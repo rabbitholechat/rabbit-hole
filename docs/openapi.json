@@ -898,6 +898,20 @@
             ],
             "title": "Lastnodecontext"
           },
+          "responseTimings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ResponseTiming"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsetimings"
+          },
           "updatedAt": {
             "type": "integer",
             "maximum": 9007199254740991.0,
@@ -1156,6 +1170,57 @@
           "y"
         ],
         "title": "Position"
+      },
+      "ResponseTiming": {
+        "properties": {
+          "responseId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responseid"
+          },
+          "startedAt": {
+            "type": "integer",
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Startedat"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "interrupted"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "startedAt",
+          "status"
+        ],
+        "title": "ResponseTiming"
       },
       "Revision": {
         "properties": {

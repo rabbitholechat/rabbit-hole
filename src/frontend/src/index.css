@@ -1202,7 +1202,6 @@ svg {
   border-top: 3px solid #458c80;
   border-radius: 16px;
   box-shadow: none;
-  animation: page-arrive 280ms ease-out backwards;
 }
 .response-card.is-selected {
   border-color: #0f766e;
@@ -1921,7 +1920,6 @@ svg {
 }
 
 /* Selection can interrupt entrance motion; removing it must never replay that motion. */
-.response-card.arrival-finished:not(.is-reply-target),
 .node-arriving .content-card.arrival-finished:not(.is-reply-target) { animation: none; }
 
 .image-preview-link { display: block; margin-top: 14px; }
@@ -2049,14 +2047,14 @@ svg {
 }
 
 
-/* A generating response grows into place without covering its streamed text. */
-.response-card.is-generating:not(.is-reply-target) {
+/* Keep feedback alive through streaming, source reads, and child-node generation. */
+.response-card.is-generating {
   transform-origin: center;
-  animation: response-grow 520ms cubic-bezier(.16, 1, .3, 1) backwards;
+  animation: response-grow 1800ms ease-in-out infinite;
 }
 @keyframes response-grow {
-  from { transform: scale(.9); }
-  to { transform: scale(1); }
+  0%, 20%, 80%, 100% { transform: scale(1); }
+  50% { transform: scale(.975); }
 }
 .content-edge-label {
   color: var(--edge-color, #65736c);
@@ -2111,6 +2109,9 @@ svg {
   white-space: nowrap;
   line-height: 1.3;
 }
+.canvas-topbar .canvas-heading .canvas-metadata { display: flex; gap: 10px; }
+.canvas-node-counts { overflow: hidden; text-overflow: ellipsis; }
+.response-timer { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .canvas-topbar .node-navigation {
   position: static;
   grid-column: 3;

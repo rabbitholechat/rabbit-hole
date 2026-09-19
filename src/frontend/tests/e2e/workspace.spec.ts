@@ -1256,7 +1256,13 @@ test('digging rabbit accompanies list and selected conversation loading', async 
 })
 
 
-test('streaming responses grow into place and conversation edges animate only once', async ({ page }) => {
+test('responses pulse throughout generation and conversation edges animate only once', async ({ page }, testInfo) => {
+  let finishStructure!: () => void
+  const structureReady = new Promise<void>((resolve) => { finishStructure = resolve })
+  await page.route('**/api/structure', async (route) => {
+    await structureReady
+    await route.fulfill({ json: { version: 2, text_hash: route.request().postDataJSON().text_hash, items: [] } })
+  })
   await page.route('**/api/jobs/**', (route) => route.fulfill({ status: 204 }))
   await page.addInitScript(() => {
     const starts: Record<string, number> = {}
@@ -1304,14 +1310,16 @@ test('streaming responses grow into place and conversation edges animate only on
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   const card = page.locator('.response-card').first()
   await expect(card).toHaveClass(/is-generating/)
+  const timer = page.getByLabel('응답 및 노드 생성 시간')
+  await expect(timer).toContainText('생성 중')
   await expect(card.locator('.response-glass')).toHaveCount(0)
   await expect(card).toHaveCSS('animation-name', 'response-grow')
   expect(await card.evaluate((element) => {
     const animation = element.getAnimations().find((item) => (item as CSSAnimation).animationName === 'response-grow')
     return (animation?.effect as KeyframeEffect | null)?.getKeyframes().map((frame) => frame.transform)
-  })).toEqual(['scale(0.9)', 'scale(1)'])
+  })).toEqual(['scale(1)', 'scale(1)', 'scale(0.975)', 'scale(1)', 'scale(1)'])
+  await expect(card).toHaveCSS('animation-iteration-count', 'infinite')
   await expect(card.locator('.response-content')).toHaveCSS('filter', 'none')
-  await expect(card).toHaveClass(/arrival-finished/)
   await expect(card).toHaveCSS('opacity', '1')
   await page.evaluate(() => (window as unknown as { growResponse: () => void }).growResponse())
   await expect(card.locator('.response-content')).toContainText('응답 확장 끝.')
@@ -1319,6 +1327,17 @@ test('streaming responses grow into place and conversation edges animate only on
   await expect(card).toHaveCSS('animation-name', 'none')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.evaluate(() => (window as unknown as { finishResponse: () => void }).finishResponse())
+  await expect(card.locator('.response-status')).toHaveText('정보 정리 중')
+  await expect(card).toHaveClass(/is-generating/)
+  await expect(card).toHaveCSS('animation-iteration-count', 'infinite')
+  const duringStructure = await timer.innerText()
+  await expect.poll(() => timer.innerText()).not.toBe(duringStructure)
+  finishStructure()
+  await expect(timer).toContainText('응답 시간')
+  const completedTime = await timer.innerText()
+  await expect(card.locator('.response-status')).toHaveText('완료')
+  await expect(timer).toHaveText(completedTime)
+  await page.screenshot({ path: testInfo.outputPath('response-total-time.png') })
   await expect(card.locator('.response-glass')).toHaveCount(0)
   await expect(card).not.toHaveClass(/is-generating/)
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('두 번째 응답')
@@ -1336,11 +1355,15 @@ test('streaming responses grow into place and conversation edges animate only on
   await second.getByRole('button', { name: '응답 접기' }).click()
   await second.getByRole('button', { name: '응답 확장' }).click()
   await page.getByRole('button', { name: '응답 중지' }).click()
+  await expect(timer).toContainText('중지')
+  const stoppedTime = await timer.innerText()
   await expect(second.locator('.response-glass')).toHaveCount(0)
   await openHistory(page)
   await page.getByRole('button', { name: '노드 확대 효과 확인', exact: true }).click()
   await expect(page.locator('.canvas-loading')).toHaveCount(0)
   await expect(page.locator('.response-card')).toHaveCount(2)
+  await expect(timer).toHaveText(stoppedTime)
+  await expect(page.locator('.response-card.is-generating')).toHaveCount(0)
   await expect(page.locator('.connection-reveal')).toHaveCount(0)
   expect(Object.values(await counts())).toEqual([1])
 })

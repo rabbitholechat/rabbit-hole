@@ -41,6 +41,7 @@ import { ConversationEdge } from './components/ConversationEdge'
 import { RelationEdge } from './components/RelationEdge'
 import { AnswerPanel } from './components/AnswerPanel'
 import { ResponseCard } from './components/ResponseCard'
+import { ResponseTimer } from './components/ResponseTimer'
 import { ContentCard } from './components/ContentCard'
 import { EntityCard } from './components/EntityCard'
 import { ContentEdge } from './components/ContentEdge'
@@ -433,10 +434,13 @@ function Workspace() {
           <div>
             <h1>{(session.title || session.query).split('\n')[0]}</h1>
           </div>
-          <span>
+          <span className="canvas-metadata">
+            <span className="canvas-node-counts">
             {session.protocol === 2
               ? `${session.nodes.filter((n) => n.type === 'response').length} 응답 · ${session.nodes.filter((n) => n.type === 'information').length} 정보 · ${session.nodes.filter((n) => n.type === 'entity').length} 엔티티 · ${session.nodes.filter((n) => n.type === 'source').length} 출처`
               : `${session.sources.length}개의 페이지`}
+            </span>
+            <ResponseTimer timings={session.responseTimings} />
           </span>
           {session.mode === 'sample' && <span className="sample-badge">이전 가상 데이터 기록</span>}
         </div>

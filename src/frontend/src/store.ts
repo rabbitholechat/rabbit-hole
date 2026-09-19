@@ -5,6 +5,7 @@ import type { CanvasNode, Envelope, Session, ResponseNode } from './types'
 import { deleteSession, loadSession, loadSessions, saveSession } from './lib/db'
 import { consumeSSE } from './lib/sse'
 import { parseToolSources } from './lib/toolSources'
+import { startResponseTiming, finishResponseTiming, finishResponseStructure } from './lib/responseTiming'
 import {
   attachInformation,
   attachSources,
@@ -184,6 +185,8 @@ function finish(session: Session, status: Session['status']): Session {
   }
 }
 function restoreSession(session: Session): Session {
+  for (const requestId of Object.keys(session.responseTimings ?? {}))
+    session = finishResponseTiming(session, requestId, 'interrupted')
   let restored: Session = {
     ...session,
     nodes: session.nodes.map((node) => {
@@ -237,7 +240,7 @@ export const useStore = create<State>((set, get) => ({
       const job = graph?.jobs[responseId]
       if (!graph || !job || job.status !== 'running') return current
       return {
-        ...current,
+        ...finishResponseStructure(current, responseId, 'cancelled'),
         contentGraph: { ...graph, jobs: { ...graph.jobs, [responseId]: { ...job, status: 'cancelled' } } },
       }
     })
@@ -293,7 +296,7 @@ export const useStore = create<State>((set, get) => ({
           return current
         const next = attachInformation(current, responseId, validated)
         return {
-          ...next,
+          ...finishResponseStructure(next, responseId, 'completed'),
           contentGraph: {
             ...next.contentGraph!,
             jobs: { ...next.contentGraph!.jobs, [responseId]: { status: 'completed', attemptId, textHash } },
@@ -310,7 +313,7 @@ export const useStore = create<State>((set, get) => ({
           )
             return current
           return {
-            ...current,
+            ...finishResponseStructure(current, responseId, 'failed'),
             contentGraph: {
               ...contentGraph,
               jobs: {
@@ -433,7 +436,7 @@ export const useStore = create<State>((set, get) => ({
     controller = undefined
     access = undefined
     set({ activeRequest: null, responseId: null, stage: '' })
-    if (state.session) commit(finish(state.session, 'cancelled'))
+    if (state.session) commit(finishResponseTiming(finish(state.session, 'cancelled'), state.activeRequest, 'cancelled'))
   },
   run: async (options = {}) => {
     const before = get()
@@ -472,6 +475,7 @@ export const useStore = create<State>((set, get) => ({
     session.updatedAt = Date.now()
     session.failedParts = []
     const requestId = crypto.randomUUID()
+    session.responseTimings = { ...session.responseTimings, [requestId]: startResponseTiming(requestId) }
     const abort = new AbortController()
     controller = abort
     set({
@@ -507,15 +511,19 @@ export const useStore = create<State>((set, get) => ({
       const current = get().session
       if (current)
         commit(
-          finish(
+          finishResponseTiming(finish(
             current,
             current.nodes.some((n) => n.type === 'response' && n.id === get().responseId && n.data.text)
               ? 'partial'
               : 'failed',
-          ),
+          ), requestId, 'failed'),
         )
     } finally {
       if (get().activeRequest === requestId) {
+        const current = get().session
+        // An SSE connection ending without `done` must not leave a live timer behind.
+        if (current?.status === 'running')
+          commit(finishResponseTiming(finish(current, 'partial'), requestId, 'failed'))
         set({ activeRequest: null, responseId: null, stage: '' })
         access = undefined
         controller = undefined
@@ -565,6 +573,10 @@ export const useStore = create<State>((set, get) => ({
           },
         }
         session.nodes = [...session.nodes, node]
+        const timing = session.responseTimings?.[state.activeRequest!]
+        if (timing) session.responseTimings = {
+          ...session.responseTimings, [state.activeRequest!]: { ...timing, responseId: id },
+        }
         if (session.lastNodeContext && session.nodes.some((n) => n.id === session.lastNodeContext!.node_id)) {
           const graph = session.contentGraph ?? emptyContentGraph()
           const target = session.lastNodeContext.node_id
@@ -633,9 +645,16 @@ export const useStore = create<State>((set, get) => ({
         commit(session)
         break
       case 'done':
-        commit(attachSources(finish(session, event.data.status as Session['status']), state.responseId!))
+        commit(attachSources(
+          event.data.status === 'completed'
+            ? finish(session, 'completed')
+            : finishResponseTiming(finish(session, event.data.status as Session['status']), state.activeRequest,
+              event.data.status === 'cancelled' ? 'cancelled' : 'failed'),
+          state.responseId!,
+        ))
         if (event.data.status === 'completed') {
-          void get().structure(state.responseId!)
+          if (state.responseId) void get().structure(state.responseId)
+          else commit(finishResponseTiming(get().session!, state.activeRequest, 'failed'))
           void generateTitle(get().session!)
         }
         break

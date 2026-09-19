@@ -34,6 +34,13 @@ class CanvasNode(BaseModel):
     data: dict[str, JsonValue]
 
 
+class ResponseTiming(BaseModel):
+    responseId: str | None = None
+    startedAt: int = Field(ge=0, le=9_007_199_254_740_991)
+    durationMs: int | None = Field(default=None, ge=0, le=9_007_199_254_740_991)
+    status: Literal["running", "completed", "failed", "cancelled", "interrupted"]
+
+
 class HistorySession(BaseModel):
     # Preserve legacy and future canvas fields without altering their original values.
     model_config = ConfigDict(extra="allow")
@@ -44,6 +51,7 @@ class HistorySession(BaseModel):
     lastParentId: str | None = None
     lastQuery: str | None = None
     lastNodeContext: dict[str, JsonValue] | None = None
+    responseTimings: dict[str, ResponseTiming] | None = None
     updatedAt: int = Field(ge=0, le=9_007_199_254_740_991)
     mode: Literal["live", "sample"]
     protocol: Literal[2] | None = None

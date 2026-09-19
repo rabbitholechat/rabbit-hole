@@ -17,6 +17,7 @@ import {
 import type { ResponseNode, Session, StructureResult } from '../src/types'
 import { useStore } from '../src/store'
 import { saveSession } from '../src/lib/db'
+import { startResponseTiming } from '../src/lib/responseTiming'
 
 const excerpt =
   '벡터 검색은 의미를 비교합니다. 단, 도메인에 따라 정확도가 달라집니다. [자료](https://example.com/a)'
@@ -149,6 +150,7 @@ it('information resolves reference citations defined outside its excerpt', async
 
 it('failure preserves answers and sources; retry commits atomically at latest positions', async () => {
   const initial = attachSources(session(), response.id)
+  initial.responseTimings = { original: { ...startResponseTiming('original'), responseId: response.id } }
   useStore.setState({ session: initial, history: [initial] })
   const payload = await result()
   let resolve!: (response: Response) => void
@@ -163,6 +165,9 @@ it('failure preserves answers and sources; retry commits atomically at latest po
     )
   await useStore.getState().structure(response.id)
   expect(useStore.getState().session!.contentGraph!.jobs[response.id].status).toBe('failed')
+  const failedTiming = useStore.getState().session!.responseTimings!.original
+  expect(failedTiming.status).toBe('failed')
+  expect(failedTiming.durationMs).toBeGreaterThanOrEqual(0)
   expect(useStore.getState().session!.nodes).toHaveLength(3)
   const pending = useStore.getState().structure(response.id)
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
@@ -173,6 +178,7 @@ it('failure preserves answers and sources; retry commits atomically at latest po
   resolve(new Response(JSON.stringify(payload)))
   await pending
   expect(useStore.getState().session!.nodes).toHaveLength(4)
+  expect(useStore.getState().session!.responseTimings!.original).toEqual(failedTiming)
   expect(useStore.getState().session!.nodes[0].position).toEqual({ x: 444, y: 555 })
   expect(useStore.getState().session!.viewport).toEqual(initial.viewport)
   await useStore.getState().structure(response.id)
@@ -187,6 +193,7 @@ it('failure preserves answers and sources; retry commits atomically at latest po
 
 it('switching records cancels structuring and late results cannot resurrect deleted records', async () => {
   const initial = session()
+  initial.responseTimings = { switching: { ...startResponseTiming('switching'), responseId: response.id } }
   useStore.setState({ session: initial, history: [initial] })
   let resolve!: (response: Response) => void
   const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
@@ -198,6 +205,7 @@ it('switching records cancels structuring and late results cannot resurrect dele
   const pending = useStore.getState().structure(response.id)
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
   useStore.getState().newConversation()
+  expect(useStore.getState().history.find((item) => item.id === initial.id)?.responseTimings?.switching.status).toBe('cancelled')
   await useStore.getState().remove(initial.id)
   resolve(new Response(JSON.stringify(await result())))
   await pending
@@ -381,6 +389,7 @@ it('v2 rejects fabricated references, missing presentation and malformed tables 
 
 it('short answers now reach independent structuring and may return no cards', async () => {
   const initial = session()
+  initial.responseTimings = { short: { ...startResponseTiming('short'), responseId: response.id } }
   const answer = initial.nodes[0] as ResponseNode
   answer.data.text = 'A는 쉽고 B는 복잡합니다.'
   useStore.setState({ session: initial, history: [initial] })
@@ -390,5 +399,6 @@ it('short answers now reach independent structuring and may return no cards', as
   await useStore.getState().structure(answer.id)
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(useStore.getState().session!.contentGraph!.jobs[answer.id].status).toBe('completed')
+  expect(useStore.getState().session!.responseTimings!.short.status).toBe('completed')
   expect(useStore.getState().session!.nodes).toEqual(initial.nodes)
 })
