@@ -2010,7 +2010,7 @@ svg {
   letter-spacing: 2px;
 }
 .server-error-content h1 {
-  margin: 0;
+  margin: 28px 0;
   font-size: clamp(21px, 4.8vw, 27px);
   font-weight: 600;
   line-height: 1.4;
