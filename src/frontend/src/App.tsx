@@ -1,3 +1,4 @@
+import { useAutosizeTextarea } from './hooks/useAutosizeTextarea'
 import { useGraphArrival } from './hooks/useGraphArrival'
 import { TooltipLayer } from './components/TooltipLayer'
 import { nodeLabel, responseParentId } from './lib/nodeActions'
@@ -327,6 +328,7 @@ function Workspace() {
     state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]
   const opening = Boolean(state.loadingSessionId)
   const busy = Boolean(state.activeRequest)
+  useAutosizeTextarea(inputRef, state.input, !opening && !state.serverError)
   function submit(event: FormEvent) {
     event.preventDefault()
     if (!composing.current && !busy) void state.run()
