@@ -370,3 +370,15 @@ Attachment 필드: id(UUID), name, kind(image/file), media_type, size(원본 바
 첨부 유효성 실패는 422, 크기 제한은 413, 없거나 만료된 첨부는 404, 저장소 연결 실패는 503입니다. /api/agent는 모델 요청 전에 첨부 존재 여부와 누적 모델 입력 용량(기본 12MB)을 확인합니다. 첨부가 있으면 query 생략/빈 문자열을 허용하며 ‘첨부한 자료를 설명해 주세요.’를 사용합니다. continuation version 2의 ConversationTurn에 선택 attachment_ids를 추가했으며 이전 토큰의 생략값은 빈 배열입니다. 토큰/세션 JSON에 바이너리는 넣지 않습니다.
 
 캔버스 attachment 노드는 응답과 함께 첫 렌더링에 생성되며 응답 위에 배치됩니다. response.data.attachments와 session.lastAttachments에 메타데이터를 보존합니다. 다음 응답에 사용 및 재시도는 같은 ID의 원본을 다시 전달하고 기존 소스 노드 위치를 유지합니다. ‘입력 자료’ 연결은 웹 조회/의미적 근거 관계와 별개입니다. 저장소 초기화와 수명·지원 범위는 [ATTACHMENTS.md](ATTACHMENTS.md)를 따릅니다.
+
+### 사용자 캔버스 편집
+
+`Session.canvasEdits?: { nodes: UserNode[]; hiddenNodes: string[]; edges: UserEdge[]; hiddenEdges: string[]; positions: Record<string, { x: number; y: number }> }`
+
+- `UserNode`: `{ id, type: "user", position, width?, data: { kind: "response" | "entity" | "information" | "source" | "image", title, text, url, imageUrl, collapsed? } }`.
+- `UserEdge`: `{ id, source, target, label }`. 사용자 연결이며 인용·의미적 근거를 새로 부여하지 않는다.
+- 원본 노드 내용, `contentGraph`, `sources`, 대화 continuation은 편집으로 변경하지 않는다. 동일 ID의 사용자 노드는 표시를 대체하며, 숨김 ID는 연결과 탐색에서도 제외한다. 노드 이동은 기존 노드 위치와 `positions`에 저장하며 실행 취소는 `positions`를 우선 적용한다.
+- 원본 간선은 기존 표시 ID로 재연결/숨김 처리한다. 사용자 편집 노드에 연결된 간선은 사용자 연결로 표시하며 원본 근거는 저장 데이터에 보존한다.
+- 응답은 `title`에 사용자 질문, `text`에 응답을 저장한다. 엔티티는 `title`에 이름, 정보는 `title`/`text`에 제목/내용, 출처는 `url`/`text`에 출처 URL/요약, 이미지는 `imageUrl`/`url`에 이미지/원본 페이지 URL을 저장한다. 링크 표시는 기존 안전 URL 검사를 적용한다.
+- 편집·삭제·붙여넣기·이동은 기존 revision 기반 기록 PUT으로 저장/복원한다. 기록 조회는 추출·모델 호출을 실행하지 않는다. 실행 취소/다시 실행은 현재 열린 기록의 최근 50개 편집 작업에 적용하며 화면 위치와 새 응답 생성 결과를 되돌리지 않는다. 기록 전환 시 실행 취소 기록을 초기화한다.
+- 복사 버퍼는 앱 내 메모리에 유지하며 붙여넣기는 새 사용자 노드 ID를 부여한다. 연결·원문 참조·도구 조회 이력은 복제하지 않는다. 생성/구조화 중에는 내용 변경 작업을 비활성화하며 위치 이동은 유지한다.

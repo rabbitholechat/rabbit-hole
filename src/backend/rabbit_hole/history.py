@@ -34,6 +34,38 @@ class CanvasNode(BaseModel):
     data: dict[str, JsonValue]
 
 
+class UserNodeData(BaseModel):
+    kind: Literal["response", "entity", "information", "source", "image"]
+    title: str
+    text: str
+    url: str
+    imageUrl: str
+    collapsed: bool | None = None
+
+
+class UserNode(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    id: str
+    type: Literal["user"]
+    position: Position
+    data: UserNodeData
+
+
+class UserEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    label: str
+
+
+class CanvasEdits(BaseModel):
+    nodes: list[UserNode]
+    hiddenNodes: list[str]
+    edges: list[UserEdge]
+    hiddenEdges: list[str]
+    positions: dict[str, Position]
+
+
 class ResponseTiming(BaseModel):
     responseId: str | None = None
     startedAt: int = Field(ge=0, le=9_007_199_254_740_991)
@@ -52,6 +84,7 @@ class HistorySession(BaseModel):
     lastQuery: str | None = None
     lastNodeContext: dict[str, JsonValue] | None = None
     responseTimings: dict[str, ResponseTiming] | None = None
+    canvasEdits: CanvasEdits | None = None
     updatedAt: int = Field(ge=0, le=9_007_199_254_740_991)
     mode: Literal["live", "sample"]
     protocol: Literal[2] | None = None

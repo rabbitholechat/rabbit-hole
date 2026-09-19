@@ -1,3 +1,4 @@
+import { EditNodeActions } from './CanvasEditor'
 import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, Maximize2, Minimize2, MessageCirclePlus } from 'lucide-react'
 import { useStore } from '../store'
@@ -14,6 +15,7 @@ export function NodeActions({ id, collapsed, canCollapse }: { id: string; collap
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(timer.current), [])
   async function copy() {
+    useStore.getState().copyNode(id)
     clearTimeout(timer.current)
     try { await navigator.clipboard.writeText(nodeText(session, id)); setCopied(true); setFailed(false) }
     catch { setFailed(true) }
@@ -24,6 +26,7 @@ export function NodeActions({ id, collapsed, canCollapse }: { id: string; collap
     <button aria-label={copyLabel} data-tooltip={copyLabel} onClick={() => void copy()}>
       {copied ? <Check size={17} /> : <Copy size={17} />}
     </button>
+    <EditNodeActions id={id} />
     <button aria-label={collapsed ? '노드 펼치기' : '노드 접기'} disabled={!canCollapse} data-tooltip={!canCollapse ? '내용이 짧아 크기를 조절할 필요가 없습니다' : collapsed ? '노드 펼치기' : '노드 접기'}
       aria-expanded={!collapsed} onClick={() => toggle(id)}>
       {collapsed ? <Maximize2 size={17} /> : <Minimize2 size={17} />}

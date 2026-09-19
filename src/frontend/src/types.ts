@@ -171,7 +171,16 @@ export type InformationNode = Node<{
 }, 'information'>
 export type SourceNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'source'>
 export type EntityNode = Node<{ entityId: string; collapsed?: boolean }, 'entity'>
-export type CanvasNode = AttachmentNode | PageNode | ResponseNode | InformationNode | SourceNode | EntityNode
+export type UserNodeData = { kind: 'response' | 'entity' | 'information' | 'source' | 'image'; title: string; text: string; url: string; imageUrl: string; collapsed?: boolean }
+export type UserNode = Node<UserNodeData, 'user'>
+export type CanvasEdits = {
+  nodes: UserNode[]
+  hiddenNodes: string[]
+  edges: { id: string; source: string; target: string; label: string }[]
+  hiddenEdges: string[]
+  positions: Record<string, { x: number; y: number }>
+}
+export type CanvasNode = UserNode | AttachmentNode | PageNode | ResponseNode | InformationNode | SourceNode | EntityNode
 export type NodeContext = { node_id: string; kind: 'information' | 'source' | 'entity'; title: string; text: string }
 export type ResponseTiming = {
   responseId?: string
@@ -180,6 +189,7 @@ export type ResponseTiming = {
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 }
 export type Session = {
+  canvasEdits?: CanvasEdits
   responseTimings?: Record<string, ResponseTiming>
   lastNodeContext?: NodeContext
   id: string

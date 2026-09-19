@@ -138,3 +138,21 @@ def test_database_url_uses_backend_env_file_and_vercel_environment(tmp_path, mon
     configured = Settings(_env_file=path)
     assert configured.database_url.get_secret_value() == "postgresql://deployment-example/db"
     assert "deployment-example" not in repr(configured.database_url)
+
+
+def test_canvas_edits_contract_preserves_originals_and_validates_types():
+    client = TestClient(create_app(Settings(_env_file=None), history_repository=MemoryHistory()))
+    edits = {
+        "nodes": [{"id": "r", "type": "user", "position": {"x": 1, "y": 2}, "width": 460,
+                   "data": {"kind": "source", "title": "편집 제목", "text": "사용자 요약",
+                            "url": "https://example.com/page", "imageUrl": ""}}],
+        "hiddenNodes": ["removed"], "hiddenEdges": ["old-edge"],
+        "edges": [{"id": "edge", "source": "r", "target": "other", "label": "사용자 연결"}],
+        "positions": {"r": {"x": 123, "y": 456}},
+    }
+    original = session(canvasEdits=edits)
+    assert client.put("/api/sessions/shared-session", json={"session": original, "revision": 0}).status_code == 200
+    assert client.get("/api/sessions/shared-session").json()["session"] == original
+    invalid = deepcopy(original)
+    invalid["canvasEdits"]["nodes"][0]["data"]["kind"] = "verified_source"
+    assert client.put("/api/sessions/shared-session", json={"session": invalid, "revision": 1}).status_code == 422

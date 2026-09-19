@@ -1,4 +1,4 @@
-import { responseParentId } from '../lib/nodeActions'
+import { visibleLinks, visibleNodes } from '../lib/canvasEditing'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ChevronDown } from 'lucide-react'
 import type { CanvasNode, Session } from '../types'
@@ -6,21 +6,8 @@ import { useStore } from '../store'
 
 export function previousNodes(session: Session | null, id: string): CanvasNode[] {
   if (!session) return []
-  const node = session.nodes.find((n) => n.id === id)
-  let ids: string[] = []
-  if (node?.type === 'response') {
-    const parent = responseParentId(session, node)
-    if (parent) ids = [parent]
-  } else {
-    const edges = session.protocol === 2 ? session.contentGraph?.relations ?? [] : session.graph.relations
-    ids = edges.filter((e) => e.target === id && (!('kind' in e) || e.kind !== 'uses_context')).map((e) => e.source)
-    const entityParents = edges.filter((e) => 'kind' in e && e.kind === 'has_information' && e.target === id).map((e) => e.source)
-    if (entityParents.length) ids = entityParents
-  }
-  return [...new Set(ids)].flatMap((parent) => {
-    const node = session.nodes.find((n) => n.id === parent)
-    return node && parent !== id ? [node] : []
-  })
+  const ids = visibleLinks(session).filter(e => e.target === id).map(e => e.source)
+  return visibleNodes(session).filter(n => ids.includes(n.id) && n.id !== id)
 }
 
 export function PreviousNodeButton({ id }: { id: string }) {
@@ -49,6 +36,7 @@ export function PreviousNodeButton({ id }: { id: string }) {
   const parents = previousNodes(session, id)
   function go(id: string) { setOpen(false); navigate(id) }
   function label(node: CanvasNode) {
+    if (node.type === 'user') return `사용자 편집 · ${node.data.title}`
     if (node.type === 'response') return `응답 · ${node.data.prompt}`
     if (node.type === 'page') return node.data.source.title
     const entity = session?.contentGraph?.entities[node.id]

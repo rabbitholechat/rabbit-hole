@@ -1,14 +1,16 @@
+import { visibleLinks, visibleNodes } from './canvasEditing'
 import { cardText } from './information'
 import { ENTITY_KIND_LABELS, type InformationEntity, type NodeContext, type ResponseNode, type Session } from '../types'
 
+export function entityInformationIds(session: Session | null, id: string): string[] {
+  const nodes = visibleNodes(session)
+  const information = new Set(nodes.filter(n => n.type === 'information' || n.type === 'user' && n.data.kind === 'information').map(n => n.id))
+  return [...new Set(visibleLinks(session).flatMap(edge => edge.source === id ? [edge.target]
+    : edge.kind === 'about' && edge.target === id ? [edge.source] : []))].filter(key => information.has(key))
+}
 export function entityInformation(session: Session | null, id: string): InformationEntity[] {
-  const graph = session?.contentGraph
-  if (!graph || graph.entities[id]?.type !== 'entity') return []
-  const ids = [...new Set(graph.relations.flatMap((edge) =>
-    edge.kind === 'has_information' && edge.source === id ? [edge.target]
-      : edge.kind === 'about' && edge.target === id ? [edge.source] : []))]
-  return ids.flatMap((key) => {
-    const entity = graph.entities[key]
+  return entityInformationIds(session, id).flatMap(key => {
+    const entity = session?.contentGraph?.entities[key]
     return entity?.type === 'information' ? [entity] : []
   })
 }
@@ -16,10 +18,10 @@ export function entityInformation(session: Session | null, id: string): Informat
 function entityTextParts(session: Session | null, id: string): string[] {
   const entity = session?.contentGraph?.entities[id]
   if (entity?.type !== 'entity') return []
-  const information = entityInformation(session, id)
+  const information = entityInformationIds(session, id)
   return [[`${entity.name} (${ENTITY_KIND_LABELS[entity.subtype] ?? '기타'})`, entity.qualifier,
     entity.aliases.length ? `다른 이름: ${entity.aliases.join(', ')}` : '', `관련 정보 ${information.length}개`].filter(Boolean).join('\n'),
-  ...information.map((item) => item.presentation ? cardText(item.presentation) : `${item.title.quote}\n${item.excerpt.quote}`)]
+  ...information.map(key => `${nodeLabel(session, key)}\n${nodeText(session, key)}`)]
 }
 
 function entityContextText(session: Session | null, id: string): string {
@@ -40,7 +42,8 @@ function entityContextText(session: Session | null, id: string): string {
 }
 
 export function nodeLabel(session: Session | null, id: string): string {
-  const node = session?.nodes.find((n) => n.id === id)
+  const node = visibleNodes(session).find((n) => n.id === id)
+  if (node?.type === 'user') return node.data.title
   if (node?.type === 'attachment') return node.data.attachment.name
   if (node?.type === 'response') return node.data.prompt
   if (node?.type === 'page') return node.data.source.title
@@ -49,7 +52,8 @@ export function nodeLabel(session: Session | null, id: string): string {
   return entity?.type === 'information' ? (entity.presentation?.heading ?? entity.title.quote) : entity?.source.title ?? ''
 }
 export function nodeText(session: Session | null, id: string): string {
-  const node = session?.nodes.find((n) => n.id === id)
+  const node = visibleNodes(session).find((n) => n.id === id)
+  if (node?.type === 'user') return `${node.data.title}\n${node.data.text}\n${node.data.url}`
   if (node?.type === 'attachment') return `${node.data.attachment.name}\n${node.data.attachment.text_excerpt}`
   if (node?.type === 'response') return node.data.text
   if (node?.type === 'page') return `${node.data.source.title}\n${node.data.source.url}\n\n${node.data.source.summary}`
@@ -60,6 +64,9 @@ export function nodeText(session: Session | null, id: string): string {
 }
 export function nodeContext(session: Session | null, id: string | null): NodeContext | undefined {
   if (!id || session?.protocol !== 2 || session.mode !== 'live') return
+  const visible = visibleNodes(session).find(n => n.id === id)
+  if (!visible) return
+  if (visible.type === 'user') return { node_id: id, kind: 'information', title: visible.data.title, text: Array.from(nodeText(session, id)).slice(0, 12000).join('') }
   const entity = session.contentGraph?.entities[id]
   if (!entity) return
   if (entity.type === 'entity') return { node_id: id, kind: 'entity', title: entity.name, text: entityContextText(session, id) }

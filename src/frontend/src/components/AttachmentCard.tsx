@@ -1,3 +1,4 @@
+import { EditNodeActions } from './CanvasEditor'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { Check, Copy, Download, FileText, Maximize2, MessageCirclePlus, Minimize2, Paperclip } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -17,6 +18,7 @@ export function AttachmentCard({id, data, selected}: NodeProps<AttachmentNode>) 
   const reuse = useStore(s => s.reuseAttachment)
   const toggle = useStore(s => s.toggleNode)
   async function copy() {
+    useStore.getState().copyNode(id)
     clearTimeout(timer.current)
     try { await copyAttachment(attachment); setCopyState('복사 완료') }
     catch { setCopyState('복사 실패 · 다시 시도') }
@@ -28,6 +30,7 @@ export function AttachmentCard({id, data, selected}: NodeProps<AttachmentNode>) 
     <article className={`content-card attachment-card ${collapsed ? 'is-compact' : 'is-expanded'} ${selected ? 'is-selected' : ''} ${inComposer ? 'is-reply-target' : ''}`} aria-label={`첨부 소스 · ${attachment.name}`}>
       <header><span className="node-tag"><Paperclip size={16} />소스</span>
         <div className="response-actions nodrag nopan" onClick={event => event.stopPropagation()}>
+          <EditNodeActions id={id} />
           <button type="button" aria-label={copyState} data-tooltip={copyState === '복사하기' && attachment.media_type === 'application/pdf' ? '파일 링크 복사' : copyState} onClick={() => void copy()}>
             {copyState === '복사 완료' ? <Check size={17} /> : <Copy size={17} />}
           </button>

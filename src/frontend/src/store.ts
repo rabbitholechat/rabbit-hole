@@ -1,3 +1,5 @@
+import { emptyEdits, editLocked, visibleNodes, nodeDraft, validateDraft, visibleLinks } from './lib/canvasEditing'
+import type { CanvasEdits, UserNodeData } from './types'
 import { appendResponse, attachmentLimits, deleteDraftAttachment, uploadAttachment } from './lib/attachments'
 import { nodeContext } from './lib/nodeActions'
 import { create } from 'zustand'
@@ -50,6 +52,23 @@ function persist(session: Session) {
     })
 }
 interface State {
+  undoStack: CanvasEdits[]
+  redoStack: CanvasEdits[]
+  clipboard: UserNodeData | null
+  editingNode: string | null
+  editingEdge: string | null
+  selectedLink: string | null
+  editNode: (id: string | null) => void
+  editEdge: (id: string | null) => void
+  copyNode: (id: string) => void
+  pasteNode: (position?: { x: number; y: number }) => void
+  saveNode: (id: string, data: UserNodeData) => boolean
+  deleteNode: (id: string) => void
+  saveEdge: (edge: { id: string; source: string; target: string; label: string }) => void
+  deleteEdge: (id: string) => void
+  undo: () => void
+  redo: () => void
+
   session: Session | null
   history: Session[]
   loadingSessionId: string | null
@@ -105,6 +124,13 @@ function commit(session: Session) {
   }))
   persist(session)
 }
+function commitEdits(edits: CanvasEdits) {
+  const state = useStore.getState()
+  if (editLocked(state.session) || state.activeRequest || state.loadingSessionId) return
+  useStore.setState({ undoStack: [...state.undoStack.slice(-49), structuredClone(state.session!.canvasEdits ?? emptyEdits())], redoStack: [] })
+  commit({ ...state.session!, canvasEdits: edits, updatedAt: Date.now() })
+}
+let dragBefore: CanvasEdits | undefined
 function updateSession(id: string, change: (session: Session) => Session) {
   const state = useStore.getState()
   const current = state.session?.id === id ? state.session : state.history.find((s) => s.id === id)
@@ -220,6 +246,74 @@ function restoreSession(session: Session): Session {
 }
 
 export const useStore = create<State>((set, get) => ({
+  undoStack: [], redoStack: [], clipboard: null, editingNode: null, editingEdge: null, selectedLink: null,
+  editNode: (id) => set({ editingNode: id, editingEdge: null }),
+  editEdge: (id) => set({ editingEdge: id, editingNode: null, selectedLink: id, selected: null }),
+  copyNode: (id) => {
+    const session = get().session
+    if (session) set({ clipboard: nodeDraft(session, id) ?? null })
+  },
+  pasteNode: (position) => {
+    const { session, clipboard } = get()
+    if (!session || !clipboard || editLocked(session)) return
+    const selected = visibleNodes(session).find(n => n.id === get().selected)
+    const id = `user_${crypto.randomUUID()}`
+    const edits = structuredClone(session.canvasEdits ?? emptyEdits())
+    edits.nodes.push({ id, type: 'user', position: position ?? { x: (selected?.position.x ?? 0) + 80, y: (selected?.position.y ?? 0) + 80 }, width: clipboard.kind === 'entity' ? 340 : 460, data: structuredClone(clipboard) })
+    commitEdits(edits)
+    set({ selected: id, selectedLink: null })
+  },
+  saveNode: (id, data) => {
+    const session = get().session
+    if (!session || editLocked(session) || validateDraft(data)) return false
+    const node = visibleNodes(session).find(n => n.id === id)
+    if (!node) return false
+    const edits = structuredClone(session.canvasEdits ?? emptyEdits())
+    edits.nodes = [...edits.nodes.filter(n => n.id !== id), { id, type: 'user', position: node.position, width: data.kind === 'entity' ? 340 : 460, data: structuredClone(data) }]
+    commitEdits(edits)
+    set({ editingNode: null, replyTo: get().replyTo === id ? null : get().replyTo })
+    return true
+  },
+  deleteNode: (id) => {
+    const session = get().session
+    if (!session || editLocked(session) || !visibleNodes(session).some(n => n.id === id)) return
+    const edits = structuredClone(session.canvasEdits ?? emptyEdits())
+    edits.hiddenNodes.push(id)
+    commitEdits(edits)
+    set({ selected: null, selectedLink: null, editingNode: null, replyTo: get().replyTo === id ? null : get().replyTo })
+  },
+  saveEdge: (edge) => {
+    const session = get().session
+    if (!session || editLocked(session)) return
+    const ids = visibleNodes(session).map(n => n.id)
+    if (edge.source === edge.target || !ids.includes(edge.source) || !ids.includes(edge.target)) return
+    const edits = structuredClone(session.canvasEdits ?? emptyEdits())
+    edits.edges = [...edits.edges.filter(e => e.id !== edge.id), { ...edge, label: edge.label.trim() || '사용자 연결' }]
+    commitEdits(edits)
+    set({ editingEdge: null })
+  },
+  deleteEdge: (id) => {
+    const session = get().session
+    if (!session || editLocked(session) || !visibleLinks(session).some(e => e.id === id)) return
+    const edits = structuredClone(session.canvasEdits ?? emptyEdits())
+    edits.hiddenEdges.push(id)
+    commitEdits(edits)
+    set({ selectedLink: null, editingEdge: null })
+  },
+  undo: () => {
+    const { session, undoStack, redoStack } = get()
+    if (!session || editLocked(session) || !undoStack.length) return
+    set({ undoStack: undoStack.slice(0, -1), redoStack: [...redoStack, structuredClone(session.canvasEdits ?? emptyEdits())], selected: null, selectedLink: null, editingNode: null, editingEdge: null })
+    const edits = undoStack.at(-1)!
+    commit({ ...session, canvasEdits: edits, nodes: session.nodes.map(n => ({ ...n, position: edits.positions[n.id] ?? n.position })), updatedAt: Date.now() })
+  },
+  redo: () => {
+    const { session, undoStack, redoStack } = get()
+    if (!session || editLocked(session) || !redoStack.length) return
+    set({ undoStack: [...undoStack, structuredClone(session.canvasEdits ?? emptyEdits())], redoStack: redoStack.slice(0, -1), selected: null, selectedLink: null, editingNode: null, editingEdge: null })
+    const edits = redoStack.at(-1)!
+    commit({ ...session, canvasEdits: edits, nodes: session.nodes.map(n => ({ ...n, position: edits.positions[n.id] ?? n.position })), updatedAt: Date.now() })
+  },
   session: null,
   history: [],
   loadingSessionId: null,
@@ -409,6 +503,8 @@ export const useStore = create<State>((set, get) => ({
   requestedTool: null,
   setRequestedTool: (requestedTool) => set({ requestedTool }),
   newConversation: () => {
+    set({ undoStack: [], redoStack: [], editingNode: null, editingEdge: null, selectedLink: null })
+    dragBefore = undefined
     get().clearAttachments()
     historyController?.abort()
     historyController = undefined
@@ -418,6 +514,8 @@ export const useStore = create<State>((set, get) => ({
     set({ session: null, requestedTool: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
   },
   open: async (id) => {
+    set({ undoStack: [], redoStack: [], editingNode: null, editingEdge: null, selectedLink: null })
+    dragBefore = undefined
     get().clearAttachments()
     if (get().loadingSessionId === id) return
     historyController?.abort()
@@ -480,7 +578,7 @@ export const useStore = create<State>((set, get) => ({
         ),
       })
   },
-  select: (id) => set({ selected: id, selectedEdge: null }),
+  select: (id) => set({ selected: id, selectedEdge: null, selectedLink: null }),
   selectEdge: (index) => set({ selectedEdge: index, selected: null }),
   stop: () => {
     const state = get()
@@ -720,16 +818,33 @@ export const useStore = create<State>((set, get) => ({
   nodesChange: (changes) => {
     const session = get().session
     if (!session) return
-    const selection = changes.find((c) => c.type === 'select' && c.selected)
-    if (selection?.type === 'select') set({ selected: selection.id, selectedEdge: null })
-    const moved = changes.flatMap((c) => (c.type === 'position' && c.position ? [c.id] : []))
-    const next = {
-      ...session,
-      nodes: applyNodeChanges(changes, session.nodes),
-      pinned: [...new Set([...session.pinned, ...moved])],
+    const selection = changes.find(c => c.type === 'select' && c.selected)
+    if (selection?.type === 'select') set({ selected: selection.id, selectedEdge: null, selectedLink: null })
+    const moved = changes.filter(c => c.type === 'position' && c.position)
+    let edits = session.canvasEdits
+    if (moved.length) {
+      if (!dragBefore) {
+        dragBefore = structuredClone(edits ?? emptyEdits())
+        const beforePositions = Object.fromEntries(visibleNodes(session).map(n => [n.id, n.position]))
+        dragBefore.positions = beforePositions
+        set({ undoStack: get().undoStack.map(snapshot => ({ ...snapshot, positions: { ...beforePositions, ...snapshot.positions } })) })
+      }
+      edits = structuredClone(edits ?? emptyEdits())
+      edits.positions = { ...dragBefore.positions, ...edits.positions }
+      for (const c of moved) if (c.type === 'position' && c.position) edits.positions[c.id] = c.position
     }
+    if (edits) edits = { ...edits, nodes: applyNodeChanges(changes.filter(c => c.type !== 'remove' && c.type !== 'add' && c.type !== 'replace'), edits.nodes) }
+    const next = { ...session, ...(edits ? { canvasEdits: edits } : {}),
+      nodes: applyNodeChanges(changes.filter(c => c.type !== 'remove'), session.nodes) }
     set({ session: next })
-    if (moved.length && changes.some((c) => c.type === 'position' && !c.dragging)) commit(next)
+    if (moved.some(c => c.type === 'position' && !c.dragging) && dragBefore) {
+      const before = dragBefore
+      dragBefore = undefined
+      if (JSON.stringify(before.positions) !== JSON.stringify(edits?.positions)) {
+        set({ undoStack: [...get().undoStack.slice(-49), before], redoStack: [] })
+        commit({ ...next, pinned: [...new Set([...next.pinned, ...moved.flatMap(c => 'id' in c ? [c.id] : [])])] })
+      }
+    }
   },
   viewport: (viewport) => {
     const session = get().session

@@ -2,7 +2,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { useStore } from '../store'
 import { ENTITY_KIND_LABELS, type EntityNode } from '../types'
 import { NodeTag } from './NodeTag'
-import { entityInformation, nodeLabel } from '../lib/nodeActions'
+import { entityInformationIds, nodeLabel } from '../lib/nodeActions'
 import { PreviousNodeButton } from './PreviousNodeButton'
 import { NodeActions } from './NodeActions'
 
@@ -12,7 +12,7 @@ export function EntityCard({ id, data, selected }: NodeProps<EntityNode>) {
   const replyTo = useStore((s) => s.replyTo)
   const entity = session?.contentGraph?.entities[data.entityId]
   if (entity?.type !== 'entity') return null
-  const informationIds = entityInformation(session, id).map((item) => item.id)
+  const informationIds = entityInformationIds(session, id)
   const canExpand = Boolean(informationIds.length || entity.qualifier || entity.aliases.length)
   return <>
     <Handle type="target" position={Position.Left} isConnectable={false} />
@@ -28,7 +28,7 @@ export function EntityCard({ id, data, selected }: NodeProps<EntityNode>) {
           <button onClick={(event) => { event.stopPropagation(); navigate(informationId) }}>{nodeLabel(session, informationId)}</button>
         </li>)}
       </ul>}
-      <footer className="node-footer"><PreviousNodeButton id={id} /></footer>
+      <footer className="node-footer"><button className="node-button nodrag nopan" disabled={!informationIds.length} onClick={() => navigate(informationIds[0])}>관련 정보로</button><PreviousNodeButton id={id} /></footer>
     </article>
     <Handle type="source" position={Position.Right} isConnectable={false} />
   </>

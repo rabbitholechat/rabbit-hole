@@ -12,6 +12,7 @@ export const NODE_ACCENTS = {
 } as const
 
 export function nodeAccent(node: CanvasNode | undefined, graph?: ContentGraph) {
+  if (node?.type === 'user') return NODE_ACCENTS[node.data.kind]
   if (node?.type === 'source') {
     const entity = graph?.entities[node.data.entityId]
     return entity?.type === 'source' && entity.source.image ? NODE_ACCENTS.image : NODE_ACCENTS.source

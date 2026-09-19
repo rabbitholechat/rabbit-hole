@@ -1,3 +1,5 @@
+import { CanvasEditor, UserCard } from './components/CanvasEditor'
+import { editLocked, visibleNodes, visibleLinks } from './lib/canvasEditing'
 import { useAutosizeTextarea } from './hooks/useAutosizeTextarea'
 import { useGraphArrival } from './hooks/useGraphArrival'
 import { TooltipLayer } from './components/TooltipLayer'
@@ -15,6 +17,8 @@ import {
   type Edge,
 } from '@xyflow/react'
 import {
+  Undo2,
+  Redo2,
   ArrowUp,
   ArrowLeft,
   ArrowRight,
@@ -55,11 +59,21 @@ import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
 import type { CanvasNode } from './types'
 
-const nodeTypes = { attachment: AttachmentCard, page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
+const nodeTypes = { user: UserCard, attachment: AttachmentCard, page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
   edgeTypes = { relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
 function Workspace() {
   const state = useStore(),
     session = state.session
+  const [menu, setMenu] = useState<{ x: number; y: number; node?: string; edge?: string } | null>(null)
+  useEffect(() => {
+    if (!menu) return
+    const close = () => setMenu(null)
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('keydown', escape)
+    return () => { window.removeEventListener('pointerdown', close); window.removeEventListener('keydown', escape) }
+  }, [menu])
+  useEffect(() => setMenu(null), [session?.id, state.loadingSessionId])
   const dismissError = useCallback(() => useStore.setState({ error: null, storageError: null }), [])
   const flow = useReactFlow<CanvasNode>(),
     viewport = useViewport()
@@ -70,8 +84,8 @@ function Workspace() {
     return () => window.removeEventListener('resize', resize)
   }, [])
   const extent = useMemo(
-    () => canvasBounds(session?.nodes ?? [], viewport, screenSize),
-    [session?.nodes, viewport, screenSize],
+    () => canvasBounds(visibleNodes(session), viewport, screenSize),
+    [session, viewport, screenSize],
   )
   const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth > 700)
   useEffect(() => {
@@ -99,11 +113,25 @@ function Workspace() {
       const target = event.target
       if (
         target instanceof HTMLElement &&
-        target.closest('input, textarea, select, [contenteditable="true"]')
+        target.closest('input, textarea, select, [contenteditable="true"], dialog[open]')
       )
         return
       const key = event.key.toLowerCase()
       const modified = event.ctrlKey || event.metaKey
+      const current = useStore.getState()
+      if (current.editingNode || current.editingEdge) return
+      if (modified && ['c', 'v', 'z', 'y'].includes(key) || key === 'delete' || key === 'backspace' && modified || key === 'f2' || modified && key === 'e') {
+        if (modified && key === 'c' && window.getSelection()?.toString()) return
+        event.preventDefault()
+        if (event.repeat) return
+        if (modified && key === 'c' && current.selected) current.copyNode(current.selected)
+        else if (modified && key === 'v') current.pasteNode(flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }))
+        else if (modified && key === 'z') event.shiftKey ? current.redo() : current.undo()
+        else if (modified && key === 'y') current.redo()
+        else if (key === 'delete' || key === 'backspace') { if (current.selected) current.deleteNode(current.selected); else if (current.selectedLink) current.deleteEdge(current.selectedLink) }
+        else if (key === 'f2' || key === 'e') { if (current.selected) current.editNode(current.selected); else if (current.selectedLink) current.editEdge(current.selectedLink) }
+        return
+      }
       if (!modified) {
         if (event.shiftKey || !['KeyW', 'KeyS', 'KeyA', 'KeyD'].includes(event.code)) return
         event.preventDefault()
@@ -136,7 +164,7 @@ function Workspace() {
     void flow.setViewport(s?.viewport ?? { x: 0, y: 0, zoom: 1 })
   }, [session?.id, flow])
   function fit(initial = false) {
-    let nodes = useStore.getState().session?.nodes
+    let nodes = visibleNodes(useStore.getState().session)
     if (!nodes?.length) return
     if (initial && window.innerWidth < 700 && nodes[0].type !== 'attachment') nodes = nodes.slice(0, 1)
     const minX = Math.min(...nodes.map((n) => n.position.x)),
@@ -185,10 +213,10 @@ function Workspace() {
       duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250,
     })
   }
-  const navigationIndex = Math.max(0, session?.nodes.findIndex((node) => node.id === state.selected) ?? 0)
+  const navigationIndex = Math.max(0, visibleNodes(session).findIndex((node) => node.id === state.selected) ?? 0)
   function navigateNode(direction: number) {
     const current = useStore.getState()
-    const ordered = current.session?.nodes ?? []
+    const ordered = visibleNodes(current.session)
     const index = Math.max(
       0,
       ordered.findIndex((node) => node.id === current.selected),
@@ -199,7 +227,7 @@ function Workspace() {
     focusNode(next)
   }
   useEffect(() => {
-    const node = useStore.getState().session?.nodes.find((n) => n.id === state.navigation?.id)
+    const node = visibleNodes(useStore.getState().session).find((n) => n.id === state.navigation?.id)
     if (node) focusNode(node)
   }, [state.navigation])
   navigateRef.current = navigateNode
@@ -217,17 +245,17 @@ function Workspace() {
   const related = useMemo(
     () =>
       new Set(
-        (session?.protocol === 2 ? session.contentGraph?.relations : session?.graph.relations)?.filter((e) =>
-          session?.contentGraph?.entities[state.selected ?? '']?.type !== 'entity' || e.kind === 'has_information' || e.kind === 'about',
+        visibleLinks(session).filter((e) =>
+          session?.contentGraph?.entities[state.selected ?? '']?.type !== 'entity' || e.kind === 'has_information' || e.kind === 'about' || e.kind === 'manual',
         ).flatMap((e) =>
           e.source === state.selected ? [e.target] : e.target === state.selected ? [e.source] : [],
         ) ?? [],
       ),
-    [session?.graph, session?.contentGraph, session?.protocol, state.selected],
+    [session, state.selected],
   )
   const nodes = useMemo(
     () =>
-      (session?.nodes ?? []).map((n): CanvasNode =>
+      visibleNodes(session).map((n): CanvasNode =>
         n.type !== 'page'
           ? { ...n, selected: n.id === state.selected,
               className: session?.nodes.some((node) => node.id === state.selected && node.type === 'entity') && related.has(n.id) ? 'entity-related-node' : undefined }
@@ -243,7 +271,7 @@ function Workspace() {
       ) ?? [],
     [session, related, state.selected],
   )
-  const edges: Edge[] = useMemo(() => {
+  const baseEdges: Edge[] = useMemo(() => {
     if (session?.protocol === 2) {
       const responses = session.nodes.filter((n) => n.type === 'response')
       const conversationEdges: Edge[] = responses.flatMap((node) => {
@@ -337,8 +365,19 @@ function Workspace() {
     state.selectedEdge,
     weak,
   ])
+  const edges: Edge[] = useMemo(() => visibleLinks(session).map(link => {
+    const original = baseEdges.find(e => e.id === link.id)
+    const manual = link.kind === 'manual'
+    return { ...(original ?? {}), id: link.id, source: link.source, target: link.target,
+      ...(manual ? { type: 'content', label: link.label === '사용자 연결' ? link.label : `사용자 연결 · ${link.label}`, sourceHandle: null, targetHandle: null,
+        ariaLabel: `사용자 연결: ${link.label}`, style: { stroke: '#65766e', strokeWidth: 2.6, strokeDasharray: '6 4' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#65766e' } } : {}),
+      selectable: true, focusable: true, selected: state.selectedLink === link.id,
+      style: { ...(manual ? { stroke: '#65766e', strokeDasharray: '6 4' } : original?.style), strokeWidth: state.selectedLink === link.id ? 4 : 2.6 },
+    }
+  }), [session, baseEdges, state.selectedLink])
   const arrivingGraph = useGraphArrival(session?.id, nodes, edges, Boolean(state.loadingSessionId))
-  const selectedSource = session?.sources.find((s) => s.id === state.selected)
+  const selectedSource = visibleNodes(session).some(n => n.id === state.selected && n.type === 'page') ? session?.sources.find((s) => s.id === state.selected) : undefined
   const selectedRelation =
     state.selectedEdge === null ? undefined : session?.graph.relations[state.selectedEdge]
   const opening = Boolean(state.loadingSessionId)
@@ -360,6 +399,11 @@ function Workspace() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={state.nodesChange}
+        onNodeContextMenu={(event, node) => { event.preventDefault(); state.select(node.id); setMenu({ x: event.clientX, y: event.clientY, node: node.id }) }}
+        onPaneContextMenu={event => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }) }}
+        onEdgeContextMenu={(event, edge) => { event.preventDefault(); useStore.setState({ selectedLink: edge.id, selected: null }); setMenu({ x: event.clientX, y: event.clientY, edge: edge.id }) }}
+        onEdgeClick={(_, edge) => useStore.setState({ selectedLink: edge.id, selected: null })}
+        onEdgeDoubleClick={(_, edge) => state.editEdge(edge.id)}
         onNodeClick={(event, node) => {
           const target = event.target
           if (target instanceof Element && target.closest('button, a, input, textarea')) return
@@ -371,6 +415,7 @@ function Workspace() {
           state.markFitted()
         }}
         onPaneClick={() => {
+          setMenu(null)
           state.select(null)
           state.selectEdge(null)
         }}
@@ -404,6 +449,21 @@ function Workspace() {
       >
         <Background variant={BackgroundVariant.Lines} gap={28} lineWidth={0.6} color="#e2e6df" />
       </ReactFlow>
+      <CanvasEditor />
+      {menu && <div className="canvas-context-menu panel" role="menu" aria-label="캔버스 편집 메뉴" style={{ left: Math.min(menu.x, window.innerWidth - 228), top: Math.min(menu.y, window.innerHeight - 280) }} onPointerDown={e => e.stopPropagation()}>
+        {menu.node && <>
+          <button role="menuitem" onClick={() => { state.copyNode(menu.node!); setMenu(null) }}>복사하기 <kbd>Ctrl/⌘ C</kbd></button>
+          <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.editNode(menu.node!); setMenu(null) }}>수정하기 <kbd>F2</kbd></button>
+          <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.deleteNode(menu.node!); setMenu(null) }}>삭제하기 <kbd>Delete</kbd></button>
+        </>}
+        {menu.edge && <>
+          <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.editEdge(menu.edge!); setMenu(null) }}>간선 수정하기</button>
+          <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.deleteEdge(menu.edge!); setMenu(null) }}>간선 삭제하기</button>
+        </>}
+        <button role="menuitem" disabled={!state.clipboard || editLocked(session)} onClick={() => { state.pasteNode(flow.screenToFlowPosition({ x: menu.x, y: menu.y })); setMenu(null) }}>붙여넣기 <kbd>Ctrl/⌘ V</kbd></button>
+        <button role="menuitem" disabled={!state.undoStack.length || editLocked(session)} onClick={() => { state.undo(); setMenu(null) }}>실행 취소 <kbd>Ctrl/⌘ Z</kbd></button>
+        <button role="menuitem" disabled={!state.redoStack.length || editLocked(session)} onClick={() => { state.redo(); setMenu(null) }}>다시 실행 <kbd>Ctrl/⌘ ⇧ Z</kbd></button>
+      </div>}
       {state.serverError ? (
         <ServerErrorPage retrying={state.retryingServer || opening} onRetry={() => void (state.failedSessionId ? state.open(state.failedSessionId) : state.initialize())} />
       ) : (
@@ -454,7 +514,7 @@ function Workspace() {
           <span className="canvas-metadata">
             <span className="canvas-node-counts">
             {session.protocol === 2
-              ? `${session.nodes.filter((n) => n.type === 'response').length} 응답 · ${session.nodes.filter((n) => n.type === 'information').length} 정보 · ${session.nodes.filter((n) => n.type === 'entity').length} 엔티티 · ${session.nodes.filter((n) => n.type === 'source' || n.type === 'attachment').length} 출처`
+              ? `${visibleNodes(session).filter((n) => n.type === 'response' || n.type === 'user' && n.data.kind === 'response').length} 응답 · ${visibleNodes(session).filter((n) => n.type === 'information' || n.type === 'user' && n.data.kind === 'information').length} 정보 · ${visibleNodes(session).filter((n) => n.type === 'entity' || n.type === 'user' && n.data.kind === 'entity').length} 엔티티 · ${visibleNodes(session).filter((n) => n.type === 'source' || n.type === 'attachment' || n.type === 'user' && ['source', 'image'].includes(n.data.kind)).length} 출처`
               : `${session.sources.length}개의 페이지`}
             </span>
             <ResponseTimer timings={session.responseTimings} />
@@ -462,7 +522,7 @@ function Workspace() {
           {session.mode === 'sample' && <span className="sample-badge">이전 가상 데이터 기록</span>}
         </div>
       )}
-      {!opening && Boolean(session?.nodes.length) && (
+      {!opening && Boolean(visibleNodes(session).length) && (
         <nav className="node-navigation panel" aria-label="노드 탐색">
           <Button
             variant="ghost"
@@ -477,7 +537,7 @@ function Workspace() {
             <ArrowLeft size={16} />
           </Button>
           <span aria-live="polite" aria-atomic="true">
-            {navigationIndex + 1}/{session!.nodes.length}
+            {navigationIndex + 1}/{visibleNodes(session).length}
           </span>
           <Button
             variant="ghost"
@@ -486,7 +546,7 @@ function Workspace() {
             data-tooltip="다음 노드 · D"
             data-tooltip-position="bottom"
             aria-keyshortcuts="d"
-            disabled={navigationIndex >= session!.nodes.length - 1}
+            disabled={navigationIndex >= visibleNodes(session).length - 1}
             onClick={() => navigateNode(1)}
           >
             <ArrowRight size={16} />
@@ -666,6 +726,9 @@ function Workspace() {
           </section>
         )}
       {!opening && <nav className="canvas-tools panel" aria-label="캔버스 도구">
+        <Button variant="ghost" size="icon" aria-label="실행 취소" data-tooltip="실행 취소 · Ctrl/⌘+Z" disabled={!state.undoStack.length || editLocked(session)} onClick={state.undo}><Undo2 /></Button>
+        <Button variant="ghost" size="icon" aria-label="다시 실행" data-tooltip="다시 실행 · Ctrl/⌘+Shift+Z" disabled={!state.redoStack.length || editLocked(session)} onClick={state.redo}><Redo2 /></Button>
+        <i />
         <Button
           variant="ghost"
           size="icon"

@@ -1,3 +1,4 @@
+import { EditNodeActions } from './CanvasEditor'
 import { RabbitLoader } from './RabbitLoader'
 import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { PreviousNodeButton } from './PreviousNodeButton'
@@ -44,6 +45,7 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(copyTimer.current), [])
   async function copy() {
+    useStore.getState().copyNode(id)
     clearTimeout(copyTimer.current)
     try {
       await navigator.clipboard.writeText(data.text)
@@ -70,6 +72,7 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
             {statusText}
           </small>
           <div className="response-actions nodrag nopan">
+            <EditNodeActions id={id} />
             {showStructureAction && (
               <button
                 type="button"

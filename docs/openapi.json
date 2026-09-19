@@ -849,6 +849,54 @@
         ],
         "title": "AttachmentLimits"
       },
+      "CanvasEdits": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/UserNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "hiddenNodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hiddennodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/UserEdge"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "hiddenEdges": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hiddenedges"
+          },
+          "positions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Position"
+            },
+            "type": "object",
+            "title": "Positions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodes",
+          "hiddenNodes",
+          "edges",
+          "hiddenEdges",
+          "positions"
+        ],
+        "title": "CanvasEdits"
+      },
       "CanvasNode": {
         "properties": {
           "id": {
@@ -1286,6 +1334,16 @@
               }
             ],
             "title": "Responsetimings"
+          },
+          "canvasEdits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanvasEdits"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updatedAt": {
             "type": "integer",
@@ -1780,6 +1838,113 @@
           "title"
         ],
         "title": "TitleResponse"
+      },
+      "UserEdge": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "target",
+          "label"
+        ],
+        "title": "UserEdge"
+      },
+      "UserNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "const": "user",
+            "title": "Type"
+          },
+          "position": {
+            "$ref": "#/components/schemas/Position"
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserNodeData"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "position",
+          "data"
+        ],
+        "title": "UserNode"
+      },
+      "UserNodeData": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "response",
+              "entity",
+              "information",
+              "source",
+              "image"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          },
+          "collapsed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collapsed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "title",
+          "text",
+          "url",
+          "imageUrl"
+        ],
+        "title": "UserNodeData"
       },
       "ValidationError": {
         "properties": {
