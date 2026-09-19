@@ -18,6 +18,8 @@ from rabbit_hole.structure import (
     CardSelections,
     ExtractSelection,
     ExtractSelections,
+    card_selections_format,
+    minimum_card_count,
     numbered_lines,
     resolve_cards,
     resolve_selections,
@@ -83,7 +85,9 @@ async def test_structure_uses_no_tools_and_blank_answers_need_no_call(monkeypatc
     assert (await service.structure("  ")).items == []
     parse.assert_not_called()
     assert (await service.structure(TEXT)).items[0].excerpt.quote == EXCERPT
-    assert json.loads(parse.call_args.kwargs["input"]) == {"user_request": "", "answer_lines": numbered_lines(TEXT)}
+    assert json.loads(parse.call_args.kwargs["input"]) == {
+        "user_request": "", "minimum_cards": 0, "answer_lines": numbered_lines(TEXT)
+    }
     assert parse.call_args.kwargs["store"] is False and "tools" not in parse.call_args.kwargs
     parse.return_value = SimpleNamespace(status="completed", output_parsed=cards(3, 99))
     with pytest.raises(StageFailure, match="structure_invalid_selection"):
@@ -241,16 +245,47 @@ async def test_short_comparison_uses_request_scope_without_tools(monkeypatch):
 
 
 async def test_substantial_single_topic_answers_are_partitioned_by_information_role(monkeypatch):
-    parse = AsyncMock(return_value=SimpleNamespace(status="completed", output_parsed=CardSelections(items=[])))
-    monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(responses=SimpleNamespace(parse=parse)))
     text = (
         "# 개념\n벡터 검색은 의미 유사도를 이용합니다.\n"
         "# 동작 원리\n문서를 임베딩한 뒤 가까운 벡터를 찾습니다.\n"
         "# 비교\n키워드 검색은 단어 일치를 보고 벡터 검색은 의미를 비교합니다."
     )
+    raw = cards(1, 2).model_dump()
+    second = raw["items"][0] | {"subtype": "comparison"}
+    second["presentation"] = {**second["presentation"], "heading": "키워드 검색과의 차이"}
+    parsed = CardSelections.model_validate({"items": [raw["items"][0], second]})
+    parse = AsyncMock(return_value=SimpleNamespace(status="completed", output_parsed=parsed))
+    monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(responses=SimpleNamespace(parse=parse)))
     await AgentService(Settings(_env_file=None, openai_api_key="fake")).structure(text)
     instructions = parse.call_args.kwargs["instructions"]
     assert "partition the answer by independently useful information role" in instructions
     assert "SHOULD produce multiple cards" in instructions
     assert "even when every part concerns one overall topic" in instructions
     assert "Use a single card only when" in instructions
+    assert json.loads(parse.call_args.kwargs["input"])["minimum_cards"] == 2
+
+
+@pytest.mark.parametrize(("text", "minimum"), [
+    ("# 개념\n설명\n# 원리\n설명", 2),
+    ("# 1\n설명\n# 2\n설명\n# 3\n설명\n# 4\n설명", 3),
+    ("\n".join(f"# {index}\n충분한 설명" for index in range(6)), 4),
+    ("짧은 한 가지 설명", 0),
+])
+def test_card_minimum_follows_structural_breadth(text, minimum):
+    from pydantic import ValidationError
+
+    assert minimum_card_count(text) == minimum
+    schema = card_selections_format(text)
+    if minimum:
+        with pytest.raises(ValidationError):
+            schema.model_validate(cards().model_dump())
+
+
+async def test_required_multiple_cards_cannot_collapse_to_exact_duplicates(monkeypatch):
+    text = "# 첫 번째\n충분한 설명입니다.\n# 두 번째\n다른 설명입니다."
+    raw = cards(1, 2).model_dump()["items"][0]
+    parsed = CardSelections.model_validate({"items": [raw, raw]})
+    parse = AsyncMock(return_value=SimpleNamespace(status="completed", output_parsed=parsed))
+    monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(responses=SimpleNamespace(parse=parse)))
+    with pytest.raises(StageFailure, match="structure_invalid_schema"):
+        await AgentService(Settings(_env_file=None, openai_api_key="fake")).structure(text)

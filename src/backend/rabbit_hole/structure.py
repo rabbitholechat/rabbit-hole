@@ -1,6 +1,7 @@
 """Answer-grounded cards with field-level references to public response spans."""
 
 import hashlib
+import re
 from typing import Generic, Literal, TypeVar
 from uuid import UUID
 
@@ -104,6 +105,41 @@ class CardSelection(StrictModel):
 
 class CardSelections(StrictModel):
     items: list[CardSelection] = Field(max_length=6)
+
+
+class AtLeastTwoCardSelections(CardSelections):
+    items: list[CardSelection] = Field(min_length=2, max_length=6)
+
+
+class AtLeastThreeCardSelections(CardSelections):
+    items: list[CardSelection] = Field(min_length=3, max_length=6)
+
+
+class AtLeastFourCardSelections(CardSelections):
+    items: list[CardSelection] = Field(min_length=4, max_length=6)
+
+
+def minimum_card_count(text: str) -> int:
+    """Require plural cards for structurally broad answers without classifying their topic."""
+    headings = sum(bool(re.match(r"^\s{0,3}#{1,6}\s+\S", line)) for line in text.splitlines())
+    substantive_blocks = sum(
+        len(block.strip()) >= 40 for block in re.split(r"\n\s*\n", text.strip()) if block.strip()
+    )
+    if headings >= 6:
+        return 4
+    if headings >= 4 or (len(text) >= 900 and substantive_blocks >= 7):
+        return 3
+    if headings >= 2 or (len(text) >= 500 and substantive_blocks >= 4):
+        return 2
+    return 0
+
+
+def card_selections_format(text: str) -> type[CardSelections]:
+    return {
+        2: AtLeastTwoCardSelections,
+        3: AtLeastThreeCardSelections,
+        4: AtLeastFourCardSelections,
+    }.get(minimum_card_count(text), CardSelections)
 
 
 class InformationExtract(StrictModel):
