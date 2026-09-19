@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -23,6 +24,7 @@ from rabbit_hole.structure import (
     numbered_lines,
     resolve_cards,
     resolve_selections,
+    subject_review_lines,
     text_hash,
 )
 
@@ -115,6 +117,66 @@ def test_comparison_preserves_all_named_products_beyond_four_and_expanded_entity
         raw["entities"][0]["subtype"] = subtype
         assert resolve_cards(text, CardSelections.model_validate(raw)).entities[0].subtype == subtype
 
+
+@pytest.mark.parametrize("text", [
+    "## 개념\n- **임베딩**: 벡터로 변환\n- **최근접 탐색**: 가까운 데이터를 찾음",
+    "## 제빵\n- **발효**: 효모가 반죽을 부풀림\n- **글루텐 형성**: 반죽의 탄성에 관여",
+    "## Music\n- **Counterpoint**: combines independent melodic lines\n- **Syncopation**: shifts rhythmic accents",
+])
+def test_subject_review_is_structural_not_a_topic_dictionary(text):
+    assert subject_review_lines(text) == [1, 2, 3]
+    # Identical formatting, entirely novel vocabulary, identical review coverage.
+    assert subject_review_lines("## Z\n- **X**: alpha\n- **Y**: beta") == [1, 2, 3]
+
+
+def test_review_cues_are_bounded_ignore_fenced_examples_and_do_not_create_entities():
+    text = "```md\n# example\n- **not a subject**: quoted code\n```\nordinary prose\n- A: a definition"
+    assert subject_review_lines(text) == [6]
+    assert len(subject_review_lines("\n".join(f"- term {i}: description" for i in range(100)))) == 64
+    assert subject_review_lines("| A | B |\n| --- | :---: |\n| X | Y |") == [1, 3]
+    assert resolve_cards(text, cards(6, 6)).entities == []
+
+
+async def test_concept_answer_covers_related_subjects_sharing_cards_in_one_call(monkeypatch):
+    text = (Path(__file__).parent / "fixtures/entity_concepts.md").read_text()
+    lines = text.splitlines()
+    names = ["벡터 검색", "임베딩", "유사도 계산", "최근접 탐색", "근사 최근접 탐색", "하이브리드 검색", "키워드 검색"]
+    line_numbers = [next(i for i, line in enumerate(lines, 1) if name in line) for name in names]
+    ranges = [{"start_line": number, "end_line": number} for number in line_numbers]
+    groups = [[0], [1, 2, 3], [4], [5, 6]]
+    raw = {"entities": [], "items": []}
+    for item_index, group in enumerate(groups):
+        raw["items"].append({"subtype": "concept", "presentation": {
+            "heading": names[group[0]], "summary": None, "table": None,
+            "sections": [{"heading": None, "layout": "bullets", "items": [
+                {"text": lines[line_numbers[index] - 1], "references": [ranges[index]]} for index in group
+            ]}],
+        }})
+        for index in group:
+            raw["entities"].append({"name": names[index], "subtype": "concept", "qualifier": None,
+                                    "aliases": [], "role": "main" if index == 0 else "related",
+                                    "references": [ranges[index]],
+                                    "links": [{"item_index": item_index, "references": [ranges[index]]}]})
+    parse = AsyncMock(return_value=SimpleNamespace(status="completed", output_parsed=CardSelections.model_validate(raw)))
+    monkeypatch.setattr("rabbit_hole.agent.AsyncOpenAI", lambda **kw: SimpleNamespace(responses=SimpleNamespace(parse=parse)))
+    result = await AgentService(Settings(_env_file=None, openai_api_key="fake")).structure(text, "벡터 검색을 알려줘")
+    assert [entity.name for entity in result.entities] == names
+    assert len(result.items) == 4
+    assert len({entity.links[0].item_key for entity in result.entities[1:4]}) == 1
+    parse.assert_awaited_once()
+    request = parse.call_args.kwargs
+    assert "tools" not in request
+    inputs = json.loads(request["input"])
+    assert inputs["answer_lines"] == numbered_lines(text)
+    assert all(number in inputs["subject_review_lines"] for number in line_numbers[:6])
+    assert "single focused definition bullet" in request["instructions"]
+    assert "remaining prose" in request["instructions"]
+    assert "Entity count is independent" in request["instructions"]
+    assert "One entity remains correct" in request["instructions"]
+    # The production policy contains no fixture-specific entity-name rules.
+    assert not any(name in request["instructions"] for name in names)
+
+
 def test_extracts_are_exact_codepoint_spans_and_deterministic():
     first = resolve_selections(TEXT, candidates())
     item = first.items[0]
@@ -157,7 +219,7 @@ async def test_structure_uses_no_tools_and_blank_answers_need_no_call(monkeypatc
     parse.assert_not_called()
     assert (await service.structure(TEXT)).items[0].excerpt.quote == EXCERPT
     assert json.loads(parse.call_args.kwargs["input"]) == {
-        "user_request": "", "minimum_cards": 0, "answer_lines": numbered_lines(TEXT)
+        "user_request": "", "minimum_cards": 0, "subject_review_lines": [], "answer_lines": numbered_lines(TEXT)
     }
     assert parse.call_args.kwargs["store"] is False and "tools" not in parse.call_args.kwargs
     parse.return_value = SimpleNamespace(status="completed", output_parsed=cards(3, 99))

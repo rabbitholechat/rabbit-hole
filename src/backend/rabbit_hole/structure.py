@@ -114,7 +114,10 @@ class EntityLinkSelection(StrictModel):
 
 
 class EntitySelection(StrictModel):
-    name: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=100, description=(
+        "Verbatim subject name. Includes independently explained concepts, methods, mechanisms and "
+        "technologies, not only proper names or the answer's main topic."
+    ))
     subtype: EntityKind
     # An explicit answer phrase distinguishing homonyms; null prevents cross-response merging.
     qualifier: str | None = Field(max_length=100)
@@ -125,7 +128,11 @@ class EntitySelection(StrictModel):
 
 
 class CardSelections(StrictModel):
-    entities: list[EntitySelection] = Field(default_factory=list, max_length=32)
+    entities: list[EntitySelection] = Field(default_factory=list, max_length=32, description=(
+        "Cover the main subject AND substantively explained related subjects throughout the answer. "
+        "One definition bullet can justify an entity; several entities may share one information card. "
+        "Do not infer an entity quota from the number of cards, headings or words."
+    ))
     items: list[CardSelection] = Field(max_length=6)
 
 
@@ -210,6 +217,37 @@ def text_hash(text: str) -> str:
 
 def numbered_lines(text: str) -> list[dict]:
     return [{"line": i, "text": line} for i, line in enumerate(text.splitlines(keepends=True), 1)]
+
+
+def subject_review_lines(text: str) -> list[int]:
+    """Bounded structural attention cues, never a subject dictionary or automatic entities.
+
+    Focused list items and emphasized labels are easy to lose when cards summarize a
+    broad topic. Include only line numbers: the original answer remains the sole data.
+    Fenced examples are not structural cues; unmarked prose must still be reviewed.
+    """
+    focused, headings = [], []
+    fence = None
+    for number, line in enumerate(text.splitlines(), 1):
+        marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        if marker:
+            token = marker.group(1)
+            if fence is None:
+                fence = token
+            elif token[0] == fence[0] and len(token) >= len(fence):
+                fence = None
+            continue
+        if fence:
+            continue
+        if re.match(r"^\s{0,3}#{1,6}\s+\S", line):
+            headings.append(number)
+        elif (
+            re.match(r"^\s*(?:[-+*]|\d+[.)])\s+\S", line)
+            or re.search(r"\*\*[^*\n]+\*\*|__[^_\n]+__", line)
+            or (line.strip().startswith("|") and not re.fullmatch(r"[\s|:\-]+", line))
+        ):
+            focused.append(number)
+    return sorted((focused + headings)[:64])
 
 
 def resolve_selections(text: str, selections: ExtractSelections) -> StructureResult:

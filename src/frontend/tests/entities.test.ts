@@ -52,6 +52,46 @@ it('shares a comparison card between entities without duplicating information or
   expect(session.contentGraph!.relations.filter((edge) => edge.kind === 'about')).toHaveLength(0)
 })
 
+it('retains related concepts and methods sharing one card without collapsing them into the main topic', async () => {
+  const terms = [
+    ['벡터 검색', '의미가 비슷한 벡터를 찾는 검색 방식'],
+    ['임베딩', '텍스트나 이미지를 고차원 벡터로 변환'],
+    ['유사도 계산', '거리와 각도로 벡터를 비교'],
+    ['최근접 탐색', '질의 벡터와 가까운 데이터를 찾음'],
+    ['근사 최근접 탐색', '대규모 데이터에서 빠른 탐색에 사용'],
+    ['하이브리드 검색', '키워드 검색과 벡터 검색을 함께 사용'],
+    ['키워드 검색', '정확한 단어와 고유명사에 강함'],
+  ]
+  const text = terms.map(([name, definition]) => `${name}: ${definition}`).join('\n')
+  let offset = 0
+  const spans = text.split('\n').map((quote) => {
+    const span = { start: offset, end: offset + quote.length, quote }
+    offset = span.end + 1
+    return span
+  })
+  const payload = entityResult(await hashText(text))
+  payload.items = [{ ...payload.items[0], title: spans[0], excerpt: spans[0], presentation: {
+    heading: '검색의 구성 개념', summary: null, table: null,
+    sections: [{ heading: null, layout: 'bullets', items: spans.map((span) => ({ text: span.quote, references: [span] })) }],
+  } }]
+  payload.entities = terms.map(([name], i) => ({ key: String(i + 1).repeat(24), name,
+    subtype: i === 3 || i === 4 ? 'method' : 'concept', qualifier: null, aliases: [],
+    role: i === 0 ? 'main' : 'related', references: [spans[i]],
+    links: [{ item_key: payload.items[0].key, references: [spans[i]] }],
+  }))
+  const session = entitySession()
+  if (session.nodes[0].type === 'response') session.nodes[0].data.text = text
+  const valid = validateStructure(payload, text, payload.text_hash)
+  const next = attachInformation(session, 'response_entity', valid)
+  expect(next.nodes.filter((n) => n.type === 'entity')).toHaveLength(7)
+  expect(next.nodes.filter((n) => n.type === 'information')).toHaveLength(1)
+  expect(next.contentGraph!.relations.filter((r) => r.kind === 'has_information')).toHaveLength(7)
+  expect(next.viewport).toEqual(session.viewport)
+  for (const node of next.nodes.filter((n) => n.type === 'entity'))
+    expect(nodeContext(next, node.id)?.text).toContain('질의 벡터와 가까운 데이터를 찾음')
+  expect(attachInformation(next, 'response_entity', valid)).toEqual(next)
+})
+
 it('keeps unqualified or differently qualified homonyms separate', () => {
   const payload = entityResult('hash')
   const first = attachInformation(entitySession(), 'response_entity', payload)
