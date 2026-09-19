@@ -16,6 +16,7 @@ import type {
 } from '../types'
 import { safeUrl } from './utils'
 import { cardReferences, validPresentation } from './information'
+import { ENTITY_KIND_LABELS } from '../types'
 
 export const emptyContentGraph = (): ContentGraph => ({ version: 1, entities: {}, relations: [], jobs: {} })
 export const responseById = (session: Session, id: string) =>
@@ -84,15 +85,15 @@ function withRelations(graph: ContentGraph, extra: ContentRelation[]) {
 function estimatedHeight(session: Session, node: CanvasNode) {
   if (node.measured?.height ?? node.height) return node.measured?.height ?? node.height!
   const entity = session.contentGraph?.entities[node.id]
-  return entity?.type === 'entity' ? 220 : entity?.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
+  return entity?.type === 'entity' ? 160 : entity?.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
 }
 function place(session: Session, ids: string[], response: ResponseNode): CanvasNode[] {
   const nodes = [...session.nodes]
   for (const id of ids) {
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
-    const width = entity.type === 'entity' ? 210 : entity.type === 'information' ? (entity.presentation?.table ? 460 : 340) : 460
-    const height = entity.type === 'entity' ? 220 : entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
+    const width = entity.type === 'entity' ? 280 : entity.type === 'information' ? (entity.presentation?.table ? 460 : 340) : 460
+    const height = entity.type === 'entity' ? 160 : entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
     const imageParentId = session.contentGraph!.relations.find((r) => r.kind === 'related_image' && r.target === id)?.source
     const imageParent = nodes.find((n) => n.id === imageParentId)
     const parentIds = session.contentGraph!.relations.filter((r) => r.kind === 'has_information' && r.target === id).map((r) => r.source)
@@ -102,8 +103,8 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
       88 +
-      (entity.type === 'information' && hasSubjects ? 298 : entity.type === 'source' ? 846 + (entity.source.image ? 460 + 88 : 0) : 0)
-    const x = Math.max(baseX, ...subjectParents.map((n) => n.position.x + (n.measured?.width ?? n.width ?? 210) + 88))
+      (entity.type === 'information' && hasSubjects ? 368 : entity.type === 'source' ? 916 + (entity.source.image ? 460 + 88 : 0) : 0)
+    const x = Math.max(baseX, ...subjectParents.map((n) => n.position.x + (n.measured?.width ?? n.width ?? 280) + 88))
     let y = imageParent?.position.y ?? (subjectParents.length ? Math.max(response.position.y, subjectParents[0].position.y) : response.position.y)
     while (true) {
       const collisions = nodes.filter(
@@ -283,11 +284,11 @@ export function validateStructure(value: unknown, text: string, hash: string): S
   }
   if (data.version !== 3) return data
   // Entity failure must not discard valid cards. Never accept ungrounded labels or dangling links.
-  const candidates = Array.isArray(data.entities) ? data.entities.slice(0, 4) : []
+  const candidates = Array.isArray(data.entities) ? data.entities.slice(0, 32) : []
   const entities = candidates.flatMap((entity): EntityExtract[] => {
     if (!entity || !/^[a-f0-9]{24}$/.test(entity.key) || typeof entity.name !== 'string' ||
       !entity.name.trim() || entity.name.length > 100 ||
-      !['concept', 'technology', 'company', 'product', 'person'].includes(entity.subtype) ||
+      !Object.hasOwn(ENTITY_KIND_LABELS, entity.subtype) ||
       !['main', 'related'].includes(entity.role) || !Array.isArray(entity.aliases) || entity.aliases.length > 3 ||
       !(entity.qualifier === null || (typeof entity.qualifier === 'string' && !!entity.qualifier.trim() && entity.qualifier.length <= 100)) ||
       !Array.isArray(entity.links) || !entity.links.length || entity.links.length > 6) return []
@@ -358,8 +359,11 @@ function attachEntities(session: Session, responseId: string, result: StructureR
       if (entry.id === ownId) return true
       // Unqualified labels may be homonyms. Only reuse grounded, matching qualified identities.
       if (!entry.qualifier || !subject.qualifier || normalize(entry.qualifier) !== normalize(subject.qualifier)) return false
-      const names = [entry.name, ...entry.aliases].map(normalize)
-      return [subject.name, ...subject.aliases].some((name) => names.includes(normalize(name)))
+      if (normalize(entry.name) === normalize(subject.name)) return true
+      // Different subjects in one extraction must survive; shared family aliases are not identity.
+      if (entry.observations.some((o) => o.responseId === responseId)) return false
+      return entry.aliases.map(normalize).includes(normalize(subject.name)) ||
+        subject.aliases.map(normalize).includes(normalize(entry.name))
     })
     const id = existing?.id ?? ownId
     const observation = { responseId, role: subject.role, textHash: result.text_hash,

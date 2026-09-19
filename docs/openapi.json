@@ -658,7 +658,26 @@
               "technology",
               "company",
               "product",
-              "person"
+              "person",
+              "organization",
+              "service",
+              "software",
+              "model",
+              "standard",
+              "method",
+              "field",
+              "event",
+              "place",
+              "country",
+              "work",
+              "material",
+              "species",
+              "metric",
+              "dataset",
+              "policy",
+              "project",
+              "language",
+              "other"
             ],
             "title": "Subtype"
           },
@@ -1093,7 +1112,8 @@
             "type": "string",
             "enum": [
               "information",
-              "source"
+              "source",
+              "entity"
             ],
             "title": "Kind"
           },
@@ -1246,7 +1266,7 @@
               "$ref": "#/components/schemas/EntityExtract"
             },
             "type": "array",
-            "maxItems": 4,
+            "maxItems": 32,
             "title": "Entities"
           }
         },

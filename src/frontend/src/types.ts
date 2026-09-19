@@ -68,7 +68,14 @@ export type CardPresentation = {
   sections: { heading: string | null; layout: 'text' | 'bullets' | 'steps'; items: GroundedText[] }[]
   table: { columns: GroundedText[]; rows: (GroundedText | null)[][] } | null
 }
-export type EntityKind = 'concept' | 'technology' | 'company' | 'product' | 'person'
+export const ENTITY_KIND_LABELS = {
+  concept: '개념', technology: '기술', company: '기업', product: '제품', person: '인물',
+  organization: '조직', service: '서비스', software: '소프트웨어', model: '모델',
+  standard: '표준', method: '방법', field: '분야', event: '사건', place: '장소',
+  country: '국가', work: '작품', material: '소재', species: '생물종', metric: '지표',
+  dataset: '데이터셋', policy: '정책', project: '프로젝트', language: '언어', other: '기타',
+} as const
+export type EntityKind = keyof typeof ENTITY_KIND_LABELS
 export type EntityExtract = {
   key: string
   name: string
@@ -138,7 +145,7 @@ export type InformationNode = Node<{
 export type SourceNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'source'>
 export type EntityNode = Node<{ entityId: string; collapsed?: boolean }, 'entity'>
 export type CanvasNode = PageNode | ResponseNode | InformationNode | SourceNode | EntityNode
-export type NodeContext = { node_id: string; kind: 'information' | 'source'; title: string; text: string }
+export type NodeContext = { node_id: string; kind: 'information' | 'source' | 'entity'; title: string; text: string }
 export type Session = {
   lastNodeContext?: NodeContext
   id: string

@@ -12,7 +12,7 @@ class ConversationTurn(BaseModel):
 class NodeContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
     node_id: str = Field(min_length=1, max_length=200)
-    kind: Literal["information", "source"]
+    kind: Literal["information", "source", "entity"]
     title: str = Field(max_length=500)
     text: str = Field(min_length=1, max_length=12000)
 

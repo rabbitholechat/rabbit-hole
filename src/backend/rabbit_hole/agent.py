@@ -229,7 +229,7 @@ class AgentService:
             result = await self.client.responses.parse(
                 model=self.settings.openai_structure_model,
                 instructions=(
-                    "First identify the explicit core subjects of the completed public answer as entities; "
+                    "First identify all explicit, substantively discussed subjects of the completed public answer as entities; "
                     "then reorganize its information into 0 to 6 independently useful cards linked to those subjects. "
                     "Emit entities before items. If the answer explains a clearly named subject, retain that subject "
                     "as an entity even when later paragraphs use pronouns or omit its name. Return no entities only "
@@ -273,9 +273,20 @@ class AgentService:
                     "Every summary, section item, column and cell needs 1 to 4 precise original line ranges, "
                     "start_line/end_line inclusive and 1-based. Include supporting conditions and exceptions "
                     "in the displayed content, not only references. "
-                    "Return entities: 0 to 4 distinct, worthwhile subjects for navigating these cards. "
-                    "Do not fill a quota or collect incidental generic nouns. Use concept, technology, company, "
-                    "product or person. Each entity has name copied verbatim from the answer, aliases only when "
+                    "Return entities: up to 32 distinct subjects, covering EVERY specifically named product, model, "
+                    "service, person or other subject that is materially described or compared, including secondary "
+                    "subjects. Do not stop after the main subject, choose only a flagship, or impose a top-four ranking. "
+                    "Distinct models, generations and variants are separate entities; a shared brand or family name "
+                    "is not an alias proving identity. Preserve exact names from the answer. Before returning, check "
+                    "that named subjects in headings, comparison rows/columns and substantive list items have entity "
+                    "coverage. Multiple entities may link to the same comparison card; do not omit a subject just "
+                    "because it lacks a dedicated card. Keep the cards focused while retaining their subjects. "
+                    "Do not fill a quota or collect incidental generic nouns. Choose the most specific supported "
+                    "entity subtype from the schema based on its role in this answer: distinguish companies from "
+                    "other organizations, products from services/software/models, concepts from methods/fields, "
+                    "and people, places, countries, events, works, materials, species, metrics, datasets, policies, "
+                    "projects, standards and languages. Use other only when none fits; do not infer an unsupported "
+                    "identity or classify by a fixed keyword rule. Each entity has name copied verbatim from the answer, aliases only when "
                     "the answer explicitly identifies them as the same subject, and role main or related in this answer. "
                     "Multiple main subjects are allowed for comparisons. qualifier is a short verbatim phrase "
                     "identifying its domain, maker or other distinguishing context, only if explicit in the linked "
@@ -293,7 +304,7 @@ class AgentService:
                 ),
                 input=json.dumps({"user_request": user_request, "minimum_cards": minimum_cards,
                                   "answer_lines": numbered_lines(text)}, ensure_ascii=False),
-                text_format=selections_format, max_output_tokens=4000, store=False,
+                text_format=selections_format, max_output_tokens=self.settings.max_structure_output_tokens, store=False,
             )
         except LengthFinishReasonError as error:
             raise StageFailure("structure", "structure_output_limit") from error

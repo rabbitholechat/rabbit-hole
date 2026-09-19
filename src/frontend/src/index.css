@@ -1588,12 +1588,15 @@ svg {
   width: 100%; padding: 16px; border: 1px solid #dda598; border-radius: 16px;
   background: #fff1eb; color: #743e32; box-shadow: 0 4px 16px #bc604e12;
 }
-.entity-card header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.entity-card header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 .entity-card .node-tag { color: #a94e3e; background: #f9d9cf; font-size: 11px; }
 .entity-card h2 { margin: 12px 0 6px; font-size: 17px; overflow-wrap: anywhere; }
 .entity-qualifier { margin: 0 0 8px; font-size: 12px; overflow-wrap: anywhere; }
-.entity-role { display: block; font-size: 10px; margin-bottom: 8px; }
-.entity-card .node-button { color: #944a39; border-color: #dda598; width: 100%; justify-content: center; }
+.entity-count { margin: 0; color: #a16e62; font-size: 12px; }
+.entity-card .response-actions { gap: 2px; margin-left: auto; }
+.entity-card .response-actions button { width: 23px; height: 24px; color: #944a39; }
+.entity-card .node-button { color: #944a39; border-color: #dda598; }
+.entity-card.is-reply-target { box-shadow: 0 0 0 3px #bc604e55; }
 .entity-card.is-selected { outline: 2px solid #bc604e; outline-offset: 3px; }
 .entity-related-node .content-card { outline: 2px solid #bc604e; outline-offset: 3px; }
 .entity-information { list-style: none; margin: 10px 0 0; padding: 0; max-height: 240px; overflow: auto; }

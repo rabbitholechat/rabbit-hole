@@ -91,6 +91,30 @@ def test_entity_first_identity_in_heading_survives_pronouns_and_one_bad_card_lin
     isolated = resolve_cards(text, CardSelections.model_validate(raw))
     assert isolated.entities == [] and isolated.items == result.items
 
+
+def test_comparison_preserves_all_named_products_beyond_four_and_expanded_entity_types():
+    from typing import get_args
+
+    from rabbit_hole.structure import EntityKind
+
+    names = ["iPhone 17e", "Duo 18", "제품 A", "제품 B", "제품 C", "제품 D"]
+    text = "비교 대상: " + ", ".join(names)
+    raw = cards(1, 1).model_dump()
+    raw["items"][0]["subtype"] = "comparison"
+    raw["items"][0]["presentation"] = {"heading": "비교 대상", "summary": {
+        "text": text, "references": [{"start_line": 1, "end_line": 1}]}, "sections": [], "table": None}
+    raw["entities"] = [{"name": name, "subtype": "product", "qualifier": None, "aliases": [], "role": "related",
+                        "references": [{"start_line": 1, "end_line": 1}],
+                        "links": [{"item_index": 0, "references": [{"start_line": 1, "end_line": 1}]}]} for name in names]
+    result = resolve_cards(text, CardSelections.model_validate(raw))
+    assert [entity.name for entity in result.entities] == names
+    assert len({entity.key for entity in result.entities}) == 6
+    assert all(entity.links[0].item_key == result.items[0].key for entity in result.entities)
+    assert len(get_args(EntityKind)) == 24
+    for subtype in get_args(EntityKind):
+        raw["entities"][0]["subtype"] = subtype
+        assert resolve_cards(text, CardSelections.model_validate(raw)).entities[0].subtype == subtype
+
 def test_extracts_are_exact_codepoint_spans_and_deterministic():
     first = resolve_selections(TEXT, candidates())
     item = first.items[0]

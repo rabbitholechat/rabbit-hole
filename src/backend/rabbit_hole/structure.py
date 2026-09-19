@@ -10,6 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .errors import StageFailure
 
 InformationKind = Literal["concept", "entity", "claim", "example", "comparison", "procedure"]
+EntityKind = Literal[
+    "concept", "technology", "company", "product", "person", "organization", "service", "software",
+    "model", "standard", "method", "field", "event", "place", "country", "work", "material", "species",
+    "metric", "dataset", "policy", "project", "language", "other",
+]
 
 
 class StrictModel(BaseModel):
@@ -110,7 +115,7 @@ class EntityLinkSelection(StrictModel):
 
 class EntitySelection(StrictModel):
     name: str = Field(min_length=1, max_length=100)
-    subtype: Literal["concept", "technology", "company", "product", "person"]
+    subtype: EntityKind
     # An explicit answer phrase distinguishing homonyms; null prevents cross-response merging.
     qualifier: str | None = Field(max_length=100)
     aliases: list[str] = Field(max_length=3)
@@ -120,7 +125,7 @@ class EntitySelection(StrictModel):
 
 
 class CardSelections(StrictModel):
-    entities: list[EntitySelection] = Field(default_factory=list, max_length=4)
+    entities: list[EntitySelection] = Field(default_factory=list, max_length=32)
     items: list[CardSelection] = Field(max_length=6)
 
 
@@ -176,7 +181,7 @@ class EntityLink(StrictModel):
 class EntityExtract(StrictModel):
     key: str
     name: str
-    subtype: Literal["concept", "technology", "company", "product", "person"]
+    subtype: EntityKind
     qualifier: str | None
     aliases: list[str]
     role: Literal["main", "related"]
@@ -188,7 +193,7 @@ class StructureResult(StrictModel):
     version: Literal[1, 2, 3] = 1
     text_hash: str
     items: list[InformationExtract] = Field(max_length=6)
-    entities: list[EntityExtract] = Field(default_factory=list, max_length=4)
+    entities: list[EntityExtract] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def versioned_cards(self):

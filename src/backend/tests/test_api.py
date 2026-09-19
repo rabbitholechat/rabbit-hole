@@ -309,13 +309,14 @@ def test_branch_uses_selected_signed_response_context():
     assert [t.content for t in FakeService.inputs[-1] if t.role == 'user'] == ['A', 'C']
 
 
-def test_selected_node_context_is_explicit_user_data_in_signed_conversation():
+@pytest.mark.parametrize("kind", ["information", "source", "entity"])
+def test_selected_node_context_is_explicit_user_data_in_signed_conversation(kind):
     seen = []
     class ContextService(FakeService):
         async def stream(self, conversation):
             seen.extend(conversation)
             yield "선택한 자료에 대한 답변"
-    context = {"node_id": "info_test", "kind": "information", "title": "개념", "text": "정확한 원문 발췌"}
+    context = {"node_id": "node_test", "kind": kind, "title": "개념", "text": "대상과 연결된 정보 내용"}
     client = TestClient(create_app(settings(), ContextService))
     response = client.post('/api/agent', json={**body(query="자세히 설명해줘"), "node_context": context})
     data = events(response)

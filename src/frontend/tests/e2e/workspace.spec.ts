@@ -3,26 +3,41 @@ import { memoryHistoryApi } from '../fixtures/historyApi'
 import { entityResult, entitySession } from '../fixtures/entities'
 import { attachInformation } from '../../src/lib/contentGraph'
 
-test('coral entity hubs explore saved information without model calls', async ({ page, context }, testInfo) => {
+test('compact entity hubs explore copy and send connected information', async ({ page, context }, testInfo) => {
   const history = memoryHistoryApi()
   const session = attachInformation(entitySession(), 'response_entity', entityResult('stored-hash'))
+  session.continuation = 'signed-context'
+  session.titleRequested = true
   session.viewport = { x: -300, y: 100, zoom: 0.8 }
   await history.save(session.id, { session, revision: 0 })
   await mockHistory(context, history)
   let calls = 0
   await page.route(/\/api\/(structure|agent|title)/, async (route) => { calls++; await route.abort() })
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => {
+      ;(window as unknown as { entityCopy: string }).entityCopy = text
+    } } })
+  })
   await page.goto('/')
   await openHistory(page)
   await page.getByRole('button', { name: session.query, exact: true }).click()
   const hub = page.getByRole('article', { name: '엔티티 · 벡터 서치', exact: true })
   await expect(hub).toBeVisible()
   await expect(hub).toHaveCSS('background-color', 'rgb(255, 241, 235)')
+  await expect(hub.locator('.node-tag')).toHaveText('엔티티 · 기술')
+  await expect(hub.locator('.entity-role, .entity-qualifier')).toHaveCount(0)
   await expect(page.locator('.react-flow__edge')).toHaveCount(3)
   await expect(page.locator('.content-edge-label').filter({ hasText: /^대상$/ })).toHaveCount(1)
   await expect(page.locator('.content-edge-label').filter({ hasText: /^관련 정보$/ })).toHaveCount(2)
   await hub.click()
   await expect(page.locator('.entity-related-node')).toHaveCount(2)
-  await hub.getByRole('button', { name: '관련 정보 2 보기' }).click()
+  await hub.getByRole('button', { name: '복사하기', exact: true }).click()
+  const copied = await page.evaluate(() => (window as unknown as { entityCopy: string }).entityCopy)
+  expect(copied).toContain('벡터 서치 (기술)')
+  expect(copied).toContain('검색 기술의 정의')
+  expect(copied).toContain('의미 비교')
+  await page.screenshot({ path: testInfo.outputPath('entity-compact.png') })
+  await hub.getByRole('button', { name: '노드 펼치기' }).click()
   await expect(hub.getByRole('list', { name: '관련 정보' }).getByRole('button')).toHaveCount(2)
   await page.screenshot({ path: testInfo.outputPath('entity-hub.png') })
   await hub.getByRole('button', { name: '검색 기술의 정의' }).click()
@@ -30,6 +45,26 @@ test('coral entity hubs explore saved information without model calls', async ({
   await page.locator('.information-card.is-selected').getByRole('button', { name: '이전 노드로' }).click()
   await expect(hub).toHaveClass(/is-selected/)
   expect(calls).toBe(0)
+  await hub.getByRole('button', { name: '노드 접기' }).click()
+  await expect(hub.getByRole('list', { name: '관련 정보' })).toHaveCount(0)
+  let submitted: { node_context: { kind: string; node_id: string; text: string }; query: string } | undefined
+  await page.route('**/api/agent', async (route) => {
+    const request = route.request().postDataJSON()
+    submitted = request
+    const id = `response_${request.request_id}`
+    const events = [['response_started', { id }], ['response_delta', { id, delta: '연결된 정보로 이어지는 답변' }],
+      ['response_completed', { id }], ['checkpoint', { continuation: 'next-context' }], ['done', { status: 'completed', failed_parts: [] }]]
+    await route.fulfill({ contentType: 'text/event-stream', body: events.map(([type, data], i) =>
+      `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: i + 1, type, data })}\n\n`).join('') })
+  })
+  await hub.getByRole('button', { name: '다음 응답에 사용' }).click()
+  await expect(hub).toHaveClass(/is-reply-target/)
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('관련 정보를 바탕으로 더 설명해줘')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  await expect.poll(() => submitted?.node_context.kind).toBe('entity')
+  expect(submitted!.node_context.text).toBe(copied)
+  expect(submitted!.query).toBe('관련 정보를 바탕으로 더 설명해줘')
+  await expect(page.locator('.react-flow__edge-conversation')).toHaveCount(1)
 })
 async function mockHistory(context: BrowserContext, history = memoryHistoryApi()) {
   await context.route('**/api/sessions**', async (route) => {
