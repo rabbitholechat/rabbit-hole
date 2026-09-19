@@ -14,6 +14,8 @@ export function previousNodes(session: Session | null, id: string): CanvasNode[]
   } else {
     const edges = session.protocol === 2 ? session.contentGraph?.relations ?? [] : session.graph.relations
     ids = edges.filter((e) => e.target === id && (!('kind' in e) || e.kind !== 'uses_context')).map((e) => e.source)
+    const entityParents = edges.filter((e) => 'kind' in e && e.kind === 'has_information' && e.target === id).map((e) => e.source)
+    if (entityParents.length) ids = entityParents
   }
   return [...new Set(ids)].flatMap((parent) => {
     const node = session.nodes.find((n) => n.id === parent)
@@ -50,7 +52,7 @@ export function PreviousNodeButton({ id }: { id: string }) {
     if (node.type === 'response') return `응답 · ${node.data.prompt}`
     if (node.type === 'page') return node.data.source.title
     const entity = session?.contentGraph?.entities[node.id]
-    return entity?.type === 'information' ? `정보 · ${entity.presentation?.heading ?? entity.title.quote}` : '출처'
+    return entity?.type === 'entity' ? `엔티티 · ${entity.name}` : entity?.type === 'information' ? `정보 · ${entity.presentation?.heading ?? entity.title.quote}` : '출처'
   }
   return (
     <div ref={rootRef} className="previous-node nodrag nopan" onClick={(event) => event.stopPropagation()}>

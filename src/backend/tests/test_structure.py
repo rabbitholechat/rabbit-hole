@@ -73,6 +73,24 @@ def test_product_entities_use_the_same_contract_without_topic_specific_rules():
     assert result.entities[0].subtype == "product"
     assert result.entities[0].qualifier == "Apple"
 
+
+def test_entity_first_identity_in_heading_survives_pronouns_and_one_bad_card_link():
+    text = "# 벡터 검색\n이 기술은 의미가 비슷한 항목을 찾습니다.\n조건에 따라 결과가 달라집니다."
+    raw = cards(2, 3).model_dump()
+    raw["entities"] = [{"name": "벡터 검색", "subtype": "technology", "qualifier": None, "aliases": [],
+                        "role": "main", "references": [{"start_line": 1, "end_line": 1}],
+                        "links": [{"item_index": 0, "references": [{"start_line": 2, "end_line": 3}]},
+                                  {"item_index": 5, "references": [{"start_line": 99, "end_line": 99}]}]}]
+    selected = CardSelections.model_validate(raw)
+    assert list(selected.model_dump()) == ["entities", "items"]
+    result = resolve_cards(text, selected)
+    assert len(result.entities) == 1 and len(result.entities[0].links) == 1
+    assert result.entities[0].references[0].quote == "# 벡터 검색"
+    assert "벡터 검색" not in result.entities[0].links[0].references[0].quote
+    raw["entities"][0]["references"][0]["end_line"] = 99
+    isolated = resolve_cards(text, CardSelections.model_validate(raw))
+    assert isolated.entities == [] and isolated.items == result.items
+
 def test_extracts_are_exact_codepoint_spans_and_deterministic():
     first = resolve_selections(TEXT, candidates())
     item = first.items[0]

@@ -115,12 +115,13 @@ class EntitySelection(StrictModel):
     qualifier: str | None = Field(max_length=100)
     aliases: list[str] = Field(max_length=3)
     role: Literal["main", "related"]
+    references: list[LineRange] = Field(default_factory=list, max_length=4)
     links: list[EntityLinkSelection] = Field(min_length=1, max_length=6)
 
 
 class CardSelections(StrictModel):
-    items: list[CardSelection] = Field(max_length=6)
     entities: list[EntitySelection] = Field(default_factory=list, max_length=4)
+    items: list[CardSelection] = Field(max_length=6)
 
 
 class AtLeastTwoCardSelections(CardSelections):
@@ -179,6 +180,7 @@ class EntityExtract(StrictModel):
     qualifier: str | None
     aliases: list[str]
     role: Literal["main", "related"]
+    references: list[TextSpan] = Field(default_factory=list, max_length=4)
     links: list[EntityLink]
 
 
@@ -289,15 +291,25 @@ def resolve_cards(text: str, selections: CardSelections) -> StructureResult:
         try:
             links = []
             for link in candidate.links:
-                key = selection_keys[link.item_index]
-                refs = [TextSpan.model_validate(resolve(ref.model_dump())) for ref in link.references]
-                card_refs = [ref for value in presentation_values(by_key[key].presentation) for ref in value.references]
-                if not all(any(ref.start >= anchor.start and ref.end <= anchor.end for anchor in card_refs) for ref in refs):
-                    raise ValueError("unrelated_entity")
-                if not any(candidate.name in ref.quote for ref in refs):
-                    raise ValueError("missing_entity_name")
-                links.append(EntityLink(item_key=key, references=refs))
-            quotes = "\n".join(ref.quote for link in links for ref in link.references)
+                try:
+                    key = selection_keys[link.item_index]
+                    refs = [TextSpan.model_validate(resolve(ref.model_dump())) for ref in link.references]
+                    card_refs = [ref for value in presentation_values(by_key[key].presentation) for ref in value.references]
+                    if not all(any(ref.start >= anchor.start and ref.end <= anchor.end for anchor in card_refs) for ref in refs):
+                        continue
+                    links.append(EntityLink(item_key=key, references=refs))
+                except (ValueError, IndexError, StageFailure):
+                    continue
+            if not links:
+                continue
+            # The subject may be named in a heading while its cards use pronouns or short labels.
+            # Entity identity and the card's about-relation have independent public-answer anchors.
+            entity_refs = [TextSpan.model_validate(resolve(ref.model_dump())) for ref in candidate.references]
+            if not entity_refs:
+                entity_refs = [ref for link in links for ref in link.references][:4]
+            quotes = "\n".join(ref.quote for ref in entity_refs)
+            if candidate.name not in quotes:
+                continue
             if not candidate.name.strip() or any(not alias.strip() or len(alias) > 100 or alias not in quotes for alias in candidate.aliases):
                 raise ValueError("ungrounded_alias")
             if candidate.qualifier is not None and (not candidate.qualifier.strip() or candidate.qualifier not in quotes):
@@ -305,7 +317,8 @@ def resolve_cards(text: str, selections: CardSelections) -> StructureResult:
             identity = f"{candidate.subtype}:{candidate.name}:{candidate.qualifier}"
             entities.append(EntityExtract(
                 key=text_hash(identity)[:24], name=candidate.name, subtype=candidate.subtype,
-                qualifier=candidate.qualifier, aliases=candidate.aliases, role=candidate.role, links=links,
+                qualifier=candidate.qualifier, aliases=candidate.aliases, role=candidate.role,
+                references=entity_refs, links=links,
             ))
         except (ValueError, IndexError, StageFailure):
             continue

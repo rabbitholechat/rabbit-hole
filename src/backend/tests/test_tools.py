@@ -128,6 +128,8 @@ async def test_search_real_metadata_only_and_page_identity(monkeypatch):
     assert all(s["access"] == "search_result" and s["verification"] == "unverified" for s in result["sources"])
     assert result["sources"][0]["title"] == "Page A"
     assert "https://example.com/b" not in {s.url for s in tools.sources.values()}
+    assert [candidate["url"] for candidate in result["candidates"]] == ["https://example.com/b"]
+    assert create.call_args.kwargs["include"] == ["web_search_call.action.sources"]
     source = tools.record("https://example.com/a#section", "Page A", "page_read")
     assert source.id == result["sources"][0]["id"]
     assert tools.record("https://example.com/a", "", "search_result").access == "page_read"
@@ -535,9 +537,11 @@ async def test_korean_subject_context_survives_wrong_name_candidates_and_query_r
     first = await tools.web_search("전소연 새 앨범")
     assert first["remaining_searches"] == 1
     assert first["remaining_tool_calls"] == 7
-    assert "Raw discovery candidates are excluded" in first["usage_notice"]
-    # An unrelated raw candidate is not exposed as evidence or a public source node.
-    assert first["status"] == "no_sources" and first["sources"] == []
+    assert "unreviewed discovery URLs" in first["usage_notice"]
+    # A candidate is available for relevance review but never registered as evidence/source.
+    assert first["status"] == "candidates_only" and first["sources"] == [] and first["summary"] == ""
+    assert first["candidates"][0]["title"] == "전효성 소속사 소식"
+    assert tools.displayed_sources() == []
     second = await tools.web_search('"전소연" 앨범 발매')
     assert second["remaining_searches"] == 0
     assert second["remaining_tool_calls"] == 6
@@ -566,7 +570,7 @@ async def test_empty_search_reports_remaining_budget_without_exposing_uncited_su
 
 
 @pytest.mark.parametrize("focus,query,expected", [
-    ("current", "전소연 새 앨범", "전소연 새 앨범 2041"),
+    ("current", "전소연 새 앨범", "전소연 새 앨범"),
     ("current", "전소연 2041 앨범", "전소연 2041 앨범"),
     ("historical", "전소연 2021 앨범", "전소연 2021 앨범"),
     ("unspecified", "전소연 앨범", "전소연 앨범"),
@@ -589,10 +593,51 @@ async def test_search_temporal_intent_uses_server_seoul_year_without_changing_hi
     assert payload["reference_date"] == "2041-01-01"
     assert payload["temporal_focus"] == focus
     assert result["reference_date"] == "2041-01-01"
+    assert payload["reference_time"] == "2041-01-01T01:00:00+09:00"
+    expected_window = {"since": "2040-12-27T01:00:00+09:00", "prefer_since": "2040-12-29T01:00:00+09:00",
+                       "until": "2041-01-01T01:00:00+09:00"} if focus == "current" else None
+    assert payload["search_window"] == expected_window == result["search_window"]
     assert create.call_args.kwargs["tools"][0]["external_web_access"] is True
     assert "only historical results" in create.call_args.kwargs["instructions"]
     assert "full reference_date" in create.call_args.kwargs["instructions"]
     assert "Search ranking is not proof of freshness" in create.call_args.kwargs["instructions"]
+
+
+async def test_uncited_discovery_recovers_by_reading_without_extra_search_or_automatic_sources(monkeypatch):
+    url = "https://example.com/current-product"
+    create = AsyncMock(return_value=SimpleNamespace(status="completed", output_text="uncited generated claim",
+        model_dump=lambda: {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": [
+            {"url": url, "title": "Current product"}, {"url": url + "#overview"},
+            {"url": "http://127.0.0.1/private"}, {"url": "javascript:alert(1)"}, {"url": None},
+        ]}}]}))
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    found = await tools.web_search("current product", temporal_focus="current")
+    assert found["status"] == "candidates_only" and found["summary"] == "" and found["sources"] == []
+    assert len(found["candidates"]) == 1 and found["candidates"][0]["verification"] == "unverified"
+    assert tools.displayed_sources() == []
+    fetch = AsyncMock(return_value={"url": url, "title": "Current product", "text": "Actual page text", "truncated": False})
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", fetch)
+    read = await tools.read_page(found["candidates"][0]["url"])
+    assert read["content_origin"] == "page_text" and read["text"] == "Actual page text"
+    assert tools.displayed_sources()[0].url == url
+    assert tools.calls == 2 and tools.searches == 1 and create.await_count == 1
+    fetch.assert_awaited_once()
+
+
+async def test_discovery_candidates_are_bounded_and_do_not_trigger_enrichment(monkeypatch):
+    create = AsyncMock(return_value=SimpleNamespace(status="completed", output_text="",
+        model_dump=lambda: {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": [
+            {"url": f"https://example.com/{i}", "title": "x" * 1000} for i in range(50)
+        ]}}]}))
+    tools = AgentTools(settings(), SimpleNamespace(responses=SimpleNamespace(create=create)))
+    result = await tools.web_search("query")
+    assert len(result["candidates"]) == 20
+    assert all(len(candidate["title"]) == 500 for candidate in result["candidates"])
+    fetch = AsyncMock()
+    monkeypatch.setattr("rabbit_hole.tools.fetch_page", fetch)
+    await tools.enrich_sources()
+    fetch.assert_not_called()
+    assert tools.calls == 1
 
 
 async def test_temporal_focus_function_tool_dispatches_and_rejects_unknown_scope():

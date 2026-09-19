@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import type { EntityNode } from '../types'
 import { NodeTag } from './NodeTag'
 import { nodeLabel } from '../lib/nodeActions'
+import { PreviousNodeButton } from './PreviousNodeButton'
 
 const labels = { concept: '개념', technology: '기술', company: '기업', product: '제품', person: '인물' }
 
@@ -13,7 +14,8 @@ export function EntityCard({ id, data, selected }: NodeProps<EntityNode>) {
   const entity = session?.contentGraph?.entities[data.entityId]
   if (entity?.type !== 'entity') return null
   const informationIds = [...new Set(session?.contentGraph?.relations
-    .filter((edge) => edge.kind === 'about' && edge.target === id).map((edge) => edge.source))]
+    .flatMap((edge) => edge.kind === 'has_information' && edge.source === id ? [edge.target]
+      : edge.kind === 'about' && edge.target === id ? [edge.source] : []))]
   const main = entity.observations.some((observation) => observation.role === 'main')
   return <>
     <Handle type="target" position={Position.Left} isConnectable={false} />
@@ -31,6 +33,8 @@ export function EntityCard({ id, data, selected }: NodeProps<EntityNode>) {
           <button onClick={(event) => { event.stopPropagation(); navigate(informationId) }}>{nodeLabel(session, informationId)}</button>
         </li>)}
       </ul>}
+      <footer className="node-footer"><PreviousNodeButton id={id} /></footer>
     </article>
+    <Handle type="source" position={Position.Right} isConnectable={false} />
   </>
 }

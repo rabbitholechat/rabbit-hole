@@ -210,7 +210,9 @@ function Workspace() {
   const related = useMemo(
     () =>
       new Set(
-        (session?.protocol === 2 ? session.contentGraph?.relations : session?.graph.relations)?.flatMap((e) =>
+        (session?.protocol === 2 ? session.contentGraph?.relations : session?.graph.relations)?.filter((e) =>
+          session?.contentGraph?.entities[state.selected ?? '']?.type !== 'entity' || e.kind === 'has_information' || e.kind === 'about',
+        ).flatMap((e) =>
           e.source === state.selected ? [e.target] : e.target === state.selected ? [e.source] : [],
         ) ?? [],
       ),
@@ -256,6 +258,8 @@ function Workspace() {
         ]
       })
       const contentEdges: Edge[] = (session.contentGraph?.relations ?? []).filter((edge) => {
+        // Retain answer provenance in storage, but show the entity-first route for grouped cards.
+        if (edge.kind === 'has_extract' && session.contentGraph?.relations.some((r) => r.kind === 'has_information' && r.target === edge.target)) return false
         // The forward conversation edge already displays this explicit selection.
         const response = responses.find((n) => n.id === edge.source)
         return !(edge.kind === 'uses_context' && response && responseParentId(session, response) === edge.target)
@@ -268,9 +272,11 @@ function Workspace() {
         source: edge.source,
         target: edge.target,
         type: 'content',
-        label: isImage ? '관련 이미지' : { about: '설명 대상', has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고', related_image: '관련 이미지' }[edge.kind],
+        label: isImage ? '관련 이미지' : { has_entity: '대상', has_information: '관련 정보', about: '설명 대상', has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고', related_image: '관련 이미지' }[edge.kind],
         ariaLabel: isImage ? '관련 이미지' : {
           about: '정보가 설명하는 대상 · 원문 참조 기반',
+          has_entity: '응답에서 설명하는 엔티티',
+          has_information: '엔티티를 설명하는 정보',
           related_image: '출처 페이지의 관련 이미지',
           has_extract: '응답에서 정보 추출',
           consulted: '응답에서 자료 조회',
@@ -280,7 +286,7 @@ function Workspace() {
         markerEnd: { type: MarkerType.ArrowClosed, color, markerUnits: 'userSpaceOnUse', width: 16, height: 16 },
         style: {
           stroke: color,
-          strokeWidth: edge.kind === 'about' && edge.target === state.selected ? 3.6 : 2.6,
+          strokeWidth: (edge.kind === 'about' && edge.target === state.selected) || (edge.kind === 'has_information' && edge.source === state.selected) ? 3.6 : 2.6,
           strokeDasharray: edge.kind === 'consulted' ? '4 4' : undefined,
         },
         selectable: false,

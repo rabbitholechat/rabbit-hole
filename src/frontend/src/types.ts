@@ -76,6 +76,7 @@ export type EntityExtract = {
   qualifier: string | null
   aliases: string[]
   role: 'main' | 'related'
+  references?: TextSpan[]
   links: { item_key: string; references: TextSpan[] }[]
 }
 export type SubjectEntity = {
@@ -85,7 +86,7 @@ export type SubjectEntity = {
   subtype: EntityKind
   qualifier: string | null
   aliases: string[]
-  observations: { responseId: string; role: 'main' | 'related'; textHash: string }[]
+  observations: { responseId: string; role: 'main' | 'related'; textHash: string; references?: TextSpan[] }[]
 }
 export type StructureResult = {
   version: 1 | 2 | 3
@@ -113,7 +114,7 @@ export type ContentRelation = {
   id: string
   source: string
   target: string
-  kind: 'has_extract' | 'consulted' | 'cites' | 'uses_context' | 'related_image' | 'about'
+  kind: 'has_extract' | 'consulted' | 'cites' | 'uses_context' | 'related_image' | 'about' | 'has_entity' | 'has_information'
   responseId: string
   spans: TextSpan[]
 }

@@ -84,7 +84,7 @@ function withRelations(graph: ContentGraph, extra: ContentRelation[]) {
 function estimatedHeight(session: Session, node: CanvasNode) {
   if (node.measured?.height ?? node.height) return node.measured?.height ?? node.height!
   const entity = session.contentGraph?.entities[node.id]
-  return entity?.type === 'entity' ? 160 : entity?.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
+  return entity?.type === 'entity' ? 220 : entity?.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
 }
 function place(session: Session, ids: string[], response: ResponseNode): CanvasNode[] {
   const nodes = [...session.nodes]
@@ -92,15 +92,19 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
     const width = entity.type === 'entity' ? 210 : entity.type === 'information' ? (entity.presentation?.table ? 460 : 340) : 460
-    const height = entity.type === 'entity' ? 160 : entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
+    const height = entity.type === 'entity' ? 220 : entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
     const imageParentId = session.contentGraph!.relations.find((r) => r.kind === 'related_image' && r.target === id)?.source
     const imageParent = nodes.find((n) => n.id === imageParentId)
-    const x = imageParent ? imageParent.position.x + (imageParent.measured?.width ?? imageParent.width ?? 460) + 88 :
+    const parentIds = session.contentGraph!.relations.filter((r) => r.kind === 'has_information' && r.target === id).map((r) => r.source)
+    const subjectParents = nodes.filter((n) => parentIds.includes(n.id))
+    const hasSubjects = session.contentGraph!.relations.some((r) => r.kind === 'has_entity' && r.source === response.id)
+    const baseX = imageParent ? imageParent.position.x + (imageParent.measured?.width ?? imageParent.width ?? 460) + 88 :
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
       88 +
-      (entity.type === 'entity' ? 548 : entity.type === 'source' ? 846 + (entity.source.image ? 460 + 88 : 0) : 0)
-    let y = imageParent?.position.y ?? response.position.y
+      (entity.type === 'information' && hasSubjects ? 298 : entity.type === 'source' ? 846 + (entity.source.image ? 460 + 88 : 0) : 0)
+    const x = Math.max(baseX, ...subjectParents.map((n) => n.position.x + (n.measured?.width ?? n.width ?? 210) + 88))
+    let y = imageParent?.position.y ?? (subjectParents.length ? Math.max(response.position.y, subjectParents[0].position.y) : response.position.y)
     while (true) {
       const collisions = nodes.filter(
         (n) =>
@@ -156,7 +160,7 @@ export function deduplicateSources(session: Session): Session {
   for (const edge of graph.relations) {
     const source = aliases.get(edge.source) ?? edge.source
     const target = aliases.get(edge.target) ?? edge.target
-    const key = `${source}:${target}:${['has_extract', 'uses_context', 'related_image', 'about'].includes(edge.kind) ? edge.kind : 'source'}`
+    const key = `${source}:${target}:${['has_extract', 'uses_context', 'related_image', 'about', 'has_entity', 'has_information'].includes(edge.kind) ? edge.kind : 'source'}`
     const old = edges.get(key)
     const spans = [...new Map([...(old?.spans ?? []), ...edge.spans].map((s) => [`${s.start}:${s.end}`, s])).values()]
     const kind = old?.kind === 'cites' || edge.kind === 'cites' ? 'cites' : edge.kind
@@ -280,24 +284,26 @@ export function validateStructure(value: unknown, text: string, hash: string): S
   if (data.version !== 3) return data
   // Entity failure must not discard valid cards. Never accept ungrounded labels or dangling links.
   const candidates = Array.isArray(data.entities) ? data.entities.slice(0, 4) : []
-  const entities = candidates.filter((entity): entity is EntityExtract => {
+  const entities = candidates.flatMap((entity): EntityExtract[] => {
     if (!entity || !/^[a-f0-9]{24}$/.test(entity.key) || typeof entity.name !== 'string' ||
       !entity.name.trim() || entity.name.length > 100 ||
       !['concept', 'technology', 'company', 'product', 'person'].includes(entity.subtype) ||
       !['main', 'related'].includes(entity.role) || !Array.isArray(entity.aliases) || entity.aliases.length > 3 ||
       !(entity.qualifier === null || (typeof entity.qualifier === 'string' && !!entity.qualifier.trim() && entity.qualifier.length <= 100)) ||
-      !Array.isArray(entity.links) || !entity.links.length || entity.links.length > 6) return false
-    const valid = entity.links.every((link) => {
+      !Array.isArray(entity.links) || !entity.links.length || entity.links.length > 6) return []
+    const links = entity.links.filter((link) => {
       const item = data.items.find((item) => item.key === link?.item_key)
       if (!item || !Array.isArray(link.references) || !link.references.length || link.references.length > 4) return false
       const anchors = item.presentation ? cardReferences(item.presentation) : [item.excerpt]
-      return link.references.every((ref) => checkSpan(ref, 6000) && anchors.some((a) => ref.start >= a.start && ref.end <= a.end)) &&
-        link.references.some((ref) => ref.quote.includes(entity.name))
+      return link.references.every((ref) => checkSpan(ref, 6000) && anchors.some((a) => ref.start >= a.start && ref.end <= a.end))
     })
-    if (!valid) return false
-    const quotes = entity.links.flatMap((link) => link.references.map((ref) => ref.quote)).join('\n')
-    return (entity.qualifier === null || quotes.includes(entity.qualifier)) &&
+    if (!links.length) return []
+    const references = entity.references ?? links.flatMap((link) => link.references).slice(0, 4)
+    if (!Array.isArray(references) || !references.length || references.length > 4 || !references.every((ref) => checkSpan(ref, 6000))) return []
+    const quotes = references.map((ref) => ref.quote).join('\n')
+    return quotes.includes(entity.name) && (entity.qualifier === null || quotes.includes(entity.qualifier)) &&
       entity.aliases.every((alias) => typeof alias === 'string' && !!alias.trim() && alias.length <= 100 && quotes.includes(alias))
+      ? [{ ...entity, references, links }] : []
   })
   return { ...data, entities }
 }
@@ -335,7 +341,8 @@ export function attachInformation(session: Session, responseId: string, result: 
     }
   }
   const next = { ...session, contentGraph: { ...graph, entities, relations: withRelations(graph, extra) } }
-  return attachEntities({ ...next, nodes: place(next, ids, response) }, responseId, result)
+  const withEntities = attachEntities(next, responseId, result)
+  return { ...withEntities, nodes: place(withEntities, ids, response) }
 }
 
 function attachEntities(session: Session, responseId: string, result: StructureResult): Session {
@@ -355,7 +362,8 @@ function attachEntities(session: Session, responseId: string, result: StructureR
       return [subject.name, ...subject.aliases].some((name) => names.includes(normalize(name)))
     })
     const id = existing?.id ?? ownId
-    const observation = { responseId, role: subject.role, textHash: result.text_hash }
+    const observation = { responseId, role: subject.role, textHash: result.text_hash,
+      references: subject.references ?? subject.links.flatMap((link) => link.references).slice(0, 4) }
     entities[id] = {
       id, type: 'entity', name: existing?.name ?? subject.name, subtype: subject.subtype,
       qualifier: subject.qualifier,
@@ -363,10 +371,11 @@ function attachEntities(session: Session, responseId: string, result: StructureR
       observations: [...(existing?.observations ?? []).filter((o) => o.responseId !== responseId), observation],
     }
     ids.push(id)
+    extra.push(relation(responseId, id, 'has_entity', responseId, observation.references))
     for (const link of subject.links) {
       const informationId = `info_${responseId}_${link.item_key}`
       if (entities[informationId]?.type === 'information')
-        extra.push(relation(informationId, id, 'about', responseId, link.references))
+        extra.push(relation(id, informationId, 'has_information', responseId, link.references))
     }
   }
   const next = { ...session, contentGraph: { ...graph, entities, relations: withRelations(graph, extra) } }

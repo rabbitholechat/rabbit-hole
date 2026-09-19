@@ -688,6 +688,14 @@
             ],
             "title": "Role"
           },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/TextSpan"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "References"
+          },
           "links": {
             "items": {
               "$ref": "#/components/schemas/EntityLink"
