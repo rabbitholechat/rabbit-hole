@@ -103,8 +103,24 @@ class CardSelection(StrictModel):
     presentation: CardPresentation[LineRange]
 
 
+class EntityLinkSelection(StrictModel):
+    item_index: int = Field(ge=0, le=5)
+    references: list[LineRange] = Field(min_length=1, max_length=4)
+
+
+class EntitySelection(StrictModel):
+    name: str = Field(min_length=1, max_length=100)
+    subtype: Literal["concept", "technology", "company", "product", "person"]
+    # An explicit answer phrase distinguishing homonyms; null prevents cross-response merging.
+    qualifier: str | None = Field(max_length=100)
+    aliases: list[str] = Field(max_length=3)
+    role: Literal["main", "related"]
+    links: list[EntityLinkSelection] = Field(min_length=1, max_length=6)
+
+
 class CardSelections(StrictModel):
     items: list[CardSelection] = Field(max_length=6)
+    entities: list[EntitySelection] = Field(default_factory=list, max_length=4)
 
 
 class AtLeastTwoCardSelections(CardSelections):
@@ -151,15 +167,33 @@ class InformationExtract(StrictModel):
     presentation: CardPresentation[TextSpan] | None = None
 
 
+class EntityLink(StrictModel):
+    item_key: str
+    references: list[TextSpan]
+
+
+class EntityExtract(StrictModel):
+    key: str
+    name: str
+    subtype: Literal["concept", "technology", "company", "product", "person"]
+    qualifier: str | None
+    aliases: list[str]
+    role: Literal["main", "related"]
+    links: list[EntityLink]
+
+
 class StructureResult(StrictModel):
-    version: Literal[1, 2] = 1
+    version: Literal[1, 2, 3] = 1
     text_hash: str
     items: list[InformationExtract] = Field(max_length=6)
+    entities: list[EntityExtract] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def versioned_cards(self):
-        if any((item.presentation is not None) != (self.version == 2) for item in self.items):
+        if any((item.presentation is not None) != (self.version >= 2) for item in self.items):
             raise ValueError("invalid_card_version")
+        if self.entities and self.version != 3:
+            raise ValueError("invalid_entity_version")
         return self
 
 
@@ -233,9 +267,11 @@ def resolve_cards(text: str, selections: CardSelections) -> StructureResult:
 
     digest = text_hash(text)
     items, seen = [], set()
+    selection_keys = []
     for selection in selections.items:
         card = CardPresentation[TextSpan].model_validate(resolve(selection.presentation.model_dump()))
         identity = f"{selection.subtype}:{card.model_dump_json()}"
+        selection_keys.append(text_hash(f"{digest}:{identity}")[:24])
         if identity in seen:
             continue
         seen.add(identity)
@@ -246,4 +282,31 @@ def resolve_cards(text: str, selections: CardSelections) -> StructureResult:
             key=text_hash(f"{digest}:{identity}")[:24], subtype=selection.subtype,
             title=title, excerpt=anchor, presentation=card,
         ))
-    return StructureResult(version=2, text_hash=digest, items=items)
+    entities = []
+    by_key = {item.key: item for item in items}
+    for candidate in selections.entities:
+        # Bad entity references are isolated from otherwise useful information cards.
+        try:
+            links = []
+            for link in candidate.links:
+                key = selection_keys[link.item_index]
+                refs = [TextSpan.model_validate(resolve(ref.model_dump())) for ref in link.references]
+                card_refs = [ref for value in presentation_values(by_key[key].presentation) for ref in value.references]
+                if not all(any(ref.start >= anchor.start and ref.end <= anchor.end for anchor in card_refs) for ref in refs):
+                    raise ValueError("unrelated_entity")
+                if not any(candidate.name in ref.quote for ref in refs):
+                    raise ValueError("missing_entity_name")
+                links.append(EntityLink(item_key=key, references=refs))
+            quotes = "\n".join(ref.quote for link in links for ref in link.references)
+            if not candidate.name.strip() or any(not alias.strip() or len(alias) > 100 or alias not in quotes for alias in candidate.aliases):
+                raise ValueError("ungrounded_alias")
+            if candidate.qualifier is not None and (not candidate.qualifier.strip() or candidate.qualifier not in quotes):
+                raise ValueError("ungrounded_qualifier")
+            identity = f"{candidate.subtype}:{candidate.name}:{candidate.qualifier}"
+            entities.append(EntityExtract(
+                key=text_hash(identity)[:24], name=candidate.name, subtype=candidate.subtype,
+                qualifier=candidate.qualifier, aliases=candidate.aliases, role=candidate.role, links=links,
+            ))
+        except (ValueError, IndexError, StageFailure):
+            continue
+    return StructureResult(version=3 if selections.entities else 2, text_hash=digest, items=items, entities=entities)

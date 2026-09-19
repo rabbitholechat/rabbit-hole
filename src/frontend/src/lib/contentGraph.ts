@@ -11,6 +11,8 @@ import type {
   StructureResult,
   TextSpan,
   SourceEntity,
+  EntityExtract,
+  SubjectEntity,
 } from '../types'
 import { safeUrl } from './utils'
 import { cardReferences, validPresentation } from './information'
@@ -82,22 +84,22 @@ function withRelations(graph: ContentGraph, extra: ContentRelation[]) {
 function estimatedHeight(session: Session, node: CanvasNode) {
   if (node.measured?.height ?? node.height) return node.measured?.height ?? node.height!
   const entity = session.contentGraph?.entities[node.id]
-  return entity?.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
+  return entity?.type === 'entity' ? 160 : entity?.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 400
 }
 function place(session: Session, ids: string[], response: ResponseNode): CanvasNode[] {
   const nodes = [...session.nodes]
   for (const id of ids) {
     if (nodes.some((n) => n.id === id)) continue
     const entity = session.contentGraph!.entities[id]
-    const width = entity.type === 'information' ? (entity.presentation?.table ? 460 : 340) : 460
-    const height = entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
+    const width = entity.type === 'entity' ? 210 : entity.type === 'information' ? (entity.presentation?.table ? 460 : 340) : 460
+    const height = entity.type === 'entity' ? 160 : entity.type === 'source' ? (entity.source.image ? 440 : entity.source.content && !['failed', 'skipped'].includes(entity.source.content.status) ? 480 : 260) : 280
     const imageParentId = session.contentGraph!.relations.find((r) => r.kind === 'related_image' && r.target === id)?.source
     const imageParent = nodes.find((n) => n.id === imageParentId)
     const x = imageParent ? imageParent.position.x + (imageParent.measured?.width ?? imageParent.width ?? 460) + 88 :
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
       88 +
-      (entity.type === 'source' ? 428 + (entity.source.image ? 460 + 88 : 0) : 0)
+      (entity.type === 'entity' ? 548 : entity.type === 'source' ? 846 + (entity.source.image ? 460 + 88 : 0) : 0)
     let y = imageParent?.position.y ?? response.position.y
     while (true) {
       const collisions = nodes.filter(
@@ -110,7 +112,7 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
       if (!collisions.length) break
       y = Math.max(...collisions.map((n) => n.position.y + estimatedHeight(session, n))) + 48
     }
-    nodes.push({ id, type: entity.type, data: { entityId: id, ...(entity.type === 'source' ? { collapsed: true } : {}) }, position: { x, y }, width })
+    nodes.push({ id, type: entity.type, data: { entityId: id, ...(['source', 'entity'].includes(entity.type) ? { collapsed: true } : {}) }, position: { x, y }, width })
   }
   return nodes
 }
@@ -154,7 +156,7 @@ export function deduplicateSources(session: Session): Session {
   for (const edge of graph.relations) {
     const source = aliases.get(edge.source) ?? edge.source
     const target = aliases.get(edge.target) ?? edge.target
-    const key = `${source}:${target}:${['has_extract', 'uses_context', 'related_image'].includes(edge.kind) ? edge.kind : 'source'}`
+    const key = `${source}:${target}:${['has_extract', 'uses_context', 'related_image', 'about'].includes(edge.kind) ? edge.kind : 'source'}`
     const old = edges.get(key)
     const spans = [...new Map([...(old?.spans ?? []), ...edge.spans].map((s) => [`${s.start}:${s.end}`, s])).values()]
     const kind = old?.kind === 'cites' || edge.kind === 'cites' ? 'cites' : edge.kind
@@ -252,7 +254,7 @@ export function validateStructure(value: unknown, text: string, hash: string): S
     chars.slice(span.start, span.end).join('') === span.quote
   if (
     !data ||
-    ![1, 2].includes(data.version) ||
+    ![1, 2, 3].includes(data.version) ||
     data.text_hash !== hash ||
     !Array.isArray(data.items) ||
     data.items.length > 6
@@ -270,12 +272,34 @@ export function validateStructure(value: unknown, text: string, hash: string): S
       item.title.start < item.excerpt.start ||
       item.title.end > item.excerpt.end ||
       (data.version === 1 && (item.excerpt.quote.trim() === text.trim() || item.presentation != null)) ||
-      (data.version === 2 && !validPresentation(item.presentation, checkSpan))
+      (data.version >= 2 && !validPresentation(item.presentation, checkSpan))
     )
       throw Error('invalid_structure')
     seen.add(item.key)
   }
-  return data
+  if (data.version !== 3) return data
+  // Entity failure must not discard valid cards. Never accept ungrounded labels or dangling links.
+  const candidates = Array.isArray(data.entities) ? data.entities.slice(0, 4) : []
+  const entities = candidates.filter((entity): entity is EntityExtract => {
+    if (!entity || !/^[a-f0-9]{24}$/.test(entity.key) || typeof entity.name !== 'string' ||
+      !entity.name.trim() || entity.name.length > 100 ||
+      !['concept', 'technology', 'company', 'product', 'person'].includes(entity.subtype) ||
+      !['main', 'related'].includes(entity.role) || !Array.isArray(entity.aliases) || entity.aliases.length > 3 ||
+      !(entity.qualifier === null || (typeof entity.qualifier === 'string' && !!entity.qualifier.trim() && entity.qualifier.length <= 100)) ||
+      !Array.isArray(entity.links) || !entity.links.length || entity.links.length > 6) return false
+    const valid = entity.links.every((link) => {
+      const item = data.items.find((item) => item.key === link?.item_key)
+      if (!item || !Array.isArray(link.references) || !link.references.length || link.references.length > 4) return false
+      const anchors = item.presentation ? cardReferences(item.presentation) : [item.excerpt]
+      return link.references.every((ref) => checkSpan(ref, 6000) && anchors.some((a) => ref.start >= a.start && ref.end <= a.end)) &&
+        link.references.some((ref) => ref.quote.includes(entity.name))
+    })
+    if (!valid) return false
+    const quotes = entity.links.flatMap((link) => link.references.map((ref) => ref.quote)).join('\n')
+    return (entity.qualifier === null || quotes.includes(entity.qualifier)) &&
+      entity.aliases.every((alias) => typeof alias === 'string' && !!alias.trim() && alias.length <= 100 && quotes.includes(alias))
+  })
+  return { ...data, entities }
 }
 export function attachInformation(session: Session, responseId: string, result: StructureResult): Session {
   const response = responseById(session, responseId)
@@ -308,6 +332,41 @@ export function attachInformation(session: Session, responseId: string, result: 
         .filter((l) => l.url === normalizeUrl(entity.source.url))
         .map((l) => l.span)
       if (spans.length) extra.push(relation(id, entity.id, 'cites', responseId, spans))
+    }
+  }
+  const next = { ...session, contentGraph: { ...graph, entities, relations: withRelations(graph, extra) } }
+  return attachEntities({ ...next, nodes: place(next, ids, response) }, responseId, result)
+}
+
+function attachEntities(session: Session, responseId: string, result: StructureResult): Session {
+  const response = responseById(session, responseId)
+  if (!response || result.version !== 3 || !result.entities?.length) return session
+  const graph = session.contentGraph!
+  const entities = { ...graph.entities }, extra: ContentRelation[] = [], ids: string[] = []
+  const normalize = (value: string) => value.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()
+  for (const subject of result.entities) {
+    const ownId = `entity_${responseId}_${subject.key}`
+    const existing = Object.values(entities).find((entry): entry is SubjectEntity => {
+      if (entry.type !== 'entity' || entry.subtype !== subject.subtype) return false
+      if (entry.id === ownId) return true
+      // Unqualified labels may be homonyms. Only reuse grounded, matching qualified identities.
+      if (!entry.qualifier || !subject.qualifier || normalize(entry.qualifier) !== normalize(subject.qualifier)) return false
+      const names = [entry.name, ...entry.aliases].map(normalize)
+      return [subject.name, ...subject.aliases].some((name) => names.includes(normalize(name)))
+    })
+    const id = existing?.id ?? ownId
+    const observation = { responseId, role: subject.role, textHash: result.text_hash }
+    entities[id] = {
+      id, type: 'entity', name: existing?.name ?? subject.name, subtype: subject.subtype,
+      qualifier: subject.qualifier,
+      aliases: [...new Set([...(existing?.aliases ?? []), ...subject.aliases, ...(existing && existing.name !== subject.name ? [subject.name] : [])])],
+      observations: [...(existing?.observations ?? []).filter((o) => o.responseId !== responseId), observation],
+    }
+    ids.push(id)
+    for (const link of subject.links) {
+      const informationId = `info_${responseId}_${link.item_key}`
+      if (entities[informationId]?.type === 'information')
+        extra.push(relation(informationId, id, 'about', responseId, link.references))
     }
   }
   const next = { ...session, contentGraph: { ...graph, entities, relations: withRelations(graph, extra) } }

@@ -1,8 +1,9 @@
-import { MessageSquareText, Lightbulb, Globe2, Image } from 'lucide-react'
+import { MessageSquareText, Lightbulb, Globe2, Image, Diamond } from 'lucide-react'
 
 const nodeKinds = {
   response: { label: '응답', Icon: MessageSquareText },
   information: { label: '정보', Icon: Lightbulb },
+  entity: { label: '엔티티', Icon: Diamond },
   image: { label: '이미지', Icon: Image },
   source: { label: '출처', Icon: Globe2, Image },
 } as const

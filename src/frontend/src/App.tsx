@@ -42,6 +42,7 @@ import { RelationEdge } from './components/RelationEdge'
 import { AnswerPanel } from './components/AnswerPanel'
 import { ResponseCard } from './components/ResponseCard'
 import { ContentCard } from './components/ContentCard'
+import { EntityCard } from './components/EntityCard'
 import { ContentEdge } from './components/ContentEdge'
 import { Button } from './components/ui/button'
 import { NODE_ACCENTS, nodeAccent } from './lib/nodeAppearance'
@@ -50,7 +51,7 @@ import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
 import type { CanvasNode } from './types'
 
-const nodeTypes = { page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard },
+const nodeTypes = { page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
   edgeTypes = { relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
 function Workspace() {
   const state = useStore(),
@@ -209,17 +210,18 @@ function Workspace() {
   const related = useMemo(
     () =>
       new Set(
-        session?.graph.relations.flatMap((e) =>
+        (session?.protocol === 2 ? session.contentGraph?.relations : session?.graph.relations)?.flatMap((e) =>
           e.source === state.selected ? [e.target] : e.target === state.selected ? [e.source] : [],
         ) ?? [],
       ),
-    [session?.graph, state.selected],
+    [session?.graph, session?.contentGraph, session?.protocol, state.selected],
   )
   const nodes = useMemo(
     () =>
       (session?.nodes ?? []).map((n): CanvasNode =>
         n.type !== 'page'
-          ? { ...n, selected: n.id === state.selected }
+          ? { ...n, selected: n.id === state.selected,
+              className: session?.nodes.some((node) => node.id === state.selected && node.type === 'entity') && related.has(n.id) ? 'entity-related-node' : undefined }
           : {
               ...n,
               selected: n.id === state.selected,
@@ -266,8 +268,9 @@ function Workspace() {
         source: edge.source,
         target: edge.target,
         type: 'content',
-        label: isImage ? '관련 이미지' : { has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고', related_image: '관련 이미지' }[edge.kind],
+        label: isImage ? '관련 이미지' : { about: '설명 대상', has_extract: '정보 추출', consulted: '조회', cites: '출처 표기', uses_context: '맥락 참고', related_image: '관련 이미지' }[edge.kind],
         ariaLabel: isImage ? '관련 이미지' : {
+          about: '정보가 설명하는 대상 · 원문 참조 기반',
           related_image: '출처 페이지의 관련 이미지',
           has_extract: '응답에서 정보 추출',
           consulted: '응답에서 자료 조회',
@@ -277,7 +280,7 @@ function Workspace() {
         markerEnd: { type: MarkerType.ArrowClosed, color, markerUnits: 'userSpaceOnUse', width: 16, height: 16 },
         style: {
           stroke: color,
-          strokeWidth: 2.6,
+          strokeWidth: edge.kind === 'about' && edge.target === state.selected ? 3.6 : 2.6,
           strokeDasharray: edge.kind === 'consulted' ? '4 4' : undefined,
         },
         selectable: false,
@@ -426,7 +429,7 @@ function Workspace() {
           </div>
           <span>
             {session.protocol === 2
-              ? `${session.nodes.filter((n) => n.type === 'response').length} 응답 · ${session.nodes.filter((n) => n.type === 'information').length} 정보 · ${session.nodes.filter((n) => n.type === 'source').length} 출처`
+              ? `${session.nodes.filter((n) => n.type === 'response').length} 응답 · ${session.nodes.filter((n) => n.type === 'information').length} 정보 · ${session.nodes.filter((n) => n.type === 'entity').length} 엔티티 · ${session.nodes.filter((n) => n.type === 'source').length} 출처`
               : `${session.sources.length}개의 페이지`}
           </span>
           {session.mode === 'sample' && <span className="sample-badge">이전 가상 데이터 기록</span>}

@@ -32,7 +32,8 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
   useEffect(() => {
     if (isReplyTarget) setArrivalFinished(true)
   }, [isReplyTarget])
-  const entity = useStore((s) => s.session?.contentGraph?.entities[data.entityId])
+  const stored = useStore((s) => s.session?.contentGraph?.entities[data.entityId])
+  const entity = stored?.type === 'entity' ? undefined : stored
   const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.presentation ? cardText(entity.presentation) : entity.excerpt.quote : `${entity?.source.content?.status ?? ''}:${entity?.source.content?.summary || entity?.source.content?.text || ''}`, data.collapsed)
   const collapsed = Boolean(data.collapsed && canCollapse)
   const [imageFailed, setImageFailed] = useState(false)

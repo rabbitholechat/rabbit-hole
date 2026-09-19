@@ -487,7 +487,8 @@
               "page",
               "response",
               "information",
-              "source"
+              "source",
+              "entity"
             ],
             "title": "Type"
           },
@@ -639,6 +640,96 @@
           "rows"
         ],
         "title": "CardTable[TextSpan]"
+      },
+      "EntityExtract": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "subtype": {
+            "type": "string",
+            "enum": [
+              "concept",
+              "technology",
+              "company",
+              "product",
+              "person"
+            ],
+            "title": "Subtype"
+          },
+          "qualifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualifier"
+          },
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Aliases"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "main",
+              "related"
+            ],
+            "title": "Role"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/EntityLink"
+            },
+            "type": "array",
+            "title": "Links"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "subtype",
+          "qualifier",
+          "aliases",
+          "role",
+          "links"
+        ],
+        "title": "EntityExtract"
+      },
+      "EntityLink": {
+        "properties": {
+          "item_key": {
+            "type": "string",
+            "title": "Item Key"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/TextSpan"
+            },
+            "type": "array",
+            "title": "References"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_key",
+          "references"
+        ],
+        "title": "EntityLink"
       },
       "GroundedText_TextSpan_": {
         "properties": {
@@ -1124,7 +1215,8 @@
             "type": "integer",
             "enum": [
               1,
-              2
+              2,
+              3
             ],
             "title": "Version",
             "default": 1
@@ -1140,6 +1232,14 @@
             "type": "array",
             "maxItems": 6,
             "title": "Items"
+          },
+          "entities": {
+            "items": {
+              "$ref": "#/components/schemas/EntityExtract"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Entities"
           }
         },
         "additionalProperties": false,

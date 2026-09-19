@@ -4,6 +4,7 @@ import type { CanvasNode, ContentGraph } from '../types'
 export const NODE_ACCENTS = {
   response: '#458c80',
   information: '#967423',
+  entity: '#bc604e',
   source: '#3f73ab',
   image: '#8860b2',
   page: '#0f766e',

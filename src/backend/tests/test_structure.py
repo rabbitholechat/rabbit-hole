@@ -44,6 +44,35 @@ def cards(start_line=3, end_line=3):
         }]}], "table": None,
     }}]})
 
+
+def test_entities_are_grounded_linked_and_bad_entities_do_not_discard_cards():
+    raw = cards().model_dump()
+    raw["entities"] = [{"name": "벡터 검색", "subtype": "technology", "qualifier": "의미", "aliases": [],
+                        "role": "main", "links": [{"item_index": 0, "references": [{"start_line": 3, "end_line": 3}]}]}]
+    result = resolve_cards(TEXT, CardSelections.model_validate(raw))
+    assert result.version == 3
+    assert result.entities[0].links[0].item_key == result.items[0].key
+    assert result.entities[0].links[0].references[0].quote == EXCERPT
+    assert result == resolve_cards(TEXT, CardSelections.model_validate(raw))
+    for field, value in [("name", "Invented"), ("qualifier", "없는 분야"), ("aliases", ["Invented alias"])]:
+        bad = json.loads(json.dumps(raw))
+        bad["entities"][0][field] = value
+        isolated = resolve_cards(TEXT, CardSelections.model_validate(bad))
+        assert isolated.items == result.items and isolated.entities == []
+    raw["entities"][0]["links"][0]["item_index"] = 5
+    assert resolve_cards(TEXT, CardSelections.model_validate(raw)).entities == []
+
+
+def test_product_entities_use_the_same_contract_without_topic_specific_rules():
+    # Synthetic answer fixture, not a claim about an actual newly released model.
+    text = "아이폰 예시 모델은 Apple의 제품입니다."
+    raw = cards(1, 1).model_dump()
+    raw["entities"] = [{"name": "아이폰 예시 모델", "subtype": "product", "qualifier": "Apple", "aliases": [],
+                        "role": "main", "links": [{"item_index": 0, "references": [{"start_line": 1, "end_line": 1}]}]}]
+    result = resolve_cards(text, CardSelections.model_validate(raw))
+    assert result.entities[0].subtype == "product"
+    assert result.entities[0].qualifier == "Apple"
+
 def test_extracts_are_exact_codepoint_spans_and_deterministic():
     first = resolve_selections(TEXT, candidates())
     item = first.items[0]

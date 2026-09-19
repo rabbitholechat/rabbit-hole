@@ -68,10 +68,30 @@ export type CardPresentation = {
   sections: { heading: string | null; layout: 'text' | 'bullets' | 'steps'; items: GroundedText[] }[]
   table: { columns: GroundedText[]; rows: (GroundedText | null)[][] } | null
 }
+export type EntityKind = 'concept' | 'technology' | 'company' | 'product' | 'person'
+export type EntityExtract = {
+  key: string
+  name: string
+  subtype: EntityKind
+  qualifier: string | null
+  aliases: string[]
+  role: 'main' | 'related'
+  links: { item_key: string; references: TextSpan[] }[]
+}
+export type SubjectEntity = {
+  id: string
+  type: 'entity'
+  name: string
+  subtype: EntityKind
+  qualifier: string | null
+  aliases: string[]
+  observations: { responseId: string; role: 'main' | 'related'; textHash: string }[]
+}
 export type StructureResult = {
-  version: 1 | 2
+  version: 1 | 2 | 3
   text_hash: string
   items: { key: string; subtype: InformationKind; title: TextSpan; excerpt: TextSpan; presentation?: CardPresentation | null }[]
+  entities?: EntityExtract[]
 }
 export type InformationEntity = {
   id: string
@@ -93,7 +113,7 @@ export type ContentRelation = {
   id: string
   source: string
   target: string
-  kind: 'has_extract' | 'consulted' | 'cites' | 'uses_context' | 'related_image'
+  kind: 'has_extract' | 'consulted' | 'cites' | 'uses_context' | 'related_image' | 'about'
   responseId: string
   spans: TextSpan[]
 }
@@ -105,7 +125,7 @@ export type StructureJob = {
 }
 export type ContentGraph = {
   version: 1
-  entities: Record<string, InformationEntity | SourceEntity>
+  entities: Record<string, InformationEntity | SourceEntity | SubjectEntity>
   relations: ContentRelation[]
   jobs: Record<string, StructureJob>
 }
@@ -115,7 +135,8 @@ export type InformationNode = Node<{
   expandedHeight?: number
 }, 'information'>
 export type SourceNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'source'>
-export type CanvasNode = PageNode | ResponseNode | InformationNode | SourceNode
+export type EntityNode = Node<{ entityId: string; collapsed?: boolean }, 'entity'>
+export type CanvasNode = PageNode | ResponseNode | InformationNode | SourceNode | EntityNode
 export type NodeContext = { node_id: string; kind: 'information' | 'source'; title: string; text: string }
 export type Session = {
   lastNodeContext?: NodeContext

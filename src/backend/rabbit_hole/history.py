@@ -29,7 +29,7 @@ class Viewport(Position):
 class CanvasNode(BaseModel):
     model_config = ConfigDict(extra="allow")
     id: str
-    type: Literal["page", "response", "information", "source"]
+    type: Literal["page", "response", "information", "source", "entity"]
     position: Position
     data: dict[str, JsonValue]
 

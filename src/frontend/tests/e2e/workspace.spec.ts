@@ -1,5 +1,31 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test'
 import { memoryHistoryApi } from '../fixtures/historyApi'
+import { entityResult, entitySession } from '../fixtures/entities'
+import { attachInformation } from '../../src/lib/contentGraph'
+
+test('coral entity hubs explore saved information without model calls', async ({ page, context }, testInfo) => {
+  const history = memoryHistoryApi()
+  const session = attachInformation(entitySession(), 'response_entity', entityResult('stored-hash'))
+  session.viewport = { x: -700, y: 100, zoom: 0.8 }
+  await history.save(session.id, { session, revision: 0 })
+  await mockHistory(context, history)
+  let calls = 0
+  await page.route(/\/api\/(structure|agent|title)/, async (route) => { calls++; await route.abort() })
+  await page.goto('/')
+  await openHistory(page)
+  await page.getByRole('button', { name: session.query, exact: true }).click()
+  const hub = page.getByRole('article', { name: '엔티티 · 벡터 서치', exact: true })
+  await expect(hub).toBeVisible()
+  await expect(hub).toHaveCSS('background-color', 'rgb(255, 241, 235)')
+  await hub.click()
+  await expect(page.locator('.entity-related-node')).toHaveCount(2)
+  await hub.getByRole('button', { name: '관련 정보 2 보기' }).click()
+  await expect(hub.getByRole('list', { name: '관련 정보' }).getByRole('button')).toHaveCount(2)
+  await page.screenshot({ path: testInfo.outputPath('entity-hub.png') })
+  await hub.getByRole('button', { name: '검색 기술의 정의' }).click()
+  await expect(page.locator('.react-flow__node-information.selected')).toHaveCount(1)
+  expect(calls).toBe(0)
+})
 async function mockHistory(context: BrowserContext, history = memoryHistoryApi()) {
   await context.route('**/api/sessions**', async (route) => {
     const request = route.request()
