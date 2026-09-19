@@ -2,6 +2,7 @@ import type { CanvasNode, ContentGraph } from '../types'
 
 // Match card accents; edges use their destination's visual type, not evidence strength.
 export const NODE_ACCENTS = {
+  attachment: '#3f73ab',
   response: '#458c80',
   information: '#967423',
   entity: '#bc604e',

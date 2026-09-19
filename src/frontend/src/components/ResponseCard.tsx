@@ -56,6 +56,7 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
   }
   return (
     <>
+      {!!data.attachments?.length && <Handle type="target" id="attachment-input" position={Position.Top} isConnectable={false} />}
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <article
         className={`response-card ${isGenerating ? 'is-generating' : ''} ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}

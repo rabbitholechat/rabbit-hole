@@ -94,3 +94,53 @@ def test_postgres_history_pages_bound_count_and_response_bytes(settings):
     assert len(response.content) < 4_100_000
     assert len(response.json()["sessions"]) == 1
     assert response.json()["next_cursor"] == "large-0"
+
+
+def test_postgres_attachment_lifecycle_and_shared_history(settings):
+    from rabbit_hole.attachments import AttachmentRepository
+    client = TestClient(create_app(settings))
+    raw = "원본 첨부 내용".encode()
+    response = client.post("/api/attachments?filename=notes.txt", content=raw)
+    assert response.status_code == 201
+    meta = response.json()
+    key = meta["id"]
+    for session_id in ("with-file", "shared-file"):
+        snapshot = session(session_id)
+        snapshot["nodes"].append({"id": f"attachment_{key}", "type": "attachment",
+            "position": {"x": 20, "y": -300}, "data": {"attachment": meta}})
+        snapshot["nodes"][0]["data"]["attachments"] = [meta]
+        assert client.put(f"/api/sessions/{session_id}", json={"session": snapshot, "revision": 0}).status_code == 200
+    restarted = TestClient(create_app(settings))
+    assert restarted.get(meta["download_url"]).content == raw
+    assert restarted.get("/api/sessions/with-file").json()["session"]["nodes"][-1]["data"]["attachment"] == meta
+    repository = AttachmentRepository(settings)
+    with repository.connection() as conn:
+        conn.execute("UPDATE rabbit_hole_attachments SET expires_at = now() - interval '1 day'")
+    # Referenced originals survive expiry, draft deletion and deletion of another referencing session.
+    assert client.delete(f"/api/attachments/{key}").status_code == 204
+    assert restarted.get(meta["download_url"]).content == raw
+    assert client.delete("/api/sessions/with-file?revision=1").status_code == 204
+    assert restarted.get(meta["download_url"]).content == raw
+    assert client.delete("/api/sessions/shared-file?revision=1").status_code == 204
+    assert restarted.get(meta["download_url"]).status_code == 404
+    # Missing attachments reject the entire snapshot transaction.
+    missing = session("missing-file")
+    missing["nodes"].append({"id": f"attachment_{key}", "type": "attachment",
+        "position": {"x": 0, "y": 0}, "data": {"attachment": meta}})
+    assert client.put("/api/sessions/missing-file", json={"session": missing, "revision": 0}).status_code == 409
+    assert client.get("/api/sessions/missing-file").status_code == 404
+
+
+def test_postgres_attachment_context_limit_before_loading_binary(settings):
+    from uuid import UUID
+
+    from rabbit_hole.attachments import AttachmentFailure, AttachmentRepository
+    client = TestClient(create_app(settings))
+    first = client.post("/api/attachments?filename=first.txt", content=b"x" * 600).json()
+    second = client.post("/api/attachments?filename=second.txt", content=b"x" * 600).json()
+    repository = AttachmentRepository(settings.model_copy(update={"max_attachment_context_bytes": 1024}))
+    with pytest.raises(AttachmentFailure) as failure:
+        repository.get_many([UUID(first["id"]), UUID(second["id"])], claim=True)
+    assert failure.value.status == 413
+    with repository.connection() as conn:
+        assert conn.execute("SELECT count(*) AS count FROM rabbit_hole_attachments WHERE claimed_at IS NOT NULL").fetchone()["count"] == 0

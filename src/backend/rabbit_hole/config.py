@@ -8,6 +8,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=Path(__file__).parents[1] / ".env", extra="ignore")
     database_url: SecretStr = SecretStr("")
+    max_attachment_bytes: int = Field(3_000_000, ge=1024, le=4_000_000)
+    max_attachments: int = Field(4, ge=1, le=4)
+    max_attachment_pixels: int = Field(20_000_000, ge=1_000_000, le=40_000_000)
+    max_attachment_pdf_pages: int = Field(20, ge=1, le=50)
+    max_attachment_text_chars: int = Field(32000, ge=1000, le=64000)
+    max_attachment_context_bytes: int = Field(12_000_000, ge=1024, le=32_000_000)
     max_history_bytes: int = Field(4_000_000, ge=10000, le=4_000_000)
     openai_api_key: SecretStr = SecretStr("")
     debug_diagnostics: bool = False

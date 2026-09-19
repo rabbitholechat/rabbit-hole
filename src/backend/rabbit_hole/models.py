@@ -1,10 +1,11 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ConversationTurn(BaseModel):
+    attachment_ids: list[UUID] = Field(default_factory=list, max_length=4)
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=64000)
 
@@ -21,19 +22,28 @@ RequestedTool = Literal["web_search", "read_page"]
 
 
 class AgentRequest(BaseModel):
+    attachment_ids: list[UUID] = Field(default_factory=list, max_length=4)
     requested_tool: RequestedTool | None = None
     node_context: NodeContext | None = None
     model_config = ConfigDict(extra="forbid")
-    query: str = Field(min_length=1, max_length=2000)
+    query: str = Field(default="", max_length=2000)
     request_id: UUID
     continuation: str | None = Field(None, max_length=2_000_000)
 
     @field_validator("query")
     @classmethod
     def nonempty(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("메시지를 입력하세요.")
         return value.strip()
+
+    @model_validator(mode="after")
+    def valid_input(self):
+        if len(set(self.attachment_ids)) != len(self.attachment_ids):
+            raise ValueError("중복된 첨부입니다.")
+        if not self.query:
+            if not self.attachment_ids:
+                raise ValueError("메시지 또는 첨부를 입력하세요.")
+            self.query = "첨부한 자료를 설명해 주세요."
+        return self
 
 
 class Snapshot(BaseModel):

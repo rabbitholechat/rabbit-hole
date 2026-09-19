@@ -244,6 +244,230 @@
         }
       }
     },
+    "/api/attachments/limits": {
+      "get": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Limits",
+        "operationId": "limits_api_attachments_limits_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentLimits"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attachments": {
+      "post": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Upload",
+        "operationId": "upload_api_attachments_post",
+        "parameters": [
+          {
+            "name": "filename",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 512,
+              "default": "attachment",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attachment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attachments/{key}": {
+      "get": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Metadata",
+        "operationId": "metadata_api_attachments__key__get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attachment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Remove",
+        "operationId": "remove_api_attachments__key__delete",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attachments/{key}/content": {
+      "get": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Content",
+        "operationId": "content_api_attachments__key__content_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/attachments/{key}/preview": {
+      "get": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Preview",
+        "operationId": "preview_api_attachments__key__preview_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "summary": "Health",
@@ -433,6 +657,15 @@
     "schemas": {
       "AgentRequest": {
         "properties": {
+          "attachment_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Attachment Ids"
+          },
           "requested_tool": {
             "anyOf": [
               {
@@ -461,8 +694,8 @@
           "query": {
             "type": "string",
             "maxLength": 2000,
-            "minLength": 1,
-            "title": "Query"
+            "title": "Query",
+            "default": ""
           },
           "request_id": {
             "type": "string",
@@ -485,10 +718,136 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "query",
           "request_id"
         ],
         "title": "AgentRequest"
+      },
+      "Attachment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "file"
+            ],
+            "title": "Kind"
+          },
+          "media_type": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "application/pdf",
+              "text/plain"
+            ],
+            "title": "Media Type"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size"
+          },
+          "download_url": {
+            "type": "string",
+            "title": "Download Url"
+          },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          },
+          "text_excerpt": {
+            "type": "string",
+            "title": "Text Excerpt",
+            "default": ""
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "media_type",
+          "size",
+          "download_url"
+        ],
+        "title": "Attachment"
+      },
+      "AttachmentLimits": {
+        "properties": {
+          "max_bytes": {
+            "type": "integer",
+            "title": "Max Bytes"
+          },
+          "max_count": {
+            "type": "integer",
+            "title": "Max Count"
+          },
+          "max_text_chars": {
+            "type": "integer",
+            "title": "Max Text Chars"
+          },
+          "max_pdf_pages": {
+            "type": "integer",
+            "title": "Max Pdf Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_bytes",
+          "max_count",
+          "max_text_chars",
+          "max_pdf_pages"
+        ],
+        "title": "AttachmentLimits"
       },
       "CanvasNode": {
         "properties": {
@@ -503,7 +862,8 @@
               "response",
               "information",
               "source",
-              "entity"
+              "entity",
+              "attachment"
             ],
             "title": "Type"
           },

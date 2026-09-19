@@ -7,12 +7,15 @@ const choices = [
   { id: 'read_page', label: 'URL 접근', description: '입력한 페이지를 읽고 답변해요', Icon: Link },
 ] as const
 
-export function ComposerTools({ selected, onSelect, disabled, focusInput }: {
+export function ComposerTools({ selected, onSelect, disabled, focusInput, onAttach }: {
   selected: RequestedTool | null
   onSelect: (tool: RequestedTool | null) => void
   disabled: boolean
   focusInput: () => void
+  onAttach: (files: File[]) => void
 }) {
+  const fileInput = useRef<HTMLInputElement>(null)
+  const imageInput = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -49,6 +52,10 @@ export function ComposerTools({ selected, onSelect, disabled, focusInput }: {
     <div className="composer-tools" ref={root} onBlur={(event) => {
       if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
     }}>
+      <input hidden type="file" multiple ref={fileInput} aria-label="파일 첨부 선택" accept=".pdf,.txt,.md,.csv,.json"
+        onChange={event => { onAttach(Array.from(event.target.files ?? [])); event.target.value = ''; focusInput() }} />
+      <input hidden type="file" multiple ref={imageInput} aria-label="이미지 첨부 선택" accept="image/png,image/jpeg,image/webp"
+        onChange={event => { onAttach(Array.from(event.target.files ?? [])); event.target.value = ''; focusInput() }} />
       <button type="button" className={`composer-tool-trigger ${selected ? 'is-selected' : ''}`}
         ref={trigger} aria-label="도구 추가" aria-expanded={open && !disabled} aria-haspopup="dialog"
         aria-controls="composer-tool-menu" disabled={disabled} onClick={() => setOpen(!open)}>
@@ -63,8 +70,8 @@ export function ComposerTools({ selected, onSelect, disabled, focusInput }: {
           {selected === id && <Check size={15} aria-hidden="true" />}
         </button>)}
         <div className="composer-tool-divider" />
-        <button type="button" disabled><FileText size={18} aria-hidden="true" /><span><strong>파일 첨부</strong></span><small>준비 중</small></button>
-        <button type="button" disabled><Image size={18} aria-hidden="true" /><span><strong>이미지 첨부</strong></span><small>준비 중</small></button>
+        <button type="button" onClick={() => { fileInput.current?.click(); setOpen(false) }}><FileText size={18} aria-hidden="true" /><span><strong>파일 첨부</strong><small>PDF · TXT · MD · CSV · JSON</small></span></button>
+        <button type="button" onClick={() => { imageInput.current?.click(); setOpen(false) }}><Image size={18} aria-hidden="true" /><span><strong>이미지 첨부</strong><small>PNG · JPEG · WebP</small></span></button>
         <p className="composer-tool-hint">선택하지 않아도 필요한 도구를 알아서 사용해요.</p>
       </div>}
     </div>

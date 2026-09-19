@@ -3,7 +3,7 @@
 동일 origin `/api`, JSON 본문 상한 2,100,000바이트, continuation 최대 2,000,000자.
 
 - `GET /api/health`: status, configured, api_version=2. 비밀값 없음.
-- `POST /api/agent`: query(공백 제외 1..2000자), request_id(UUID), continuation(선택), node_context(선택), requested_tool(선택: web_search/read_page/null). 추가 필드 거부.
+- `POST /api/agent`: query(공백 제외 최대 2000자, 첨부가 없으면 필수), request_id(UUID), continuation(선택), node_context(선택), requested_tool(선택: web_search/read_page/null), attachment_ids(선택: 중복 없는 UUID 배열, 최대 4개). 추가 필드 거부.
 - `DELETE /api/jobs/{job_id}`: started의 access_token을 Bearer 헤더로 전달. 주 취소 경로는 fetch AbortController/연결 종료. 다른 서버 인스턴스의 작업은 404.
 
 ```json
@@ -36,7 +36,7 @@ SSE envelope: `{version:2, request_id, job_id, seq, type, data}`. `id: seq`, `ev
 
 ## 에이전트 도구
 
-채팅 바 왼쪽 `+` 메뉴에서 웹 검색 또는 URL 접근을 질문마다 하나 선택할 수 있습니다. 선택하지 않거나 null이면 기존 자동 도구 선택을 유지합니다. 선택은 입력창 칩으로 표시하고 해제할 수 있으며, 전송 후 다음 질문은 자동 선택으로 돌아갑니다. 실패/중지 후 재시도는 해당 질문의 선택을 유지합니다. 새 대화·기록 열기는 입력창 선택을 초기화하며 저장된 기록을 열기만 해서는 도구를 호출하지 않습니다. 파일/이미지 첨부는 현재 준비 중인 비활성 메뉴이며 업로드 요청을 보내지 않습니다.
+채팅 바 왼쪽 `+` 메뉴에서 웹 검색 또는 URL 접근을 질문마다 하나 선택할 수 있습니다. 선택하지 않거나 null이면 기존 자동 도구 선택을 유지합니다. 선택은 입력창 칩으로 표시하고 해제할 수 있으며, 전송 후 다음 질문은 자동 선택으로 돌아갑니다. 실패/중지 후 재시도는 해당 질문의 선택을 유지합니다. 새 대화·기록 열기는 입력창 선택을 초기화하며 저장된 기록을 열기만 해서는 도구를 호출하지 않습니다. 파일/이미지 메뉴는 실제 파일 선택·업로드를 지원하며 질문에 attachment_ids로 전달합니다. 웹 도구 선택과 함께 사용할 수 있습니다.
 
 `requested_tool`은 이번 요청의 SDK `ModelSettings.tool_choice`에 함수 이름으로 전달합니다. SDK가 web_search를 호스팅 도구 이름으로 해석하므로 명시적 웹 검색 요청에만 동일한 로컬 함수의 selected_web_search 별칭을 사용합니다. 공개 API 값은 web_search로 유지합니다. 첫 모델 턴에는 해당 함수 호출을 강제하고 SDK 기본 `reset_tool_choice=True`로 이후 턴은 자동 선택으로 복귀합니다. 일반 에이전트의 다른 도구도 유지하며 도구/검색/시간 예산, 취소, URL 안전 검사를 우회하지 않습니다. 선택한 도구의 실제 함수 진입을 추적하고 실행 전 공개 텍스트는 버퍼에 보관하고 함수 진입 후에만 전달합니다. 호출 없이 종료되면 해당 텍스트를 공개하지 않고 `required_tool_not_used`로 실패 처리합니다. 함수 호출 실패는 성공한 조회가 아니며 모델에 안전한 실패 코드로 전달하여 한계를 설명합니다. 모델/API 자체 실패 또는 취소 시 실행 성공을 보장하지 않습니다.
 
@@ -354,3 +354,19 @@ Entity에는 고유명사뿐 아니라 본문에서 독립적으로 정의·기�
 초기 목록 조회 중에는 사이드바에 토끼 땅파기 애니메이션과 “대화 목록을 불러오고 있어요”를 표시하며 빈 목록 문구와 건수는 표시하지 않습니다. 기록을 클릭하면 `GET /api/sessions/{id}`로 최신 스냅샷과 revision을 확인하고, 요청 중에는 캔버스 가운데에 같은 애니메이션과 “대화를 불러오고 있어요”를 표시합니다. 로딩을 보여주기 위한 인위적인 지연은 없습니다.
 
 로딩 중에는 이전 노드와 입력창·캔버스 도구를 숨기고, 기존 메모리의 응답은 유지합니다. 다른 기록 선택/새 대화/선택한 기록 삭제는 진행 중 본문 요청을 취소하며 늦은 결과는 반영하지 않습니다. 성공하면 저장 위치·viewport·출처/구조화 상태를 복원하고 모델/도구를 다시 실행하지 않습니다. 실패하면 공통 서버 오류 화면을 표시하고 다시 시도는 실패한 기록만 재조회합니다. `prefers-reduced-motion`에서는 토끼 동작을 멈추고 로딩 문구를 유지합니다.
+
+
+## 파일·이미지 첨부 API
+
+- GET /api/attachments/limits: max_bytes, max_count, max_text_chars, max_pdf_pages. 기본값 3,000,000바이트·4개·32,000자·20페이지.
+- POST /api/attachments?filename=<이름>: application/octet-stream 원본 바이너리, 201 Attachment. 업로드 본문에 별도 MAX_ATTACHMENT_BYTES 적용. 지원 형식 PNG/JPEG/WebP, PDF, UTF-8 TXT/MD/CSV/JSON.
+- GET /api/attachments/{UUID}: 저장된 Attachment 메타데이터.
+- GET /api/attachments/{UUID}/content: 다운로드용 원본. Content-Disposition attachment, nosniff, no-store.
+- GET /api/attachments/{UUID}/preview: 서버 생성 JPEG 미리보기. 파일에는 미리보기가 없어 404.
+- DELETE /api/attachments/{UUID}: 미연결·미사용 초안만 삭제, 204. 기존 응답에 사용됐거나 세션에 연결된 자료는 보존.
+
+Attachment 필드: id(UUID), name, kind(image/file), media_type, size(원본 바이트 수), download_url(동일 origin 상대 경로), preview_url(이미지만), text_excerpt(최대 1600자, 카드 본문에는 표시하지 않음), width/height(이미지), pages(PDF). 나머지 선택값은 null. 생성하지 못한 자료를 샘플로 대체하지 않습니다.
+
+첨부 유효성 실패는 422, 크기 제한은 413, 없거나 만료된 첨부는 404, 저장소 연결 실패는 503입니다. /api/agent는 모델 요청 전에 첨부 존재 여부와 누적 모델 입력 용량(기본 12MB)을 확인합니다. 첨부가 있으면 query 생략/빈 문자열을 허용하며 ‘첨부한 자료를 설명해 주세요.’를 사용합니다. continuation version 2의 ConversationTurn에 선택 attachment_ids를 추가했으며 이전 토큰의 생략값은 빈 배열입니다. 토큰/세션 JSON에 바이너리는 넣지 않습니다.
+
+캔버스 attachment 노드는 응답과 함께 첫 렌더링에 생성되며 응답 위에 배치됩니다. response.data.attachments와 session.lastAttachments에 메타데이터를 보존합니다. 다음 응답에 사용 및 재시도는 같은 ID의 원본을 다시 전달하고 기존 소스 노드 위치를 유지합니다. ‘입력 자료’ 연결은 웹 조회/의미적 근거 관계와 별개입니다. 저장소 초기화와 수명·지원 범위는 [ATTACHMENTS.md](ATTACHMENTS.md)를 따릅니다.

@@ -1,7 +1,8 @@
+import { appendResponse, attachmentLimits, deleteDraftAttachment, uploadAttachment } from './lib/attachments'
 import { nodeContext } from './lib/nodeActions'
 import { create } from 'zustand'
 import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
-import type { CanvasNode, Envelope, Session, ResponseNode, RequestedTool, AgentRequest } from './types'
+import type { CanvasNode, Envelope, Session, ResponseNode, RequestedTool, AgentRequest, DraftAttachment, Attachment } from './types'
 import { deleteSession, loadSession, loadSessions, saveSession } from './lib/db'
 import { consumeSSE } from './lib/sse'
 import { parseToolSources } from './lib/toolSources'
@@ -37,6 +38,7 @@ let persistence: Promise<unknown> = Promise.resolve()
 let historyController: AbortController | undefined
 let initialization: Promise<void> | undefined
 let saveTimer: ReturnType<typeof setTimeout> | undefined
+const uploadRequests = new Map<string, AbortController>()
 const structureRequests = new Map<string, AbortController>()
 function persist(session: Session) {
   const snapshot = structuredClone(session)
@@ -53,6 +55,11 @@ interface State {
   loadingSessionId: string | null
   failedSessionId: string | null
   input: string
+  draftAttachments: DraftAttachment[]
+  addAttachments: (files: File[]) => Promise<void>
+  removeAttachment: (localId: string) => void
+  reuseAttachment: (attachment: Attachment) => void
+  clearAttachments: () => void
   requestedTool: RequestedTool | null
   setRequestedTool: (tool: RequestedTool | null) => void
   selected: string | null
@@ -352,9 +359,57 @@ export const useStore = create<State>((set, get) => ({
     return initialization
   },
   setInput: (input) => set({ input }),
+  draftAttachments: [],
+  clearAttachments: () => {
+    for (const draft of get().draftAttachments) get().removeAttachment(draft.localId)
+  },
+  removeAttachment: (localId) => {
+    uploadRequests.get(localId)?.abort()
+    uploadRequests.delete(localId)
+    const draft = get().draftAttachments.find(a => a.localId === localId)
+    set(state => ({draftAttachments: state.draftAttachments.filter(a => a.localId !== localId)}))
+    if (draft?.attachment && !draft.reused) void deleteDraftAttachment(draft.attachment.id)
+  },
+  reuseAttachment: (attachment) => {
+    const state = get()
+    if (state.activeRequest || state.draftAttachments.some(draft => draft.attachment?.id === attachment.id)) return
+    if (state.draftAttachments.length >= 4) { set({error: '첨부는 한 번에 최대 4개까지 추가할 수 있어요.'}); return }
+    set({draftAttachments: [...state.draftAttachments, {localId: crypto.randomUUID(), name: attachment.name,
+      status: 'ready', attachment, reused: true}], error: null})
+  },
+  addAttachments: async (files) => {
+    if (get().activeRequest || !files.length) return
+    const available = 4 - get().draftAttachments.length
+    if (files.length > available) {
+      set({error: '첨부는 한 번에 최대 4개까지 추가할 수 있어요.'})
+      return
+    }
+    const drafts = files.map(file => ({localId: crypto.randomUUID(), name: file.name, status: 'uploading' as const}))
+    set(state => ({draftAttachments: [...state.draftAttachments, ...drafts], error: null}))
+    await Promise.all(drafts.map(async (draft, index) => {
+      const abort = new AbortController()
+      uploadRequests.set(draft.localId, abort)
+      try {
+        const limits = await attachmentLimits()
+        if (abort.signal.aborted) return
+        if (get().draftAttachments.length > limits.max_count) throw Error(`첨부는 최대 ${limits.max_count}개까지 추가할 수 있어요.`)
+        if (files[index].size > limits.max_bytes) throw Error(`파일은 ${(limits.max_bytes / 1000000).toFixed(1)}MB 이하로 첨부해 주세요.`)
+        const attachment = await uploadAttachment(files[index], abort.signal)
+        if (abort.signal.aborted || !get().draftAttachments.some(a => a.localId === draft.localId)) {
+          void deleteDraftAttachment(attachment.id)
+          return
+        }
+        set(state => ({draftAttachments: state.draftAttachments.map(a => a.localId === draft.localId ? {...a, status: 'ready', attachment} : a)}))
+      } catch (error) {
+        if (!abort.signal.aborted) set(state => ({draftAttachments: state.draftAttachments.map(a => a.localId === draft.localId
+          ? {...a, status: 'failed', error: error instanceof Error ? error.message : '첨부를 업로드하지 못했어요.'} : a)}))
+      } finally { uploadRequests.delete(draft.localId) }
+    }))
+  },
   requestedTool: null,
   setRequestedTool: (requestedTool) => set({ requestedTool }),
   newConversation: () => {
+    get().clearAttachments()
     historyController?.abort()
     historyController = undefined
     set({ loadingSessionId: null, failedSessionId: null })
@@ -363,6 +418,7 @@ export const useStore = create<State>((set, get) => ({
     set({ session: null, requestedTool: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
   },
   open: async (id) => {
+    get().clearAttachments()
     if (get().loadingSessionId === id) return
     historyController?.abort()
     const abort = new AbortController()
@@ -409,7 +465,7 @@ export const useStore = create<State>((set, get) => ({
     commit({ ...session, nodes: session.nodes.map((node) => {
       if (node.id !== id || node.type === 'response') return node
       const { height: _height, ...rest } = node
-      return { ...rest, data: { ...node.data, collapsed: !node.data.collapsed } } as CanvasNode
+      return { ...rest, data: { ...node.data, collapsed: !(node.data.collapsed ?? (node.type === 'attachment')) } } as CanvasNode
     }) })
   },
   toggleResponse: (id) => {
@@ -446,16 +502,24 @@ export const useStore = create<State>((set, get) => ({
     const before = get()
     if (before.activeRequest) return
     const latest = before.session?.nodes.filter((n): n is ResponseNode => n.type === 'response').at(-1)
+    if (!options.retry && before.draftAttachments.some(a => a.status !== 'ready')) {
+      set({error: '첨부 업로드를 완료하거나 실패한 첨부를 제거해 주세요.'})
+      return
+    }
+    const attachments: Attachment[] = options.retry ? before.session?.lastAttachments ?? []
+      : before.draftAttachments.flatMap(a => a.attachment ? [a.attachment] : [])
     const query = options.retry
       ? before.session?.lastQuery || before.pendingQuery || latest?.data.prompt
-      : before.input.trim()
+      : before.input.trim() || (attachments.length ? '첨부한 자료를 설명해 주세요.' : '')
     if (!query) return
     const reusable = before.session?.protocol === 2 && before.session.mode === 'live'
-    if (reusable && before.session!.nodes.length && !before.session!.continuation) {
+    const retryUnstartedAttachment = options.retry && attachments.length > 0 && !before.session?.lastParentId
+      && before.session?.nodes.every(n => n.type !== 'response' || (!n.data.text && n.data.status !== 'completed'))
+    if (reusable && before.session!.nodes.length && !before.session!.continuation && !retryUnstartedAttachment) {
       set({ error: '이전 대화를 이어갈 정보가 없습니다. 새 대화를 시작해 주세요.' })
       return
     }
-    const session = reusable ? { ...before.session! } : emptySession(query)
+    let session = reusable ? { ...before.session! } : emptySession(query)
     const context = options.retry ? session.lastNodeContext : nodeContext(before.session, before.replyTo)
     const requestedTool = options.retry ? session.lastRequestedTool : before.requestedTool ?? undefined
     if (requestedTool === 'read_page' && !/https?:\/\/[^\s<>]+/.test(query + (context?.text ?? ''))) {
@@ -481,17 +545,20 @@ export const useStore = create<State>((set, get) => ({
     session.lastNodeContext = context
     session.lastQuery = query
     session.lastRequestedTool = requestedTool
+    session.lastAttachments = attachments
     session.status = 'running'
     session.updatedAt = Date.now()
     session.failedParts = []
     const requestId = crypto.randomUUID()
     session.responseTimings = { ...session.responseTimings, [requestId]: startResponseTiming(requestId) }
+    const initialResponseId = attachments.length ? `response_${requestId}` : null
+    if (initialResponseId) session = appendResponse(session, initialResponseId, requestId, parentId ?? null, query, attachments)
     const abort = new AbortController()
     controller = abort
     set({
       session,
       activeRequest: requestId,
-      responseId: null,
+      responseId: initialResponseId,
       pendingQuery: query,
       pendingParentId: parentId ?? null,
       replyTo: null,
@@ -502,7 +569,9 @@ export const useStore = create<State>((set, get) => ({
       selectedEdge: null,
       input: '',
       requestedTool: null,
+      draftAttachments: options.retry ? before.draftAttachments : [],
     })
+    if (initialResponseId) commit(session)
     try {
       const response = await fetch('/api/agent', {
         method: 'POST',
@@ -514,6 +583,7 @@ export const useStore = create<State>((set, get) => ({
           request_id: requestId,
           continuation: reusable ? continuation : undefined,
           requested_tool: requestedTool,
+          attachment_ids: attachments.length ? attachments.map(a => a.id) : undefined,
         } satisfies AgentRequest),
       })
       await consumeSSE(response, get().receive, abort.signal)
@@ -561,35 +631,9 @@ export const useStore = create<State>((set, get) => ({
         set({ stage: event.data.stage === 'reading_sources' ? '출처 본문을 읽고 있어요' : '응답을 작성하고 있어요' })
         break
       case 'response_started': {
-        if (state.responseId) break
         const id = String(event.data.id)
-        const width = Math.min(560, window.innerWidth - 48)
-        const parent = session.nodes.find((n) => n.id === state.pendingParentId)
-        const x = parent ? parent.position.x + (parent.width || 560) + 64 : 0
-        const column = session.nodes.filter(
-          (n) => n.position.x < x + width && n.position.x + (n.width || 560) > x,
-        )
-        const y = column.length
-          ? Math.max(...column.map((n) => n.position.y + (n.measured?.height ?? n.height ?? 400))) + 64
-          : (parent?.position.y ?? 0)
-        const node: ResponseNode = {
-          id,
-          type: 'response',
-          width,
-          position: { x, y },
-          data: {
-            parentId: state.pendingParentId,
-            prompt: state.pendingQuery,
-            requestedTool: session.lastRequestedTool,
-            text: '',
-            status: 'streaming',
-          },
-        }
-        session.nodes = [...session.nodes, node]
-        const timing = session.responseTimings?.[state.activeRequest!]
-        if (timing) session.responseTimings = {
-          ...session.responseTimings, [state.activeRequest!]: { ...timing, responseId: id },
-        }
+        if (state.responseId && state.responseId !== id) break
+        Object.assign(session, appendResponse(session, id, state.activeRequest!, state.pendingParentId, state.pendingQuery, session.lastAttachments ?? []))
         if (session.lastNodeContext && session.nodes.some((n) => n.id === session.lastNodeContext!.node_id)) {
           const graph = session.contentGraph ?? emptyContentGraph()
           const target = session.lastNodeContext.node_id

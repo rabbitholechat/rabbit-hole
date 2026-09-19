@@ -2241,3 +2241,35 @@ svg {
 .composer-tool-chip button { display: grid; place-items: center; background: transparent; border: 0; padding: 3px; border-radius: 50%; color: inherit; }
 .composer-tool-chip button:hover { background: #dceee3; }
 .composer-tool-trigger:disabled { opacity: .45; }
+
+.composer-attachments { display: flex; gap: 8px; flex: 0 0 100%; flex-wrap: wrap; max-height: 190px; overflow-y: auto; }
+.attachment-draft { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; width: 240px; padding: 8px; background: #f1f5f2; border-radius: 10px; color: #516859; }
+.attachment-draft > img { width: 36px; height: 36px; object-fit: cover; border-radius: 6px; }
+.attachment-draft > div { flex: 1; min-width: 0; }
+.attachment-draft strong { display: block; font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-draft small { display: block; font-size: 10px; margin-top: 3px; overflow-wrap: anywhere; }
+.attachment-draft.failed small { color: #a84435; }
+.attachment-draft > button { background: none; border: 0; padding: 4px; color: inherit; }
+.attachment-spinner { animation: attachment-spin 1s linear infinite; }
+@keyframes attachment-spin { to { transform: rotate(360deg); } }
+.attachment-card { box-sizing: border-box; height: 260px; width: 100%; padding: 12px 14px; border: 1px solid #c4d5e6; border-top: 3px solid #3f73ab; background: #f7fafc; border-radius: 14px; display: flex; flex-direction: column; gap: 9px; }
+.attachment-card.is-selected { outline: 2px solid #3f73ab; }
+.attachment-card > header { display: flex; gap: 8px; align-items: center; }
+.attachment-card .node-tag { color: #3f73ab; background: #e9f1f9; }
+.attachment-preview, .attachment-file-preview { width: 100%; height: 134px; min-height: 134px; object-fit: contain; border-radius: 7px; background: #edf2f6; }
+.attachment-file-preview { overflow: hidden; padding: 12px; color: #788b9c; }
+.attachment-card > h2 { font-size: 12px; font-weight: 550; line-height: 1.4; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.attachment-card > footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #8593a0; font-size: 10px; }
+@media (prefers-reduced-motion: reduce) { .attachment-spinner { animation: none; } }
+.attachment-card .response-actions { gap: 2px; flex-shrink: 0; }
+.attachment-card .response-actions button, .attachment-download {
+  display: grid; place-items: center; width: 25px; height: 27px; padding: 0;
+  color: #6b8499; background: transparent; border: 0; border-radius: 6px;
+}
+.attachment-download:hover { background: #e7eff5; color: #315f87; }
+.attachment-download:focus-visible { outline: 2px solid #3f73ab; outline-offset: 2px; }
+.attachment-card.is-expanded { height: auto; min-height: 260px; }
+.attachment-card.is-expanded .attachment-preview { height: 320px; object-fit: contain; }
+.attachment-card.is-expanded > h2 { white-space: normal; overflow-wrap: anywhere; }
+.attachment-file-preview { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; font-size: 12px; }
+.attachment-card.is-expanded .attachment-file-preview { height: 180px; }

@@ -1433,8 +1433,8 @@ test('composer tool menu selects per-message tools without changing viewport or 
   await add.click()
   const menu = page.getByRole('dialog', { name: '도구 선택' })
   await expect(menu).toBeVisible()
-  await expect(menu.getByRole('button', { name: /파일 첨부/ })).toBeDisabled()
-  await expect(menu.getByRole('button', { name: /이미지 첨부/ })).toBeDisabled()
+  await expect(menu.getByRole('button', { name: /파일 첨부/ })).toBeEnabled()
+  await expect(menu.getByRole('button', { name: /이미지 첨부/ })).toBeEnabled()
   const box = (await menu.boundingBox())!
   expect(box.x).toBeGreaterThanOrEqual(0)
   expect(box.y).toBeGreaterThanOrEqual(0)
@@ -1478,4 +1478,96 @@ test('composer tool menu selects per-message tools without changing viewport or 
   await add.click()
   await input.click()
   await expect(menu).toHaveCount(0)
+})
+
+
+test('uploaded image and file sources appear above the first response and restore without upload or model calls', async ({page}, testInfo) => {
+  await installStream(page)
+  let uploads = 0
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
+  await page.route('**/api/attachments**', async route => {
+    const req = route.request(), url = new URL(req.url())
+    if (url.pathname.endsWith('/limits')) return route.fulfill({json:{max_bytes:3000000,max_count:4,max_text_chars:32000,max_pdf_pages:20}})
+    if (req.method() === 'POST') {
+      uploads++
+      const name = url.searchParams.get('filename')!, image = name.endsWith('.png')
+      const id = image ? '11111111-1111-4111-8111-111111111111' : '22222222-2222-4222-8222-222222222222'
+      return route.fulfill({status:201,json:{id,name,kind:image?'image':'file',media_type:image?'image/png':'text/plain',size:50,
+        download_url:`/api/attachments/${id}/content`,preview_url:image?`/api/attachments/${id}/preview`:null,
+        text_excerpt:image?'':'첨부 문서의 실제 내용',width:image?1:null,height:image?1:null,pages:null}})
+    }
+    if (url.pathname.includes('22222222') && url.pathname.endsWith('/content')) return route.fulfill({contentType:'text/plain',body:'첨부 문서의 실제 내용'})
+    return route.fulfill({contentType:'image/png',body:png})
+  })
+  await page.goto('/')
+  await page.getByRole('button',{name:'도구 추가',exact:true}).click()
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button',{name:/이미지 첨부 PNG/}).click()])
+  await chooser.setFiles({name:'photo.png',mimeType:'image/png',buffer:png})
+  await page.getByLabel('파일 첨부 선택').setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('첨부 문서의 실제 내용')})
+  await expect(page.getByText('첨부 완료',{exact:true})).toHaveCount(2)
+  await page.screenshot({path:testInfo.outputPath('attachment-drafts.png')})
+  const viewport = await page.locator('.react-flow__viewport').getAttribute('style')
+  await page.getByRole('textbox',{name:'메시지 입력'}).fill('첨부 이미지와 파일을 설명해줘')
+  await page.getByRole('button',{name:'메시지 보내기'}).click()
+  await expect(page.locator('.react-flow__node-attachment')).toHaveCount(2)
+  await expect(page.locator('.response-card')).toHaveCount(1)
+  await expect(page.locator('.response-card')).toHaveAttribute('aria-busy','true')
+  expect((await calls(page))[0].attachment_ids).toHaveLength(2)
+  await expect(page.locator('.content-edge-label').filter({hasText:'입력 자료'})).toHaveCount(2)
+  const promptY = await page.locator('.react-flow__node-response').evaluate(el => el.getBoundingClientRect().top)
+  for (const source of await page.locator('.react-flow__node-attachment').all()) {
+    expect((await source.boundingBox())!.y + (await source.boundingBox())!.height).toBeLessThan(promptY)
+  }
+  // Source positions persist independently of the response, including while it streams.
+  const source = page.locator('.react-flow__node-attachment').first()
+  await source.focus()
+  await page.keyboard.press('ArrowLeft')
+  const position = await source.evaluate(el => (el as HTMLElement).style.transform)
+  await finishStream(page)
+  await expect(page.getByRole('button',{name:'메시지 보내기'})).toBeVisible()
+  expect(await source.evaluate(el => (el as HTMLElement).style.transform)).toBe(position)
+  await page.getByRole('button',{name:'화면 맞춤'}).click()
+  await page.waitForTimeout(300) // Complete the explicit fit animation before visual inspection.
+  await page.screenshot({path:testInfo.outputPath('attachment-sources.png')})
+  expect(viewport).not.toBeNull()
+  await page.reload()
+  await openHistory(page)
+  await page.getByRole('button',{name:'첨부 이미지와 파일을 설명해줘',exact:true}).click()
+  await expect(page.locator('.react-flow__node-attachment')).toHaveCount(2)
+  expect(await page.locator('.react-flow__node-attachment').first().evaluate(el => (el as HTMLElement).style.transform)).toBe(position)
+  expect(uploads).toBe(2)
+  expect(await calls(page)).toHaveLength(0)
+  const imageCard = page.getByRole('article', {name: '첨부 소스 · photo.png'})
+  const fileCard = page.getByRole('article', {name: '첨부 소스 · notes.txt'})
+  await expect(fileCard).not.toContainText('첨부 문서의 실제 내용')
+  await expect(fileCard.getByRole('link', {name: 'notes.txt 다운로드'})).toHaveText('')
+  await imageCard.getByRole('button', {name: '노드 펼치기'}).click()
+  await expect(imageCard.getByRole('img')).toHaveAttribute('src', /\/content$/)
+  await imageCard.getByRole('button', {name: '노드 접기'}).click()
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {configurable:true, value: {
+      writeText: async (text: string) => { (window as unknown as {copiedText: string}).copiedText = text },
+      write: async (items: ClipboardItem[]) => {
+        const data = await items[0].getType('image/png')
+        ;(window as unknown as {copiedBytes: number}).copiedBytes = data.size
+      },
+    }})
+  })
+  await fileCard.getByRole('button', {name: '복사하기', exact:true}).click()
+  await expect(fileCard.getByRole('button', {name: '복사 완료'})).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as {copiedText:string}).copiedText)).toBe('첨부 문서의 실제 내용')
+  await imageCard.getByRole('button', {name: '복사하기', exact:true}).click()
+  await expect(imageCard.getByRole('button', {name: '복사 완료'})).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as {copiedBytes:number}).copiedBytes)).toBe(png.length)
+  await imageCard.getByRole('button', {name: '다음 응답에 사용'}).click()
+  await fileCard.getByRole('button', {name: '다음 응답에 사용'}).click()
+  await expect(page.getByRole('list', {name:'첨부 자료'}).getByRole('listitem')).toHaveCount(2)
+  await expect(page.getByRole('textbox',{name:'메시지 입력'})).toBeFocused()
+  await page.getByRole('textbox',{name:'메시지 입력'}).fill('첨부 원본을 다시 비교해줘')
+  await page.getByRole('button',{name:'메시지 보내기'}).click()
+  await expect.poll(async () => (await calls(page)).length).toBe(1)
+  expect((await calls(page))[0].attachment_ids).toEqual(['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222'])
+  expect(uploads).toBe(2)
+  await expect(page.locator('.react-flow__node-attachment')).toHaveCount(2)
+  await finishStream(page)
 })

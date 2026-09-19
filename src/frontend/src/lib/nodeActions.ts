@@ -41,6 +41,7 @@ function entityContextText(session: Session | null, id: string): string {
 
 export function nodeLabel(session: Session | null, id: string): string {
   const node = session?.nodes.find((n) => n.id === id)
+  if (node?.type === 'attachment') return node.data.attachment.name
   if (node?.type === 'response') return node.data.prompt
   if (node?.type === 'page') return node.data.source.title
   const entity = session?.contentGraph?.entities[id]
@@ -49,6 +50,7 @@ export function nodeLabel(session: Session | null, id: string): string {
 }
 export function nodeText(session: Session | null, id: string): string {
   const node = session?.nodes.find((n) => n.id === id)
+  if (node?.type === 'attachment') return `${node.data.attachment.name}\n${node.data.attachment.text_excerpt}`
   if (node?.type === 'response') return node.data.text
   if (node?.type === 'page') return `${node.data.source.title}\n${node.data.source.url}\n\n${node.data.source.summary}`
   const entity = session?.contentGraph?.entities[id]

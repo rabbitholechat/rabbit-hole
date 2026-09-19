@@ -45,6 +45,8 @@ import { ResponseTimer } from './components/ResponseTimer'
 import { ContentCard } from './components/ContentCard'
 import { EntityCard } from './components/EntityCard'
 import { ContentEdge } from './components/ContentEdge'
+import { AttachmentCard } from './components/AttachmentCard'
+import { AttachmentTray } from './components/AttachmentTray'
 import { ComposerTools } from './components/ComposerTools'
 import { Button } from './components/ui/button'
 import { NODE_ACCENTS, nodeAccent } from './lib/nodeAppearance'
@@ -53,7 +55,7 @@ import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
 import type { CanvasNode } from './types'
 
-const nodeTypes = { page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
+const nodeTypes = { attachment: AttachmentCard, page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
   edgeTypes = { relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
 function Workspace() {
   const state = useStore(),
@@ -86,6 +88,9 @@ function Workspace() {
   useEffect(() => {
     if (state.replyTo) inputRef.current?.focus()
   }, [state.replyTo])
+  useEffect(() => {
+    if (state.draftAttachments.length) inputRef.current?.focus()
+  }, [state.draftAttachments.length])
   const navigateRef = useRef<(direction: number) => void>(() => {})
   const fitRef = useRef<(initial?: boolean) => void>(() => {})
   useEffect(() => {
@@ -133,7 +138,7 @@ function Workspace() {
   function fit(initial = false) {
     let nodes = useStore.getState().session?.nodes
     if (!nodes?.length) return
-    if (initial && window.innerWidth < 700) nodes = nodes.slice(0, 1)
+    if (initial && window.innerWidth < 700 && nodes[0].type !== 'attachment') nodes = nodes.slice(0, 1)
     const minX = Math.min(...nodes.map((n) => n.position.x)),
       minY = Math.min(...nodes.map((n) => n.position.y))
     const width = Math.max(...nodes.map((n) => n.position.x + (n.width ?? CARD_WIDTH))) - minX
@@ -294,7 +299,17 @@ function Workspace() {
         selectable: false,
         }
       })
-      return [...conversationEdges, ...contentEdges]
+      const attachmentEdges: Edge[] = responses.flatMap(node => (node.data.attachments ?? []).flatMap(attachment => {
+        const source = `attachment_${attachment.id}`
+        if (!session.nodes.some(n => n.id === source)) return []
+        return [{id: `input-${source}-${node.id}`, source, target: node.id, type: 'content',
+          sourceHandle: 'attachment-output', targetHandle: 'attachment-input', label: '입력 자료',
+          ariaLabel: '사용자가 첨부한 입력 자료', selectable: false, focusable: false,
+          markerEnd: {type: MarkerType.ArrowClosed, color: NODE_ACCENTS.source},
+          style: {stroke: NODE_ACCENTS.source, strokeWidth: 2},
+        }]
+      }))
+      return [...conversationEdges, ...contentEdges, ...attachmentEdges]
     }
     return (
       session?.graph.relations.map((e, i) => ({
@@ -439,7 +454,7 @@ function Workspace() {
           <span className="canvas-metadata">
             <span className="canvas-node-counts">
             {session.protocol === 2
-              ? `${session.nodes.filter((n) => n.type === 'response').length} 응답 · ${session.nodes.filter((n) => n.type === 'information').length} 정보 · ${session.nodes.filter((n) => n.type === 'entity').length} 엔티티 · ${session.nodes.filter((n) => n.type === 'source').length} 출처`
+              ? `${session.nodes.filter((n) => n.type === 'response').length} 응답 · ${session.nodes.filter((n) => n.type === 'information').length} 정보 · ${session.nodes.filter((n) => n.type === 'entity').length} 엔티티 · ${session.nodes.filter((n) => n.type === 'source' || n.type === 'attachment').length} 출처`
               : `${session.sources.length}개의 페이지`}
             </span>
             <ResponseTimer timings={session.responseTimings} />
@@ -689,7 +704,7 @@ function Workspace() {
           <Plus />
         </Button>
       </nav>}
-        <form className={`composer panel ${state.replyTo ? 'has-reply' : ''} ${state.requestedTool ? 'has-tool' : ''}`} onSubmit={submit}>
+        <form className={`composer panel ${state.replyTo ? 'has-reply' : ''} ${state.requestedTool || state.draftAttachments.length ? 'has-tool' : ''}`} onSubmit={submit}>
           {state.replyTo && (
             <div className="reply-slot">
               <div className="reply-context" aria-label="이어서 질문할 응답">
@@ -713,8 +728,9 @@ function Workspace() {
               </div>
             </div>
           )}
+          <AttachmentTray items={state.draftAttachments} remove={state.removeAttachment} disabled={busy} />
           <ComposerTools selected={state.requestedTool} onSelect={state.setRequestedTool}
-            disabled={busy} focusInput={() => inputRef.current?.focus()} />
+            disabled={busy} focusInput={() => inputRef.current?.focus()} onAttach={files => void state.addAttachments(files)} />
           <textarea
             ref={inputRef}
             rows={1}
@@ -750,7 +766,7 @@ function Workspace() {
               <Square size={15} />
             </Button>
           ) : (
-            <Button type="submit" size="icon" aria-label="메시지 보내기" disabled={!state.input.trim()}>
+            <Button type="submit" size="icon" aria-label="메시지 보내기" disabled={(!state.input.trim() && !state.draftAttachments.length) || state.draftAttachments.some(a => a.status !== 'ready')}>
               <ArrowUp />
             </Button>
           )}

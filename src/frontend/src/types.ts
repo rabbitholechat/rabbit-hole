@@ -47,6 +47,22 @@ export type ToolSource = {
   page_image?: { thumbnail_url: string } | null
   content?: SourceContent | null
 }
+export type Attachment = {
+  id: string
+  name: string
+  kind: 'image' | 'file'
+  media_type: string
+  size: number
+  download_url: string
+  preview_url: string | null
+  text_excerpt: string
+  width: number | null
+  height: number | null
+  pages: number | null
+}
+export type AttachmentLimits = { max_bytes: number; max_count: number; max_text_chars: number; max_pdf_pages: number }
+export type DraftAttachment = { localId: string; name: string; status: 'uploading' | 'ready' | 'failed'; attachment?: Attachment; error?: string; reused?: boolean }
+export type AttachmentNode = Node<{ attachment: Attachment; collapsed?: boolean }, 'attachment'>
 export type RequestedTool = 'web_search' | 'read_page'
 export type AgentRequest = {
   query: string
@@ -54,6 +70,7 @@ export type AgentRequest = {
   continuation?: string
   node_context?: NodeContext
   requested_tool?: RequestedTool
+  attachment_ids?: string[]
 }
 export type ResponseNode = Node<
   {
@@ -62,6 +79,7 @@ export type ResponseNode = Node<
     collapsed?: boolean
     prompt: string
     requestedTool?: RequestedTool
+    attachments?: Attachment[]
     text: string
     toolSources?: ToolSource[]
     status: 'streaming' | 'completed' | 'partial' | 'failed' | 'cancelled'
@@ -153,7 +171,7 @@ export type InformationNode = Node<{
 }, 'information'>
 export type SourceNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'source'>
 export type EntityNode = Node<{ entityId: string; collapsed?: boolean }, 'entity'>
-export type CanvasNode = PageNode | ResponseNode | InformationNode | SourceNode | EntityNode
+export type CanvasNode = AttachmentNode | PageNode | ResponseNode | InformationNode | SourceNode | EntityNode
 export type NodeContext = { node_id: string; kind: 'information' | 'source' | 'entity'; title: string; text: string }
 export type ResponseTiming = {
   responseId?: string
@@ -171,6 +189,7 @@ export type Session = {
   lastParentId?: string | null
   lastQuery?: string
   lastRequestedTool?: RequestedTool
+  lastAttachments?: Attachment[]
   updatedAt: number
   mode: 'live' | 'sample'
   protocol?: 2

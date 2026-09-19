@@ -29,7 +29,7 @@ class Viewport(Position):
 class CanvasNode(BaseModel):
     model_config = ConfigDict(extra="allow")
     id: str
-    type: Literal["page", "response", "information", "source", "entity"]
+    type: Literal["page", "response", "information", "source", "entity", "attachment"]
     position: Position
     data: dict[str, JsonValue]
 
@@ -122,6 +122,7 @@ class HistoryRepository:
             raise HistoryUnavailable() from None
 
     def initialize(self):
+        from .attachments import initialize_attachments
         with self.connection() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS rabbit_hole_sessions (
@@ -137,6 +138,8 @@ class HistoryRepository:
                 CREATE INDEX IF NOT EXISTS rabbit_hole_sessions_updated
                 ON rabbit_hole_sessions (updated_at DESC, id) WHERE NOT deleted
             """)
+
+            initialize_attachments(conn)
 
     def list(self, cursor: str = ""):
         with self.connection() as conn:
@@ -170,6 +173,7 @@ class HistoryRepository:
         return row
 
     def save(self, session: HistorySession, revision: int):
+        from .attachments import sync_attachment_refs
         payload = Jsonb(session.model_dump(exclude_unset=True))
         with self.connection() as conn:
             if revision == 0:
@@ -184,14 +188,18 @@ class HistoryRepository:
                 """, (payload, session.updatedAt, session.id, revision)).fetchone()
             if not row:
                 raise HistoryConflict()
+            sync_attachment_refs(conn, session)
         return row
 
     def import_session(self, session: HistorySession):
+        from .attachments import sync_attachment_refs
         with self.connection() as conn:
             row = conn.execute("""
                 INSERT INTO rabbit_hole_sessions (id, payload, updated_at)
                 VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING RETURNING id
             """, (session.id, Jsonb(session.model_dump(exclude_unset=True)), session.updatedAt)).fetchone()
+            if row:
+                sync_attachment_refs(conn, session)
         return {"imported": row is not None}
 
     def delete(self, session_id: str, revision: int):
@@ -202,6 +210,11 @@ class HistoryRepository:
             """, (session_id, revision)).fetchone()
             if not row:
                 raise HistoryConflict()
+            ids = conn.execute("DELETE FROM rabbit_hole_attachment_refs WHERE session_id = %s RETURNING attachment_id", (session_id,)).fetchall()
+            if ids:
+                conn.execute("""DELETE FROM rabbit_hole_attachments a WHERE a.id = ANY(%s)
+                    AND NOT EXISTS (SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id)""",
+                    ([row["attachment_id"] for row in ids],))
         # Keep only an ID tombstone so another tab or a legacy import cannot resurrect a deletion.
 
 
