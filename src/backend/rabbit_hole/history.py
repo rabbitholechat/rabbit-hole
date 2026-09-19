@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from . import diagnostics
 from .config import Settings, get_settings
+from .structure import EntityKind
 
 SessionId = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_-]+$")]
 
@@ -40,6 +41,13 @@ class UserNodeData(BaseModel):
     text: str
     url: str
     imageUrl: str
+    label: str | None = None
+    attachment: dict[str, JsonValue] | None = None
+    page: dict[str, JsonValue] | None = None
+    presentation: dict[str, JsonValue] | None = None
+    entitySubtype: EntityKind | None = None
+    qualifier: str | None = None
+    aliases: list[str] | None = None
     collapsed: bool | None = None
 
 
@@ -52,6 +60,8 @@ class UserNode(BaseModel):
 
 
 class UserEdge(BaseModel):
+    sourceHandle: str | None = None
+    targetHandle: str | None = None
     id: str
     source: str
     target: str

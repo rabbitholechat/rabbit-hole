@@ -1,10 +1,11 @@
-import { CanvasEditor, UserCard } from './components/CanvasEditor'
-import { editLocked, visibleNodes, visibleLinks } from './lib/canvasEditing'
+import { UserCard } from './components/UserCard'
+import { ActionToast } from './components/ActionToast'
+import { editLocked, visibleNodes, visibleLinks, defaultConnectionLabel } from './lib/canvasEditing'
 import { useAutosizeTextarea } from './hooks/useAutosizeTextarea'
 import { useGraphArrival } from './hooks/useGraphArrival'
 import { TooltipLayer } from './components/TooltipLayer'
 import { nodeLabel, responseParentId } from './lib/nodeActions'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type CSSProperties } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -121,11 +122,10 @@ function Workspace() {
       const current = useStore.getState()
       if (current.editingNode || current.editingEdge) return
       if (modified && ['c', 'v', 'z', 'y'].includes(key) || key === 'delete' || key === 'backspace' && modified || key === 'f2' || modified && key === 'e') {
-        if (modified && key === 'c' && window.getSelection()?.toString()) return
         event.preventDefault()
         if (event.repeat) return
         if (modified && key === 'c' && current.selected) current.copyNode(current.selected)
-        else if (modified && key === 'v') current.pasteNode(flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }))
+        else if (modified && key === 'v') current.pasteNode(flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }), flow.getViewport())
         else if (modified && key === 'z') event.shiftKey ? current.redo() : current.undo()
         else if (modified && key === 'y') current.redo()
         else if (key === 'delete' || key === 'backspace') { if (current.selected) current.deleteNode(current.selected); else if (current.selectedLink) current.deleteEdge(current.selectedLink) }
@@ -255,9 +255,13 @@ function Workspace() {
   )
   const nodes = useMemo(
     () =>
-      visibleNodes(session).map((n): CanvasNode =>
+      visibleNodes(session).map((node): CanvasNode => {
+        if (node.id !== state.editingNode || !state.editingDraft) return node
+        const data = state.editingDraft
+        return { ...node, type: 'user', data, width: data.kind === 'response' ? 560 : data.kind === 'entity' ? 340 : 460 }
+      }).map((n): CanvasNode =>
         n.type !== 'page'
-          ? { ...n, selected: n.id === state.selected,
+          ? { ...n, style: { ...n.style, '--node-color': nodeAccent(n, session?.contentGraph) } as CSSProperties, selected: n.id === state.selected,
               className: session?.nodes.some((node) => node.id === state.selected && node.type === 'entity') && related.has(n.id) ? 'entity-related-node' : undefined }
           : {
               ...n,
@@ -269,14 +273,14 @@ function Workspace() {
               },
             },
       ) ?? [],
-    [session, related, state.selected],
+    [session, related, state.selected, state.editingNode, state.editingDraft],
   )
   const baseEdges: Edge[] = useMemo(() => {
     if (session?.protocol === 2) {
       const responses = session.nodes.filter((n) => n.type === 'response')
       const conversationEdges: Edge[] = responses.flatMap((node) => {
         const parentId = responseParentId(session, node)
-        if (!parentId || !session.nodes.some((n) => n.id === parentId)) return []
+        if (!parentId || !visibleNodes(session).some((n) => n.id === parentId)) return []
         return [
           {
             id: `conversation-${parentId}-${node.id}`,
@@ -368,14 +372,16 @@ function Workspace() {
   const edges: Edge[] = useMemo(() => visibleLinks(session).map(link => {
     const original = baseEdges.find(e => e.id === link.id)
     const manual = link.kind === 'manual'
+    const color = nodeAccent(nodes.find(n => n.id === link.target), session?.contentGraph)
     return { ...(original ?? {}), id: link.id, source: link.source, target: link.target,
-      ...(manual ? { type: 'content', label: link.label === '사용자 연결' ? link.label : `사용자 연결 · ${link.label}`, sourceHandle: null, targetHandle: null,
-        ariaLabel: `사용자 연결: ${link.label}`, style: { stroke: '#65766e', strokeWidth: 2.6, strokeDasharray: '6 4' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#65766e' } } : {}),
+      ...(manual ? { type: 'content', label: link.label, sourceHandle: link.sourceHandle ?? null, targetHandle: link.targetHandle ?? null,
+        ariaLabel: `사용자 연결: ${link.label}`, style: { stroke: color, strokeWidth: 2.6, strokeDasharray: '6 4' },
+        markerEnd: { type: MarkerType.ArrowClosed, color } } : {}),
       selectable: true, focusable: true, selected: state.selectedLink === link.id,
-      style: { ...(manual ? { stroke: '#65766e', strokeDasharray: '6 4' } : original?.style), strokeWidth: state.selectedLink === link.id ? 4 : 2.6 },
+      markerEnd: { type: MarkerType.ArrowClosed, color, markerUnits: 'userSpaceOnUse', width: 16, height: 16 },
+      style: { ...(manual ? { strokeDasharray: '6 4' } : original?.style), stroke: color, strokeWidth: state.selectedLink === link.id ? 4 : 2.6 },
     }
-  }), [session, baseEdges, state.selectedLink])
+  }), [session, baseEdges, state.selectedLink, nodes])
   const arrivingGraph = useGraphArrival(session?.id, nodes, edges, Boolean(state.loadingSessionId))
   const selectedSource = visibleNodes(session).some(n => n.id === state.selected && n.type === 'page') ? session?.sources.find((s) => s.id === state.selected) : undefined
   const selectedRelation =
@@ -441,7 +447,14 @@ function Workspace() {
         zoomOnDoubleClick={false}
         minZoom={0.15}
         maxZoom={1.75}
-        nodesConnectable={false}
+        nodesConnectable={!editLocked(session)}
+        connectOnClick
+        onConnect={state.connect}
+        isValidConnection={connection => !editLocked(session) && connection.source !== connection.target}
+        onReconnect={(edge, connection) => {
+          const link = visibleLinks(session).find(e => e.id === edge.id)
+          if (link) state.saveEdge({ ...link, ...connection, label: link.label === defaultConnectionLabel(session, link.source, link.target) ? defaultConnectionLabel(session, connection.source, connection.target) : link.label })
+        }}
         deleteKeyCode={null}
         selectionKeyCode={null}
         aria-label="페이지 관계 캔버스"
@@ -449,18 +462,21 @@ function Workspace() {
       >
         <Background variant={BackgroundVariant.Lines} gap={28} lineWidth={0.6} color="#e2e6df" />
       </ReactFlow>
-      <CanvasEditor />
+      <ActionToast />
       {menu && <div className="canvas-context-menu panel" role="menu" aria-label="캔버스 편집 메뉴" style={{ left: Math.min(menu.x, window.innerWidth - 228), top: Math.min(menu.y, window.innerHeight - 280) }} onPointerDown={e => e.stopPropagation()}>
+        {!menu.node && !menu.edge && <button role="menuitem" disabled={Boolean(state.activeRequest || state.loadingSessionId || session && editLocked(session))} onClick={() => {
+          state.createNode(flow.screenToFlowPosition({ x: menu.x, y: menu.y }), flow.getViewport()); setMenu(null)
+        }}>노드 생성</button>}
         {menu.node && <>
           <button role="menuitem" onClick={() => { state.copyNode(menu.node!); setMenu(null) }}>복사하기 <kbd>Ctrl/⌘ C</kbd></button>
           <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.editNode(menu.node!); setMenu(null) }}>수정하기 <kbd>F2</kbd></button>
           <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.deleteNode(menu.node!); setMenu(null) }}>삭제하기 <kbd>Delete</kbd></button>
         </>}
         {menu.edge && <>
-          <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.editEdge(menu.edge!); setMenu(null) }}>간선 수정하기</button>
-          <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.deleteEdge(menu.edge!); setMenu(null) }}>간선 삭제하기</button>
+          <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.editEdge(menu.edge!); setMenu(null) }}>수정하기</button>
+          <button role="menuitem" disabled={editLocked(session)} onClick={() => { state.deleteEdge(menu.edge!); setMenu(null) }}>삭제하기</button>
         </>}
-        <button role="menuitem" disabled={!state.clipboard || editLocked(session)} onClick={() => { state.pasteNode(flow.screenToFlowPosition({ x: menu.x, y: menu.y })); setMenu(null) }}>붙여넣기 <kbd>Ctrl/⌘ V</kbd></button>
+        <button role="menuitem" disabled={!state.clipboard || Boolean(state.activeRequest || state.loadingSessionId || session && editLocked(session))} onClick={() => { state.pasteNode(flow.screenToFlowPosition({ x: menu.x, y: menu.y }), flow.getViewport()); setMenu(null) }}>붙여넣기 <kbd>Ctrl/⌘ V</kbd></button>
         <button role="menuitem" disabled={!state.undoStack.length || editLocked(session)} onClick={() => { state.undo(); setMenu(null) }}>실행 취소 <kbd>Ctrl/⌘ Z</kbd></button>
         <button role="menuitem" disabled={!state.redoStack.length || editLocked(session)} onClick={() => { state.redo(); setMenu(null) }}>다시 실행 <kbd>Ctrl/⌘ ⇧ Z</kbd></button>
       </div>}

@@ -171,12 +171,13 @@ export type InformationNode = Node<{
 }, 'information'>
 export type SourceNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'source'>
 export type EntityNode = Node<{ entityId: string; collapsed?: boolean }, 'entity'>
-export type UserNodeData = { kind: 'response' | 'entity' | 'information' | 'source' | 'image'; title: string; text: string; url: string; imageUrl: string; collapsed?: boolean }
+export type UserNodeData = { kind: 'response' | 'entity' | 'information' | 'source' | 'image'; title: string; text: string; url: string; imageUrl: string; collapsed?: boolean; label?: string; attachment?: Attachment; page?: Source; presentation?: CardPresentation | null; entitySubtype?: EntityKind; qualifier?: string | null; aliases?: string[] }
 export type UserNode = Node<UserNodeData, 'user'>
+export type UserEdge = { id: string; source: string; target: string; label: string; sourceHandle?: string | null; targetHandle?: string | null }
 export type CanvasEdits = {
   nodes: UserNode[]
   hiddenNodes: string[]
-  edges: { id: string; source: string; target: string; label: string }[]
+  edges: UserEdge[]
   hiddenEdges: string[]
   positions: Record<string, { x: number; y: number }>
 }

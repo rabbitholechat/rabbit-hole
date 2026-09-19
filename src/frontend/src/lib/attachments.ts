@@ -1,3 +1,4 @@
+import { visibleNodes } from './canvasEditing'
 import type { Attachment, AttachmentLimits, AttachmentNode, ResponseNode, Session } from '../types'
 
 export const attachmentPath = (id: string, suffix = '') => `/api/attachments/${encodeURIComponent(id)}${suffix}`
@@ -40,7 +41,7 @@ export function appendResponse(session: Session, responseId: string, requestId: 
   query: string, attachments: Attachment[]): Session {
   if (session.nodes.some(n => n.id === responseId)) return session
   const width = Math.min(560, window.innerWidth - 48)
-  const parent = session.nodes.find(n => n.id === parentId)
+  const parent = visibleNodes(session).find(n => n.id === parentId)
   const x = parent ? parent.position.x + (parent.width || 560) + 64 : 0
   const column = session.nodes.filter(n => n.position.x < x + width && n.position.x + (n.width || 560) > x)
   const top = column.length ? Math.max(...column.map(n => n.position.y + (n.measured?.height ?? n.height ?? 400))) + 64 : parent?.position.y ?? 0

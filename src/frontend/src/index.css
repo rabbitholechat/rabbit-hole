@@ -1202,7 +1202,7 @@ svg {
   display: flex;
   flex-direction: column;
   padding: 20px 22px;
-  background: transparent;
+  background: #edf7f3;
   border: 1px solid #b9d7ce;
   border-top: 3px solid #458c80;
   border-radius: 16px;
@@ -2279,19 +2279,50 @@ svg {
 .canvas-context-menu button:hover:not(:disabled) { background: #edf3ed; }
 .canvas-context-menu kbd { font-size: 10px; color: #69766e; }
 .canvas-context-menu button:disabled { opacity: .4; }
-.canvas-editor { width: min(560px, calc(100vw - 32px)); max-height: 85dvh; padding: 24px; border: 1px solid #d4ddd4; border-radius: 18px; box-shadow: 0 20px 80px #20302030; color: #24372a; }
-.canvas-editor::backdrop { background: #18251e55; }
-.canvas-editor header, .canvas-editor footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.canvas-editor header h2 { margin: 0; font-size: 20px; }
-.canvas-editor label { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; font-size: 13px; font-weight: 600; }
-.canvas-editor input, .canvas-editor textarea, .canvas-editor select { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #cbd6cc; border-radius: 8px; background: #fff; color: inherit; font: inherit; font-weight: 400; }
-.canvas-editor textarea { resize: vertical; }
-.canvas-editor button { padding: 8px 14px; border: 1px solid #d4ddd4; border-radius: 8px; background: #f6f8f3; }
-.canvas-editor footer { justify-content: flex-end; }
-.canvas-editor button[type=submit] { background: #315d41; color: white; }
-.editor-note { font-size: 12px; color: #68776a; margin: 16px 0; }
-.user-node-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 500px; overflow: auto; line-height: 1.65; }
-.user-card .response-actions { flex-shrink: 0; }
-.canvas-editor { margin: auto; }
 .content-card > header .node-tag { flex-shrink: 0; white-space: nowrap; }
 .content-card > header .response-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Editing stays inside each card and follows the canvas viewport. */
+.inline-editor { color: inherit; width: 100%; }
+.inline-editor label { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; font-size: 12px; font-weight: 600; }
+.inline-editor input, .inline-editor textarea, .inline-editor select { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid #b9cbc1; border-radius: 8px; background: #ffffffd9; color: #24372a; font: inherit; font-weight: 400; }
+.inline-editor textarea { resize: vertical; min-height: 120px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; line-height: 1.6; }
+.inline-editor footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.inline-editor footer button { padding: 7px 14px; border: 1px solid #c1d1c7; border-radius: 8px; background: #ffffffb0; color: #315d41; font-size: 12px; }
+.inline-editor footer button[type=submit] { background: #315d41; color: #fff; }
+.inline-editor [role=alert] { font-size: 12px; color: #a24434; margin-top: 10px; }
+.edge-inline-editor { position: absolute; z-index: 30; pointer-events: all; width: 300px; padding: 16px; border: 1px solid #bdd0c4; border-radius: 14px; background: #f9fcf8; box-shadow: 0 8px 24px #20302025; }
+.react-flow__node:has(.inline-editor) { z-index: 25 !important; }
+.react-flow__handle { width: 12px; height: 12px; opacity: 1; border: 2px solid #fff; background: #87aaa0; pointer-events: all; }
+.react-flow__handle.connectingfrom, .react-flow__handle.valid { background: #267965; box-shadow: 0 0 0 4px #26796530; }
+.react-flow__handle:not(.connectable) { opacity: .4; cursor: default; }
+
+
+.edge-inline-editor { overflow: visible; }
+
+.react-flow__handle { background: var(--node-color, #87aaa0); }
+.content-edge-label { pointer-events: all; cursor: text; }
+.edge-inline-editor { display: flex; align-items: center; gap: 3px; width: 240px; padding: 4px; border-radius: 7px; }
+.edge-inline-editor input { min-width: 0; width: 100%; padding: 5px 6px; border: 0; background: transparent; font: inherit; font-size: 12px; color: #334a3c; }
+.edge-inline-editor button { display: flex; flex-shrink: 0; padding: 5px; border: 0; background: transparent; color: #315d41; border-radius: 4px; }
+.edge-inline-editor button:hover { background: #e5eee8; }
+
+/* Shared dropdown surface and options match the composer tool menu. */
+.composer-tool-menu, .dropdown-menu { padding: 8px; border: 1px solid #dce7e1; border-radius: 16px; background: #fff; box-shadow: 0 10px 36px #253a2d20; }
+.dropdown-menu { position: fixed; z-index: 1200; overflow-y: auto; overscroll-behavior: contain; }
+.composer-tool-menu > button, .dropdown-menu > button { display: flex; align-items: center; gap: 11px; width: 100%; padding: 11px 10px; border: 0; border-radius: 9px; text-align: left; background: transparent; color: #416452; }
+.dropdown-menu > button { font-size: 13px; }
+.dropdown-menu > button > span { flex: 1; }
+.dropdown-menu > button:hover, .dropdown-menu > button[aria-selected=true], .dropdown-menu > button:focus-visible { background: #eef7f1; outline: none; }
+.select-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; }
+.select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 9px 10px; border: 1px solid #b9cbc1; border-radius: 8px; background: #ffffffd9; color: #24372a; text-align: left; font: inherit; font-weight: 400; }
+.inline-editor { display: flex; flex-direction: column; gap: 12px; overflow: visible; padding: 14px 0 0; }
+.inline-editor-fields { min-height: 0; overflow: visible; padding: 2px 3px 3px; }
+.inline-editor label { margin-top: 12px; }
+.inline-editor input:focus-visible, .inline-editor textarea:focus-visible, .select-trigger:focus-visible { outline: none; border-color: #368c70; box-shadow: inset 0 0 0 1px #368c70; }
+.inline-editor footer { flex-shrink: 0; position: static; margin: 0; padding: 0; background: transparent; border-radius: 0; }
+
+.edge-inline-editor { gap: 6px; width: 228px; padding: 6px; border-radius: 10px; background: #fff; box-shadow: 0 4px 16px #253a2d18; }
+.edge-inline-editor input { flex: 1 1 0; width: 0; height: 28px; border: 1px solid transparent; border-radius: 5px; padding: 4px 7px; outline: none; }
+.edge-inline-editor input:focus-visible { outline: none; border-color: #368c70; box-shadow: inset 0 0 0 1px #368c70; }
+.edge-inline-editor button { width: 26px; height: 28px; align-items: center; justify-content: center; padding: 0; }

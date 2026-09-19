@@ -3,7 +3,10 @@ import { memoryHistoryApi } from '../fixtures/historyApi'
 import { entityResult, entitySession } from '../fixtures/entities'
 import { attachInformation } from '../../src/lib/contentGraph'
 
-test('compact entity hubs explore copy and send connected information', async ({ page, context }, testInfo) => {
+test('compact entity hubs explore copy and send connected information', async ({
+  page,
+  context,
+}, testInfo) => {
   const history = memoryHistoryApi()
   const session = attachInformation(entitySession(), 'response_entity', entityResult('stored-hash'))
   session.continuation = 'signed-context'
@@ -12,11 +15,18 @@ test('compact entity hubs explore copy and send connected information', async ({
   await history.save(session.id, { session, revision: 0 })
   await mockHistory(context, history)
   let calls = 0
-  await page.route(/\/api\/(structure|agent|title)/, async (route) => { calls++; await route.abort() })
+  await page.route(/\/api\/(structure|agent|title)/, async (route) => {
+    calls++
+    await route.abort()
+  })
   await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => {
-      ;(window as unknown as { entityCopy: string }).entityCopy = text
-    } } })
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: async (text: string) => {
+          ;(window as unknown as { entityCopy: string }).entityCopy = text
+        },
+      },
+    })
   })
   await page.goto('/')
   await openHistory(page)
@@ -53,10 +63,22 @@ test('compact entity hubs explore copy and send connected information', async ({
     const request = route.request().postDataJSON()
     submitted = request
     const id = `response_${request.request_id}`
-    const events = [['response_started', { id }], ['response_delta', { id, delta: '연결된 정보로 이어지는 답변' }],
-      ['response_completed', { id }], ['checkpoint', { continuation: 'next-context' }], ['done', { status: 'completed', failed_parts: [] }]]
-    await route.fulfill({ contentType: 'text/event-stream', body: events.map(([type, data], i) =>
-      `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: i + 1, type, data })}\n\n`).join('') })
+    const events = [
+      ['response_started', { id }],
+      ['response_delta', { id, delta: '연결된 정보로 이어지는 답변' }],
+      ['response_completed', { id }],
+      ['checkpoint', { continuation: 'next-context' }],
+      ['done', { status: 'completed', failed_parts: [] }],
+    ]
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: events
+        .map(
+          ([type, data], i) =>
+            `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: i + 1, type, data })}\n\n`,
+        )
+        .join(''),
+    })
   })
   await hub.getByRole('button', { name: '다음 응답에 사용' }).click()
   await expect(hub).toHaveClass(/is-reply-target/)
@@ -74,10 +96,16 @@ async function mockHistory(context: BrowserContext, history = memoryHistoryApi()
     const parts = url.pathname.split('/')
     const id = decodeURIComponent(parts[3] ?? '')
     try {
-      const result = request.method() === 'GET' ? (id ? await history.get(id) : await history.list())
-        : request.method() === 'POST' ? await history.import(request.postDataJSON())
-        : request.method() === 'PUT' ? await history.save(id, request.postDataJSON())
-        : await history.delete(id, Number(url.searchParams.get('revision')))
+      const result =
+        request.method() === 'GET'
+          ? id
+            ? await history.get(id)
+            : await history.list()
+          : request.method() === 'POST'
+            ? await history.import(request.postDataJSON())
+            : request.method() === 'PUT'
+              ? await history.save(id, request.postDataJSON())
+              : await history.delete(id, Number(url.searchParams.get('revision')))
       await route.fulfill({ status: result === undefined ? 204 : 200, json: result })
     } catch {
       await route.fulfill({ status: 409, json: { detail: 'conflict' } })
@@ -187,7 +215,9 @@ test('completed response becomes three node types and retries do not duplicate o
   const answer = `첫 번째 응답입니다.\n\n${excerpt}\n\n${'나머지 답변을 원래 응답에 그대로 보존합니다. '.repeat(8)}`
   let structureCalls = 0
   let finishStructure!: () => void
-  const structureReady = new Promise<void>((resolve) => { finishStructure = resolve })
+  const structureReady = new Promise<void>((resolve) => {
+    finishStructure = resolve
+  })
   await page.route('**/api/title', (route) => route.fulfill({ status: 502, body: '{}' }))
   await page.route('**/api/structure', async (route) => {
     structureCalls++
@@ -271,7 +301,9 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(progress).toHaveText('완료')
   await expect(page.locator('.information-card')).toHaveCount(1)
   await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'content-arrive')
-  await expect(page.locator('.react-flow__edge-content[data-id^="has_extract:"] .connection-reveal')).toHaveCSS('animation-name', 'edge-arrive')
+  await expect(
+    page.locator('.react-flow__edge-content[data-id^="has_extract:"] .connection-reveal'),
+  ).toHaveCSS('animation-name', 'edge-arrive')
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'none')
   await expect(page.locator('.connection-reveal')).toHaveCount(0)
@@ -280,17 +312,29 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(page.locator('.response-card')).toHaveCount(1)
   await expect(page.locator('.content-edge-label').filter({ hasText: '정보 추출' })).toHaveCount(1)
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
-  await expect.poll(() => page.locator('.source-card').evaluate((element) => {
-    const bounds = element.getBoundingClientRect()
-    return bounds.left >= 0 && bounds.right <= window.innerWidth
-  })).toBe(true)
+  await expect
+    .poll(() =>
+      page.locator('.source-card').evaluate((element) => {
+        const bounds = element.getBoundingClientRect()
+        return bounds.left >= 0 && bounds.right <= window.innerWidth
+      }),
+    )
+    .toBe(true)
   expect(await page.evaluate(() => window.scrollX)).toBe(0)
   await page.locator('.source-card').getByRole('button', { name: '복사하기', exact: true }).focus()
   await expect(page.getByRole('tooltip')).toHaveText('복사하기')
-  expect(await page.getByRole('tooltip').evaluate((el) => {
-    const rect = el.getBoundingClientRect()
-    return el.parentElement === document.body && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight
-  })).toBe(true)
+  expect(
+    await page.getByRole('tooltip').evaluate((el) => {
+      const rect = el.getBoundingClientRect()
+      return (
+        el.parentElement === document.body &&
+        rect.left >= 0 &&
+        rect.right <= innerWidth &&
+        rect.top >= 0 &&
+        rect.bottom <= innerHeight
+      )
+    }),
+  ).toBe(true)
   await page.keyboard.press('Escape')
   await expect(page.locator('.source-card').getByRole('button', { name: '노드 접기' })).toBeDisabled()
   await expect(page.locator('.information-card').getByRole('button', { name: '노드 접기' })).toBeDisabled()
@@ -300,7 +344,10 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(page.locator('.information-card')).toHaveClass(/is-reply-target/)
   await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'content-reply-highlight')
   await expect(page.locator('.information-card header .response-status')).toHaveCSS('font-weight', '650')
-  await expect(page.locator('.information-card header .response-status')).toHaveCSS('color', 'rgb(150, 116, 35)')
+  await expect(page.locator('.information-card header .response-status')).toHaveCSS(
+    'color',
+    'rgb(150, 116, 35)',
+  )
   await page.getByRole('button', { name: '이어서 질문 취소' }).click()
   await expect(page.locator('.information-card')).not.toHaveClass(/is-reply-target/)
   await expect(page.locator('.information-card')).toHaveCSS('animation-name', 'none')
@@ -309,18 +356,29 @@ test('completed response becomes three node types and retries do not duplicate o
   await expect(page.locator('.source-card header .response-status')).toHaveCSS('color', 'rgb(63, 115, 171)')
   await page.locator('.source-card').getByRole('button', { name: '다음 응답에 사용' }).click()
   await expect(page.locator('.source-card')).toHaveCSS('animation-name', 'none')
-  await expect(page.locator('.react-flow__edge-content[data-id^="has_extract:"] .react-flow__edge-path')).toHaveCSS('stroke', 'rgb(150, 116, 35)')
-  await expect(page.locator('.react-flow__edge-content[data-id^="cites:"] .react-flow__edge-path').first()).toHaveCSS('stroke', 'rgb(63, 115, 171)')
-  await expect(page.locator('.react-flow__edge-content .react-flow__edge-path').first()).toHaveCSS('stroke-width', '2.6px')
+  await expect(
+    page.locator('.react-flow__edge-content[data-id^="has_extract:"] .react-flow__edge-path'),
+  ).toHaveCSS('stroke', 'rgb(150, 116, 35)')
+  await expect(
+    page.locator('.react-flow__edge-content[data-id^="cites:"] .react-flow__edge-path').first(),
+  ).toHaveCSS('stroke', 'rgb(63, 115, 171)')
+  await expect(page.locator('.react-flow__edge-content .react-flow__edge-path').first()).toHaveCSS(
+    'stroke-width',
+    '2.6px',
+  )
   await page.screenshot({ path: testInfo.outputPath('three-node-graph.png') })
   await expect(page.getByText('미검증', { exact: false })).toHaveCount(0)
   await expect(page.locator('.response-card').getByRole('button', { name: '이전 노드로' })).toBeDisabled()
   await page.locator('.source-card').getByRole('button', { name: '이전 노드로' }).click()
-  await expect.poll(() => page.locator('.source-card .previous-node').evaluate((root) => {
-    const button = root.querySelector('button')!.getBoundingClientRect()
-    const menu = root.querySelector('.previous-node-options')!.getBoundingClientRect()
-    return menu.top >= button.bottom
-  })).toBe(true)
+  await expect
+    .poll(() =>
+      page.locator('.source-card .previous-node').evaluate((root) => {
+        const button = root.querySelector('button')!.getBoundingClientRect()
+        const menu = root.querySelector('.previous-node-options')!.getBoundingClientRect()
+        return menu.top >= button.bottom
+      }),
+    )
+    .toBe(true)
   await page.locator('.source-card').getByRole('button', { name: '정보 · 벡터 검색', exact: true }).click()
   await expect(page.locator('.information-card')).toHaveClass(/is-selected/)
   await page.locator('.information-card').getByRole('button', { name: '이전 노드로' }).click()
@@ -342,9 +400,15 @@ test('completed response becomes three node types and retries do not duplicate o
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.react-flow__node-response')).toHaveCount(2)
   const nextId = await page.locator('.react-flow__node-response').last().getAttribute('data-id')
-  await expect(page.locator(`.react-flow__edge[data-id="conversation-${informationId}-${nextId}"]`)).toHaveCount(1)
-  await expect(page.locator(`.react-flow__edge[data-id="conversation-${originalId}-${nextId}"]`)).toHaveCount(0)
-  await expect(page.locator(`.react-flow__edge[data-id="uses_context:${nextId}:${informationId}"]`)).toHaveCount(0)
+  await expect(
+    page.locator(`.react-flow__edge[data-id="conversation-${informationId}-${nextId}"]`),
+  ).toHaveCount(1)
+  await expect(page.locator(`.react-flow__edge[data-id="conversation-${originalId}-${nextId}"]`)).toHaveCount(
+    0,
+  )
+  await expect(
+    page.locator(`.react-flow__edge[data-id="uses_context:${nextId}:${informationId}"]`),
+  ).toHaveCount(0)
 })
 
 test('IME submission and unconfigured agent show an error without sample fallback', async ({ page }) => {
@@ -434,7 +498,13 @@ test('tool retrieval history distinguishes access and restores without new model
         access: 'search_result',
         accessed_at: '2026-09-17T00:00:00+00:00',
         verification: 'unverified',
-        content: { status: 'failed', text: '', truncated: false, final_url: null, error_code: 'page_unavailable' },
+        content: {
+          status: 'failed',
+          text: '',
+          truncated: false,
+          final_url: null,
+          error_code: 'page_unavailable',
+        },
       },
       {
         id: `src_${'b'.repeat(24)}`,
@@ -445,7 +515,9 @@ test('tool retrieval history distinguishes access and restores without new model
         verification: 'unverified',
         content: {
           status: 'read',
-          text: '<script>이 내용은 실행되지 않는 원문입니다.</script>\n' + '페이지에서 확보한 실제 본문 내용입니다.\n'.repeat(30),
+          text:
+            '<script>이 내용은 실행되지 않는 원문입니다.</script>\n' +
+            '페이지에서 확보한 실제 본문 내용입니다.\n'.repeat(30),
           truncated: true,
           final_url: 'https://example.com/b',
           error_code: null,
@@ -475,10 +547,14 @@ test('tool retrieval history distinguishes access and restores without new model
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.source-card')).toHaveCount(2)
   const sourceCard = page.locator('.source-card').filter({ hasText: '본문을 읽은 페이지' })
-  await expect(sourceCard.locator('.source-body')).toContainText('<script>이 내용은 실행되지 않는 원문입니다.</script>')
+  await expect(sourceCard.locator('.source-body')).toContainText(
+    '<script>이 내용은 실행되지 않는 원문입니다.</script>',
+  )
   await expect(sourceCard.locator('script')).toHaveCount(0)
   await expect(sourceCard).toContainText('본문 일부 · 길이 제한으로 잘림')
-  await expect(page.locator('.source-card').filter({ hasText: '검색으로 찾은 페이지' })).toContainText('이 페이지의 본문을 가져오지 못했습니다.')
+  await expect(page.locator('.source-card').filter({ hasText: '검색으로 찾은 페이지' })).toContainText(
+    '이 페이지의 본문을 가져오지 못했습니다.',
+  )
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
   await expect(sourceCard.getByRole('button', { name: '노드 펼치기' })).toBeEnabled()
   await sourceCard.getByRole('button', { name: '노드 펼치기' }).click()
@@ -528,8 +604,8 @@ test('streams into a canvas node, retains dragged placement, continues conversat
   await node.focus()
   await page.keyboard.press('ArrowRight')
   await expect(card.locator('.node-tag')).toHaveText('응답')
-  await expect(card).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-  await expect(node.locator('.react-flow__handle').first()).toHaveCSS('opacity', '0')
+  await expect(card).toHaveCSS('background-color', 'rgb(237, 247, 243)')
+  await expect(node.locator('.react-flow__handle').first()).toHaveCSS('opacity', '1')
   await expect(card).not.toContainText('Rabbit Hole')
   await expect(page.getByText('YOUR EXPLORATION')).toHaveCount(0)
   const heightBefore = await card.evaluate((el) => el.getBoundingClientRect().height)
@@ -629,16 +705,25 @@ test('composer and canvas tools stay separate while resizing with sidebar open o
   await page.goto('/')
   for (const width of [320, 390, 768, 1024]) {
     await page.setViewportSize({ width, height: 844 })
-    await expect.poll(() => page.evaluate(() => {
-      const input = document.querySelector('.composer')!.getBoundingClientRect()
-      const tools = document.querySelector('.canvas-tools')!.getBoundingClientRect()
-      return Math.abs(input.right - (innerWidth - (innerWidth <= 700 ? 14 : 20))) < 2 &&
-        tools.bottom + 8 <= input.top && tools.right <= input.right + 1
-    })).toBe(true)
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const input = document.querySelector('.composer')!.getBoundingClientRect()
+          const tools = document.querySelector('.canvas-tools')!.getBoundingClientRect()
+          return (
+            Math.abs(input.right - (innerWidth - (innerWidth <= 700 ? 14 : 20))) < 2 &&
+            tools.bottom + 8 <= input.top &&
+            tools.right <= input.right + 1
+          )
+        }),
+      )
+      .toBe(true)
     if (width === 390) await page.screenshot({ path: testInfo.outputPath('responsive-start.png') })
   }
   await expect(page.getByText('질문에서 아이디어로, 대화에서 다음 단계로.')).toHaveCount(0)
-  await page.getByRole('textbox', { name: '메시지 입력' }).fill('레이아웃 확인을 위한 길고 자연스러운 대화 제목입니다')
+  await page
+    .getByRole('textbox', { name: '메시지 입력' })
+    .fill('레이아웃 확인을 위한 길고 자연스러운 대화 제목입니다')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.response-card')).toBeVisible()
   await finishStream(page)
@@ -658,7 +743,8 @@ test('composer and canvas tools stay separate while resizing with sidebar open o
               input.right <= innerWidth &&
               tools.left >= 0 &&
               tools.right <= innerWidth &&
-              (tools.bottom + 8 <= input.top || input.bottom + 8 <= tools.top ||
+              (tools.bottom + 8 <= input.top ||
+                input.bottom + 8 <= tools.top ||
                 input.right + 8 <= tools.left ||
                 tools.right + 8 <= input.left)
             )
@@ -666,40 +752,61 @@ test('composer and canvas tools stay separate while resizing with sidebar open o
         )
         .toBe(true)
       if (width <= 1100) {
-        await expect.poll(() => page.evaluate(() => {
-          const input = document.querySelector('.composer')!.getBoundingClientRect()
-          const tools = document.querySelector('.canvas-tools')!.getBoundingClientRect()
-          return Math.abs(input.right - (innerWidth - (innerWidth <= 700 ? 14 : 20))) < 2 &&
-            tools.bottom + 8 <= input.top
-        })).toBe(true)
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const input = document.querySelector('.composer')!.getBoundingClientRect()
+              const tools = document.querySelector('.canvas-tools')!.getBoundingClientRect()
+              return (
+                Math.abs(input.right - (innerWidth - (innerWidth <= 700 ? 14 : 20))) < 2 &&
+                tools.bottom + 8 <= input.top
+              )
+            }),
+          )
+          .toBe(true)
       }
       {
-        await expect.poll(() => page.evaluate(() => {
-          const brand = document.querySelector('.sidebar-header .brand')!.getBoundingClientRect()
-          const heading = document.querySelector('.canvas-heading')!.getBoundingClientRect()
-          const navigation = document.querySelector('.node-navigation')!.getBoundingClientRect()
-          const title = document.querySelector('.canvas-heading h1')!.getBoundingClientRect()
-          const counts = document.querySelector('.canvas-heading > span')!.getBoundingClientRect()
-          const sidebarOpen = document.querySelector('.workspace')!.classList.contains('sidebar-open')
-          const sidebar = document.querySelector('.history-panel')!.getBoundingClientRect()
-          const header = document.querySelector('.sidebar-header')!.getBoundingClientRect()
-          const alignedInSidebar = !sidebarOpen || (
-            Math.abs((header.left - sidebar.left) - (sidebar.right - header.right)) < 1
+        await expect
+          .poll(() =>
+            page.evaluate(() => {
+              const brand = document.querySelector('.sidebar-header .brand')!.getBoundingClientRect()
+              const heading = document.querySelector('.canvas-heading')!.getBoundingClientRect()
+              const navigation = document.querySelector('.node-navigation')!.getBoundingClientRect()
+              const title = document.querySelector('.canvas-heading h1')!.getBoundingClientRect()
+              const counts = document.querySelector('.canvas-heading > span')!.getBoundingClientRect()
+              const sidebarOpen = document.querySelector('.workspace')!.classList.contains('sidebar-open')
+              const sidebar = document.querySelector('.history-panel')!.getBoundingClientRect()
+              const header = document.querySelector('.sidebar-header')!.getBoundingClientRect()
+              const alignedInSidebar =
+                !sidebarOpen || Math.abs(header.left - sidebar.left - (sidebar.right - header.right)) < 1
+              if (sidebarOpen && innerWidth <= 520) {
+                return (
+                  alignedInSidebar &&
+                  heading.width === 0 &&
+                  navigation.width === 0 &&
+                  header.right <= innerWidth &&
+                  document.documentElement.scrollWidth <= innerWidth
+                )
+              }
+              const center = (rect: DOMRect) => rect.top + rect.height / 2
+              return (
+                Math.abs(center(brand) - center(heading)) < 1 &&
+                Math.abs(center(brand) - center(navigation)) < 1 &&
+                heading.right + 11 <= navigation.left &&
+                brand.right <= heading.left &&
+                counts.top >= title.bottom &&
+                counts.right <= heading.right + 1 &&
+                alignedInSidebar &&
+                navigation.right <= innerWidth - 13 &&
+                (sidebarOpen
+                  ? header.left >= sidebar.left + 12 &&
+                    header.right <= sidebar.right &&
+                    heading.left >= sidebar.right + 12
+                  : true)
+              )
+            }),
           )
-          if (sidebarOpen && innerWidth <= 520) {
-            return alignedInSidebar && heading.width === 0 && navigation.width === 0 &&
-              header.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth
-          }
-          const center = (rect: DOMRect) => rect.top + rect.height / 2
-          return Math.abs(center(brand) - center(heading)) < 1 &&
-            Math.abs(center(brand) - center(navigation)) < 1 &&
-            heading.right + 11 <= navigation.left && brand.right <= heading.left &&
-            counts.top >= title.bottom && counts.right <= heading.right + 1 &&
-            alignedInSidebar && navigation.right <= innerWidth - 13 && (sidebarOpen
-              ? header.left >= sidebar.left + 12 && header.right <= sidebar.right &&
-                heading.left >= sidebar.right + 12
-              : true)
-        })).toBe(true)
+          .toBe(true)
       }
       const brandIcon = await page.locator('.sidebar-header .brand svg').boundingBox()
       if (open) openedBrand = brandIcon!
@@ -906,7 +1013,9 @@ test('selecting a response focuses it and wheel over selected content still pans
   const beforeFocusZoom = parseInt(await page.locator('.canvas-tools span').innerText())
   await card.locator('h2').click()
   await expect(card).toHaveClass(/is-selected/)
-  await expect.poll(async () => parseInt(await page.locator('.canvas-tools span').innerText())).toBeGreaterThan(beforeFocusZoom)
+  await expect
+    .poll(async () => parseInt(await page.locator('.canvas-tools span').innerText()))
+    .toBeGreaterThan(beforeFocusZoom)
   // Wait for the focus animation before testing a new independent wheel gesture.
   await page.waitForTimeout(300)
   const zoom = await page.locator('.canvas-tools span').innerText()
@@ -923,18 +1032,24 @@ test('selecting a response focuses it and wheel over selected content still pans
   await finishStream(page)
   await expect(page.locator('.response-card')).toHaveCount(2)
   await page.getByRole('button', { name: '축소', exact: true }).click()
-  await expect.poll(async () => parseInt(await page.locator('.canvas-tools span').innerText())).toBeLessThan(parseInt(zoom))
+  await expect
+    .poll(async () => parseInt(await page.locator('.canvas-tools span').innerText()))
+    .toBeLessThan(parseInt(zoom))
   await page.getByRole('button', { name: '다음 노드', exact: true }).click()
   const second = page.locator('.response-card').last()
   await expect(second).toHaveClass(/is-selected/)
   await expect.poll(() => page.locator('.canvas-tools span').innerText()).toBe(zoom)
-  await expect.poll(async () => {
-    const bounds = await second.boundingBox()
-    return bounds!.x >= 0 && bounds!.x + bounds!.width <= page.viewportSize()!.width && bounds!.y >= 80
-  }).toBe(true)
+  await expect
+    .poll(async () => {
+      const bounds = await second.boundingBox()
+      return bounds!.x >= 0 && bounds!.x + bounds!.width <= page.viewportSize()!.width && bounds!.y >= 80
+    })
+    .toBe(true)
   await page.screenshot({ path: testInfo.outputPath('focused-node.png') })
   await page.getByRole('button', { name: '축소', exact: true }).click()
-  await expect.poll(async () => parseInt(await page.locator('.canvas-tools span').innerText())).toBeLessThan(parseInt(zoom))
+  await expect
+    .poll(async () => parseInt(await page.locator('.canvas-tools span').innerText()))
+    .toBeLessThan(parseInt(zoom))
   await page.keyboard.press('a')
   await expect(card).toHaveClass(/is-selected/)
   await expect.poll(() => page.locator('.canvas-tools span').innerText()).toBe(zoom)
@@ -945,19 +1060,56 @@ test('long information collapses like a response while short sources cannot coll
   await page.evaluate(async () => {
     const text = '자세한 정보와 조건을 보존하는 문장입니다.\n\n'.repeat(20)
     const entities: Record<string, unknown> = {
-      info_long: { id: 'info_long', type: 'information', subtype: 'concept', responseId: 'r', textHash: 'a'.repeat(64),
-        title: { start: 0, end: 5, quote: '자세한 정보' }, excerpt: { start: 0, end: text.length, quote: text } },
+      info_long: {
+        id: 'info_long',
+        type: 'information',
+        subtype: 'concept',
+        responseId: 'r',
+        textHash: 'a'.repeat(64),
+        title: { start: 0, end: 5, quote: '자세한 정보' },
+        excerpt: { start: 0, end: text.length, quote: text },
+      },
     }
     const nodes: unknown[] = [
-      { id: 'r', type: 'response', position: { x: 0, y: 0 }, width: 560,
-        data: { prompt: '접기와 출처 표시', text: '짧은 답변', status: 'completed', continuation: 'signed' } },
-      { id: 'info_long', type: 'information', position: { x: 650, y: 0 }, width: 340, height: 130, data: { entityId: 'info_long' } },
+      {
+        id: 'r',
+        type: 'response',
+        position: { x: 0, y: 0 },
+        width: 560,
+        data: { prompt: '접기와 출처 표시', text: '짧은 답변', status: 'completed', continuation: 'signed' },
+      },
+      {
+        id: 'info_long',
+        type: 'information',
+        position: { x: 650, y: 0 },
+        width: 340,
+        height: 130,
+        data: { entityId: 'info_long' },
+      },
     ]
     for (let i = 0; i < 8; i++) {
       const id = `source_${i}`
-      entities[id] = { id, type: 'source', observations: [], source: { id, url: `https://example.com/${i}`,
-        title: `출처 ${i}`, access: 'search_result', accessed_at: '2026-09-17', verification: 'unverified' } }
-      nodes.push({ id, type: 'source', position: { x: 1100, y: i * 280 }, width: 460, height: 260, data: { entityId: id } })
+      entities[id] = {
+        id,
+        type: 'source',
+        observations: [],
+        source: {
+          id,
+          url: `https://example.com/${i}`,
+          title: `출처 ${i}`,
+          access: 'search_result',
+          accessed_at: '2026-09-17',
+          verification: 'unverified',
+        },
+      }
+      nodes.push({
+        id,
+        type: 'source',
+        position: { x: 1100, y: i * 280 },
+        width: 460,
+        height: 260,
+        data: { entityId: id },
+      })
     }
     const db = await new Promise<IDBDatabase>((resolve) => {
       const request = indexedDB.open('rabbit-hole', 1)
@@ -965,10 +1117,37 @@ test('long information collapses like a response while short sources cannot coll
     })
     await new Promise<void>((resolve) => {
       const tx = db.transaction('sessions', 'readwrite')
-      tx.objectStore('sessions').put({ id: 'collapse-test', query: '접기와 출처 표시', updatedAt: Date.now(),
-        mode: 'live', protocol: 2, nodes, sources: [], graph: { relations: [], clusters: [] }, answer: null,
-        pinned: [], status: 'completed', failedParts: [], fitted: true, viewport: { x: 0, y: 150, zoom: .7 },
-        contentGraph: { version: 1, entities, relations: [{ id: 'extract', source: 'r', target: 'info_long', kind: 'has_extract', responseId: 'r', spans: [] }], jobs: {} } })
+      tx.objectStore('sessions').put({
+        id: 'collapse-test',
+        query: '접기와 출처 표시',
+        updatedAt: Date.now(),
+        mode: 'live',
+        protocol: 2,
+        nodes,
+        sources: [],
+        graph: { relations: [], clusters: [] },
+        answer: null,
+        pinned: [],
+        status: 'completed',
+        failedParts: [],
+        fitted: true,
+        viewport: { x: 0, y: 150, zoom: 0.7 },
+        contentGraph: {
+          version: 1,
+          entities,
+          relations: [
+            {
+              id: 'extract',
+              source: 'r',
+              target: 'info_long',
+              kind: 'has_extract',
+              responseId: 'r',
+              spans: [],
+            },
+          ],
+          jobs: {},
+        },
+      })
       tx.oncomplete = () => resolve()
     })
     db.close()
@@ -977,7 +1156,8 @@ test('long information collapses like a response while short sources cannot coll
   await openHistory(page)
   await page.getByRole('button', { name: '접기와 출처 표시', exact: true }).click()
   await expect(page.locator('.source-card')).toHaveCount(8)
-  if (await page.getByRole('button', { name: '대화 기록 접기' }).isVisible()) await page.getByRole('button', { name: '대화 기록 접기' }).click()
+  if (await page.getByRole('button', { name: '대화 기록 접기' }).isVisible())
+    await page.getByRole('button', { name: '대화 기록 접기' }).click()
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
   const info = page.locator('.information-card')
   await expect(info.getByRole('button', { name: '노드 접기' })).toBeEnabled()
@@ -985,7 +1165,11 @@ test('long information collapses like a response while short sources cannot coll
   await expect(info).toHaveClass(/is-collapsed/)
   await expect(info.locator('h2').first()).toHaveText('자세한 정보')
   await expect(info.getByRole('button', { name: '이전 노드로' })).toBeVisible()
-  expect(await info.locator('.information-body').evaluate((el) => el.clientHeight <= 161 && el.scrollHeight > el.clientHeight)).toBe(true)
+  expect(
+    await info
+      .locator('.information-body')
+      .evaluate((el) => el.clientHeight <= 161 && el.scrollHeight > el.clientHeight),
+  ).toBe(true)
   await info.getByRole('button', { name: '노드 펼치기' }).click()
   expect(await info.locator('.information-body').evaluate((el) => el.clientHeight > 160)).toBe(true)
   await expect(page.locator('.source-card').first().getByRole('button', { name: '노드 접기' })).toBeDisabled()
@@ -1007,37 +1191,59 @@ test('source cards show lookup and summary spinners then persist the page summar
       let seq = 0
       let phase = 0
       const source = {
-        id: 'src_' + 'a'.repeat(24), title: '페이지 제목', url: 'https://example.com/article',
-        access: 'search_result', accessed_at: '2026-09-17T00:00:00Z', verification: 'unverified',
-        content: { status: 'reading', text: '', truncated: false, final_url: null as string | null, error_code: null, summary: '', summary_error: null },
-      }
-      return new Response(new ReadableStream({
-        start(controller) {
-          const emit = (type: string, data: object) => controller.enqueue(new TextEncoder().encode(
-            `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: ++seq, type, data })}\n\n`,
-          ))
-          emit('started', { access_token: 'token' })
-          emit('response_started', { id })
-          emit('response_completed', { id, text: '원래 답변입니다.' })
-          emit('status', { stage: 'reading_sources' })
-          emit('response_sources', { id, sources: [source] })
-          Object.assign(window, { nextSourcePhase: () => {
-            phase++
-            source.access = 'page_read'
-            source.content.text = 'Only the actual page body. '.repeat(50)
-            source.content.final_url = source.url
-            source.content.status = phase < 3 ? 'summarizing' : 'read'
-            if (phase === 2) source.content.summary = '• 이 페이지는 병렬 처리 방법을'
-            if (phase === 3) source.content.summary = '• 이 페이지는 병렬 처리 방법을 설명합니다.\n• 실제 본문에 있는 핵심 내용을 요약했습니다.'
-            emit('response_sources', { id, sources: [source] })
-            if (phase === 3) {
-              emit('checkpoint', { continuation: 'signed' })
-              emit('done', { status: 'completed', failed_parts: [] })
-              controller.close()
-            }
-          } })
+        id: 'src_' + 'a'.repeat(24),
+        title: '페이지 제목',
+        url: 'https://example.com/article',
+        access: 'search_result',
+        accessed_at: '2026-09-17T00:00:00Z',
+        verification: 'unverified',
+        content: {
+          status: 'reading',
+          text: '',
+          truncated: false,
+          final_url: null as string | null,
+          error_code: null,
+          summary: '',
+          summary_error: null,
         },
-      }), { headers: { 'Content-Type': 'text/event-stream' } })
+      }
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            const emit = (type: string, data: object) =>
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: ++seq, type, data })}\n\n`,
+                ),
+              )
+            emit('started', { access_token: 'token' })
+            emit('response_started', { id })
+            emit('response_completed', { id, text: '원래 답변입니다.' })
+            emit('status', { stage: 'reading_sources' })
+            emit('response_sources', { id, sources: [source] })
+            Object.assign(window, {
+              nextSourcePhase: () => {
+                phase++
+                source.access = 'page_read'
+                source.content.text = 'Only the actual page body. '.repeat(50)
+                source.content.final_url = source.url
+                source.content.status = phase < 3 ? 'summarizing' : 'read'
+                if (phase === 2) source.content.summary = '• 이 페이지는 병렬 처리 방법을'
+                if (phase === 3)
+                  source.content.summary =
+                    '• 이 페이지는 병렬 처리 방법을 설명합니다.\n• 실제 본문에 있는 핵심 내용을 요약했습니다.'
+                emit('response_sources', { id, sources: [source] })
+                if (phase === 3) {
+                  emit('checkpoint', { continuation: 'signed' })
+                  emit('done', { status: 'completed', failed_parts: [] })
+                  controller.close()
+                }
+              },
+            })
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      )
     }
   })
   await page.goto('/')
@@ -1048,7 +1254,9 @@ test('source cards show lookup and summary spinners then persist the page summar
   await expect(card.getByRole('status')).toHaveText('조회 중')
   await expect(card.locator('.rabbit-loader')).toHaveCount(1)
   await expect(card).toHaveAttribute('aria-busy', 'true')
-  const position = await page.locator('.react-flow__node-source').evaluate((el) => (el as HTMLElement).style.transform)
+  const position = await page
+    .locator('.react-flow__node-source')
+    .evaluate((el) => (el as HTMLElement).style.transform)
   await page.evaluate(() => (window as unknown as { nextSourcePhase: () => void }).nextSourcePhase())
   await expect(card.getByRole('status')).toHaveText('요약 중')
   await expect(card.locator('.rabbit-loader')).toHaveCount(1)
@@ -1062,7 +1270,9 @@ test('source cards show lookup and summary spinners then persist the page summar
   await expect(card.locator('.rabbit-loader')).toHaveCount(0)
   await expect(card.locator('.source-body')).toContainText('이 페이지는 병렬 처리 방법')
   await expect(card).not.toContainText('Only the actual page body')
-  expect(await page.locator('.react-flow__node-source').evaluate((el) => (el as HTMLElement).style.transform)).toBe(position)
+  expect(
+    await page.locator('.react-flow__node-source').evaluate((el) => (el as HTMLElement).style.transform),
+  ).toBe(position)
   await page.reload()
   await openHistory(page)
   await page.getByRole('button', { name: '페이지 요약 테스트', exact: true }).click()
@@ -1070,12 +1280,19 @@ test('source cards show lookup and summary spinners then persist the page summar
   await expect(card.locator('.rabbit-loader')).toHaveCount(0)
 })
 
-test('image search cards show preview title and original page and restore without search', async ({ page }) => {
+test('image search cards show preview title and original page and restore without search', async ({
+  page,
+}) => {
   let requests = 0
-  await page.route('https://upload.wikimedia.org/**', (route) => route.fulfill({
-    contentType: 'image/png',
-    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64'),
-  }))
+  await page.route('https://upload.wikimedia.org/**', (route) =>
+    route.fulfill({
+      contentType: 'image/png',
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    }),
+  )
   await page.route('**/api/title', (route) => route.fulfill({ status: 502, body: '{}' }))
   await page.route('**/api/structure', (route) => route.fulfill({ status: 502, body: '{}' }))
   await page.route('**/api/agent', async (route) => {
@@ -1085,18 +1302,44 @@ test('image search cards show preview title and original page and restore withou
     const events = [
       ['response_started', { id }],
       ['response_completed', { id, text: '이미지를 찾았습니다.' }],
-      ['response_sources', { id, sources: [{
-        id: 'src_' + 'a'.repeat(24), title: 'Rabbit.jpg',
-        url: 'https://commons.wikimedia.org/wiki/File:Rabbit.jpg',
-        access: 'search_result', accessed_at: '2026-09-17T00:00:00Z', verification: 'unverified',
-        image: { thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/rabbit.png' },
-      }] }],
+      [
+        'response_sources',
+        {
+          id,
+          sources: [
+            {
+              id: 'src_' + 'a'.repeat(24),
+              title: 'Rabbit.jpg',
+              url: 'https://commons.wikimedia.org/wiki/File:Rabbit.jpg',
+              access: 'search_result',
+              accessed_at: '2026-09-17T00:00:00Z',
+              verification: 'unverified',
+              image: { thumbnail_url: 'https://upload.wikimedia.org/wikipedia/commons/rabbit.png' },
+            },
+          ],
+        },
+      ],
       ['checkpoint', { continuation: 'signed' }],
       ['done', { status: 'completed', failed_parts: [] }],
     ]
-    await route.fulfill({ contentType: 'text/event-stream', body: events.map(([type, data], i) =>
-      'data: ' + JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: i + 1, type, data }) + '\n\n',
-    ).join('') })
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: events
+        .map(
+          ([type, data], i) =>
+            'data: ' +
+            JSON.stringify({
+              version: 2,
+              request_id: request.request_id,
+              job_id: 'j',
+              seq: i + 1,
+              type,
+              data,
+            }) +
+            '\n\n',
+        )
+        .join(''),
+    })
   })
   await page.goto('/')
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('토끼 이미지')
@@ -1106,7 +1349,10 @@ test('image search cards show preview title and original page and restore withou
   await expect(card.locator('.node-tag')).toHaveText('이미지')
   await expect(card).toHaveCSS('background-color', 'rgb(247, 242, 252)')
   await expect(card.locator('.image-preview')).toHaveAttribute('referrerpolicy', 'no-referrer')
-  await expect(card.getByRole('link', { name: '원본 페이지', exact: true })).toHaveAttribute('href', 'https://commons.wikimedia.org/wiki/File:Rabbit.jpg')
+  await expect(card.getByRole('link', { name: '원본 페이지', exact: true })).toHaveAttribute(
+    'href',
+    'https://commons.wikimedia.org/wiki/File:Rabbit.jpg',
+  )
   await expect(card).not.toContainText('페이지 요약')
   await page.reload()
   await openHistory(page)
@@ -1118,8 +1364,11 @@ test('image search cards show preview title and original page and restore withou
   await expect(card.getByRole('link', { name: '원본 페이지', exact: true })).toHaveCount(1)
 })
 
-
-test('independent browsers share server history and deletion without a model request', async ({ page, context, browser }) => {
+test('independent browsers share server history and deletion without a model request', async ({
+  page,
+  context,
+  browser,
+}) => {
   const history = memoryHistoryApi()
   await mockHistory(context, history)
   const otherContext = await browser.newContext()
@@ -1133,14 +1382,33 @@ test('independent browsers share server history and deletion without a model req
     await page.goto('/')
     await page.evaluate(async () => {
       const session = {
-        id: 'shared-review', query: '공용 심사 기록', updatedAt: 1000, mode: 'live', protocol: 2,
-        sources: [], nodes: [{ id: 'response_shared', type: 'response', width: 560,
-          position: { x: 0, y: 0 }, data: { prompt: '공용 심사 기록', text: '다른 브라우저에서도 같은 답변', status: 'completed' } }],
-        graph: { relations: [], clusters: [] }, answer: null,
-        viewport: { x: 300, y: 200, zoom: 1 }, fitted: true, pinned: [], status: 'completed', failedParts: [],
+        id: 'shared-review',
+        query: '공용 심사 기록',
+        updatedAt: 1000,
+        mode: 'live',
+        protocol: 2,
+        sources: [],
+        nodes: [
+          {
+            id: 'response_shared',
+            type: 'response',
+            width: 560,
+            position: { x: 0, y: 0 },
+            data: { prompt: '공용 심사 기록', text: '다른 브라우저에서도 같은 답변', status: 'completed' },
+          },
+        ],
+        graph: { relations: [], clusters: [] },
+        answer: null,
+        viewport: { x: 300, y: 200, zoom: 1 },
+        fitted: true,
+        pinned: [],
+        status: 'completed',
+        failedParts: [],
       }
       const response = await fetch('/api/sessions/shared-review', {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session, revision: 0 }),
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session, revision: 0 }),
       })
       if (!response.ok) throw Error('fixture save failed')
     })
@@ -1161,16 +1429,22 @@ test('independent browsers share server history and deletion without a model req
   }
 })
 
-
-test('server failures show the branded 500 canvas page and retry without reloading', async ({ page }, testInfo) => {
+test('server failures show the branded 500 canvas page and retry without reloading', async ({
+  page,
+}, testInfo) => {
   let calls = 0
   let modelCalls = 0
   let finishRetry!: () => void
-  const retryGate = new Promise<void>((resolve) => { finishRetry = resolve })
+  const retryGate = new Promise<void>((resolve) => {
+    finishRetry = resolve
+  })
   await page.route('**/api/sessions', async (route) => {
     calls++
     if (calls === 2) await retryGate
-    await route.fulfill({ status: calls < 3 ? 503 : 200, json: calls < 3 ? { detail: 'unavailable' } : { sessions: [] } })
+    await route.fulfill({
+      status: calls < 3 ? 503 : 200,
+      json: calls < 3 ? { detail: 'unavailable' } : { sessions: [] },
+    })
   })
   await page.route(/\/api\/(agent|title|structure)/, async (route) => {
     modelCalls++
@@ -1198,18 +1472,38 @@ test('server failures show the branded 500 canvas page and retry without reloadi
   expect(modelCalls).toBe(0)
 })
 
-
 test('digging rabbit accompanies list and selected conversation loading', async ({ page }, testInfo) => {
   let finishList!: () => void
   let finishContent!: () => void
-  const listGate = new Promise<void>((resolve) => { finishList = resolve })
-  const contentGate = new Promise<void>((resolve) => { finishContent = resolve })
+  const listGate = new Promise<void>((resolve) => {
+    finishList = resolve
+  })
+  const contentGate = new Promise<void>((resolve) => {
+    finishContent = resolve
+  })
   const saved = {
-    id: 'loading-demo', query: '저장된 대화 열기', updatedAt: 1000, mode: 'live', protocol: 2,
-    sources: [], nodes: [{ id: 'response_loading', type: 'response', width: 300,
-      position: { x: 0, y: 0 }, data: { prompt: '저장된 대화 열기', text: '불러온 대화 내용', status: 'completed' } }],
-    graph: { relations: [], clusters: [] }, answer: null,
-    viewport: { x: 30, y: 160, zoom: 0.9 }, fitted: true, pinned: [], status: 'completed', failedParts: [],
+    id: 'loading-demo',
+    query: '저장된 대화 열기',
+    updatedAt: 1000,
+    mode: 'live',
+    protocol: 2,
+    sources: [],
+    nodes: [
+      {
+        id: 'response_loading',
+        type: 'response',
+        width: 300,
+        position: { x: 0, y: 0 },
+        data: { prompt: '저장된 대화 열기', text: '불러온 대화 내용', status: 'completed' },
+      },
+    ],
+    graph: { relations: [], clusters: [] },
+    answer: null,
+    viewport: { x: 30, y: 160, zoom: 0.9 },
+    fitted: true,
+    pinned: [],
+    status: 'completed',
+    failedParts: [],
   }
   await page.route('**/api/sessions', async (route) => {
     await listGate
@@ -1255,13 +1549,18 @@ test('digging rabbit accompanies list and selected conversation loading', async 
   expect(modelCalls).toBe(0)
 })
 
-
-test('responses pulse throughout generation and conversation edges animate only once', async ({ page }, testInfo) => {
+test('responses pulse throughout generation and conversation edges animate only once', async ({
+  page,
+}, testInfo) => {
   let finishStructure!: () => void
-  const structureReady = new Promise<void>((resolve) => { finishStructure = resolve })
+  const structureReady = new Promise<void>((resolve) => {
+    finishStructure = resolve
+  })
   await page.route('**/api/structure', async (route) => {
     await structureReady
-    await route.fulfill({ json: { version: 2, text_hash: route.request().postDataJSON().text_hash, items: [] } })
+    await route.fulfill({
+      json: { version: 2, text_hash: route.request().postDataJSON().text_hash, items: [] },
+    })
   })
   await page.route('**/api/jobs/**', (route) => route.fulfill({ status: 204 }))
   await page.addInitScript(() => {
@@ -1281,28 +1580,37 @@ test('responses pulse throughout generation and conversation edges animate only 
       const text = '생성 중에도 문장은 선명하게 읽을 수 있습니다.\n\n'.repeat(5)
       let accumulated = text
       let seq = 0
-      return new Response(new ReadableStream({ start(controller) {
-        const emit = (type: string, data: object) => controller.enqueue(new TextEncoder().encode(
-          `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: ++seq, type, data })}\n\n`,
-        ))
-        emit('started', { access_token: 'token' })
-        emit('checkpoint', { continuation: request.continuation ?? 'before' })
-        emit('response_started', { id })
-        emit('response_delta', { id, delta: text })
-        Object.assign(window, {
-          growResponse: () => {
-            const growth = '길어진 응답도 같은 노드 안에서 계속 표시됩니다.\n\n'.repeat(18) + '응답 확장 끝.'
-            accumulated += growth
-            emit('response_delta', { id, delta: growth })
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            const emit = (type: string, data: object) =>
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: ++seq, type, data })}\n\n`,
+                ),
+              )
+            emit('started', { access_token: 'token' })
+            emit('checkpoint', { continuation: request.continuation ?? 'before' })
+            emit('response_started', { id })
+            emit('response_delta', { id, delta: text })
+            Object.assign(window, {
+              growResponse: () => {
+                const growth =
+                  '길어진 응답도 같은 노드 안에서 계속 표시됩니다.\n\n'.repeat(18) + '응답 확장 끝.'
+                accumulated += growth
+                emit('response_delta', { id, delta: growth })
+              },
+              finishResponse: () => {
+                emit('response_completed', { id, text: accumulated })
+                emit('checkpoint', { continuation: 'signed' })
+                emit('done', { status: 'completed', failed_parts: [] })
+                controller.close()
+              },
+            })
           },
-          finishResponse: () => {
-            emit('response_completed', { id, text: accumulated })
-            emit('checkpoint', { continuation: 'signed' })
-            emit('done', { status: 'completed', failed_parts: [] })
-            controller.close()
-          },
-        })
-      } }), { headers: { 'Content-Type': 'text/event-stream' } })
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      )
     }
   })
   await page.goto('/')
@@ -1314,10 +1622,14 @@ test('responses pulse throughout generation and conversation edges animate only 
   await expect(timer).toContainText('생성 중')
   await expect(card.locator('.response-glass')).toHaveCount(0)
   await expect(card).toHaveCSS('animation-name', 'response-grow')
-  expect(await card.evaluate((element) => {
-    const animation = element.getAnimations().find((item) => (item as CSSAnimation).animationName === 'response-grow')
-    return (animation?.effect as KeyframeEffect | null)?.getKeyframes().map((frame) => frame.transform)
-  })).toEqual(['scale(1)', 'scale(1)', 'scale(0.975)', 'scale(1)', 'scale(1)'])
+  expect(
+    await card.evaluate((element) => {
+      const animation = element
+        .getAnimations()
+        .find((item) => (item as CSSAnimation).animationName === 'response-grow')
+      return (animation?.effect as KeyframeEffect | null)?.getKeyframes().map((frame) => frame.transform)
+    }),
+  ).toEqual(['scale(1)', 'scale(1)', 'scale(0.975)', 'scale(1)', 'scale(1)'])
   await expect(card).toHaveCSS('animation-iteration-count', 'infinite')
   await expect(card.locator('.response-content')).toHaveCSS('filter', 'none')
   await expect(card).toHaveCSS('opacity', '1')
@@ -1348,7 +1660,8 @@ test('responses pulse throughout generation and conversation edges animate only 
   const edge = page.locator('.react-flow__edge-conversation .react-flow__edge-path')
   await expect(edge).toHaveCSS('stroke', 'rgb(69, 140, 128)')
   await expect(edge).toHaveCSS('stroke-width', '2.6px')
-  const counts = () => page.evaluate(() => (window as unknown as { edgeStarts: Record<string, number> }).edgeStarts)
+  const counts = () =>
+    page.evaluate(() => (window as unknown as { edgeStarts: Record<string, number> }).edgeStarts)
   await expect.poll(async () => Object.values(await counts())).toEqual([1])
   await expect(page.locator('.connection-reveal')).toHaveCount(0)
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
@@ -1368,7 +1681,10 @@ test('responses pulse throughout generation and conversation edges animate only 
   expect(Object.values(await counts())).toEqual([1])
 })
 
-test('reorganized cards show comparisons and steps, preserve context and restore without structuring', async ({ page, context }, testInfo) => {
+test('reorganized cards show comparisons and steps, preserve context and restore without structuring', async ({
+  page,
+  context,
+}, testInfo) => {
   const { structuredAnswer, structuredResult } = await import('../fixtures/information')
   const history = memoryHistoryApi()
   await mockHistory(context, history)
@@ -1383,22 +1699,35 @@ test('reorganized cards show comparisons and steps, preserve context and restore
     submittedContext = request.node_context
     const id = `response_${request.request_id}`
     const events = [
-      ['response_started', { id }], ['response_completed', { id, text: structuredAnswer }],
-      ['checkpoint', { continuation: 'signed' }], ['done', { status: 'completed', failed_parts: [] }],
+      ['response_started', { id }],
+      ['response_completed', { id, text: structuredAnswer }],
+      ['checkpoint', { continuation: 'signed' }],
+      ['done', { status: 'completed', failed_parts: [] }],
     ]
-    await route.fulfill({ contentType: 'text/event-stream', body: events.map(([type, data], index) =>
-      `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: index + 1, type, data })}\n\n`).join('') })
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: events
+        .map(
+          ([type, data], index) =>
+            `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: index + 1, type, data })}\n\n`,
+        )
+        .join(''),
+    })
   })
   await page.goto('/')
   await page.getByRole('textbox', { name: '메시지 입력' }).fill('차이와 실행 순서를 정리해줘')
   await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.information-card')).toHaveCount(2)
-  const comparison = page.locator('.information-card').filter({ has: page.getByRole('heading', { name: 'A와 B의 차이', exact: true }) })
-  const procedure = page.locator('.information-card').filter({ has: page.getByRole('heading', { name: '설치부터 실행까지', exact: true }) })
+  const comparison = page
+    .locator('.information-card')
+    .filter({ has: page.getByRole('heading', { name: 'A와 B의 차이', exact: true }) })
+  const procedure = page
+    .locator('.information-card')
+    .filter({ has: page.getByRole('heading', { name: '설치부터 실행까지', exact: true }) })
   await expect(comparison.locator('table tbody tr')).toHaveCount(2)
   await expect(comparison.locator('table')).toHaveCSS('display', 'table')
   await expect(comparison.locator('table')).toHaveCSS('table-layout', 'fixed')
-  await expect(comparison.locator('header')).toContainText('답변에서 재정리')
+  await expect(comparison.locator('header')).toContainText('정보 정리')
   await expect(comparison.locator('header')).not.toContainText('비교')
   await expect(procedure.locator('ol li')).toHaveCount(3)
   await expect(procedure.locator('ul')).toContainText('설정 전에는 실행하지 마세요.')
@@ -1414,7 +1743,13 @@ test('reorganized cards show comparisons and steps, preserve context and restore
   expect(submittedContext?.text).toContain('설치·설정 | 설치가 간단함 | 초기 설정이 복잡함')
   await expect(page.locator('.information-card')).toHaveCount(4)
   const callsBeforeRestore = structureCalls
-  await expect.poll(async () => (await history.list()).sessions[0]?.session.nodes.filter((node) => node.type === 'information').length).toBe(4)
+  await expect
+    .poll(
+      async () =>
+        (await history.list()).sessions[0]?.session.nodes.filter((node) => node.type === 'information')
+          .length,
+    )
+    .toBe(4)
   await page.reload()
   await openHistory(page)
   await page.getByRole('button', { name: '차이와 실행 순서를 정리해줘', exact: true }).click()
@@ -1422,8 +1757,9 @@ test('reorganized cards show comparisons and steps, preserve context and restore
   expect(structureCalls).toBe(callsBeforeRestore)
 })
 
-
-test('composer tool menu selects per-message tools without changing viewport or uploading files', async ({ page }, testInfo) => {
+test('composer tool menu selects per-message tools without changing viewport or uploading files', async ({
+  page,
+}, testInfo) => {
   await installStream(page)
   await page.goto('/')
   const add = page.getByRole('button', { name: '도구 추가', exact: true })
@@ -1480,41 +1816,73 @@ test('composer tool menu selects per-message tools without changing viewport or 
   await expect(menu).toHaveCount(0)
 })
 
-
-test('uploaded image and file sources appear above the first response and restore without upload or model calls', async ({page}, testInfo) => {
+test('uploaded image and file sources appear above the first response and restore without upload or model calls', async ({
+  page,
+}, testInfo) => {
   await installStream(page)
   let uploads = 0
-  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')
-  await page.route('**/api/attachments**', async route => {
-    const req = route.request(), url = new URL(req.url())
-    if (url.pathname.endsWith('/limits')) return route.fulfill({json:{max_bytes:3000000,max_count:4,max_text_chars:32000,max_pdf_pages:20}})
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+    'base64',
+  )
+  await page.route('**/api/attachments**', async (route) => {
+    const req = route.request(),
+      url = new URL(req.url())
+    if (url.pathname.endsWith('/limits'))
+      return route.fulfill({
+        json: { max_bytes: 3000000, max_count: 4, max_text_chars: 32000, max_pdf_pages: 20 },
+      })
     if (req.method() === 'POST') {
       uploads++
-      const name = url.searchParams.get('filename')!, image = name.endsWith('.png')
+      const name = url.searchParams.get('filename')!,
+        image = name.endsWith('.png')
       const id = image ? '11111111-1111-4111-8111-111111111111' : '22222222-2222-4222-8222-222222222222'
-      return route.fulfill({status:201,json:{id,name,kind:image?'image':'file',media_type:image?'image/png':'text/plain',size:50,
-        download_url:`/api/attachments/${id}/content`,preview_url:image?`/api/attachments/${id}/preview`:null,
-        text_excerpt:image?'':'첨부 문서의 실제 내용',width:image?1:null,height:image?1:null,pages:null}})
+      return route.fulfill({
+        status: 201,
+        json: {
+          id,
+          name,
+          kind: image ? 'image' : 'file',
+          media_type: image ? 'image/png' : 'text/plain',
+          size: 50,
+          download_url: `/api/attachments/${id}/content`,
+          preview_url: image ? `/api/attachments/${id}/preview` : null,
+          text_excerpt: image ? '' : '첨부 문서의 실제 내용',
+          width: image ? 1 : null,
+          height: image ? 1 : null,
+          pages: null,
+        },
+      })
     }
-    if (url.pathname.includes('22222222') && url.pathname.endsWith('/content')) return route.fulfill({contentType:'text/plain',body:'첨부 문서의 실제 내용'})
-    return route.fulfill({contentType:'image/png',body:png})
+    if (url.pathname.includes('22222222') && url.pathname.endsWith('/content'))
+      return route.fulfill({ contentType: 'text/plain', body: '첨부 문서의 실제 내용' })
+    return route.fulfill({ contentType: 'image/png', body: png })
   })
   await page.goto('/')
-  await page.getByRole('button',{name:'도구 추가',exact:true}).click()
-  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button',{name:/이미지 첨부 PNG/}).click()])
-  await chooser.setFiles({name:'photo.png',mimeType:'image/png',buffer:png})
-  await page.getByLabel('파일 첨부 선택').setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('첨부 문서의 실제 내용')})
-  await expect(page.getByText('첨부 완료',{exact:true})).toHaveCount(2)
-  await page.screenshot({path:testInfo.outputPath('attachment-drafts.png')})
+  await page.getByRole('button', { name: '도구 추가', exact: true }).click()
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByRole('button', { name: /이미지 첨부 PNG/ }).click(),
+  ])
+  await chooser.setFiles({ name: 'photo.png', mimeType: 'image/png', buffer: png })
+  await page.getByLabel('파일 첨부 선택').setInputFiles({
+    name: 'notes.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('첨부 문서의 실제 내용'),
+  })
+  await expect(page.getByText('첨부 완료', { exact: true })).toHaveCount(2)
+  await page.screenshot({ path: testInfo.outputPath('attachment-drafts.png') })
   const viewport = await page.locator('.react-flow__viewport').getAttribute('style')
-  await page.getByRole('textbox',{name:'메시지 입력'}).fill('첨부 이미지와 파일을 설명해줘')
-  await page.getByRole('button',{name:'메시지 보내기'}).click()
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('첨부 이미지와 파일을 설명해줘')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect(page.locator('.react-flow__node-attachment')).toHaveCount(2)
   await expect(page.locator('.response-card')).toHaveCount(1)
-  await expect(page.locator('.response-card')).toHaveAttribute('aria-busy','true')
+  await expect(page.locator('.response-card')).toHaveAttribute('aria-busy', 'true')
   expect((await calls(page))[0].attachment_ids).toHaveLength(2)
-  await expect(page.locator('.content-edge-label').filter({hasText:'입력 자료'})).toHaveCount(2)
-  const promptY = await page.locator('.react-flow__node-response').evaluate(el => el.getBoundingClientRect().top)
+  await expect(page.locator('.content-edge-label').filter({ hasText: '입력 자료' })).toHaveCount(2)
+  const promptY = await page
+    .locator('.react-flow__node-response')
+    .evaluate((el) => el.getBoundingClientRect().top)
   for (const source of await page.locator('.react-flow__node-attachment').all()) {
     expect((await source.boundingBox())!.y + (await source.boundingBox())!.height).toBeLessThan(promptY)
   }
@@ -1522,115 +1890,308 @@ test('uploaded image and file sources appear above the first response and restor
   const source = page.locator('.react-flow__node-attachment').first()
   await source.focus()
   await page.keyboard.press('ArrowLeft')
-  const position = await source.evaluate(el => (el as HTMLElement).style.transform)
+  const position = await source.evaluate((el) => (el as HTMLElement).style.transform)
   await finishStream(page)
-  await expect(page.getByRole('button',{name:'메시지 보내기'})).toBeVisible()
-  expect(await source.evaluate(el => (el as HTMLElement).style.transform)).toBe(position)
-  await page.getByRole('button',{name:'화면 맞춤'}).click()
+  await expect(page.getByRole('button', { name: '메시지 보내기' })).toBeVisible()
+  expect(await source.evaluate((el) => (el as HTMLElement).style.transform)).toBe(position)
+  await page.getByRole('button', { name: '화면 맞춤' }).click()
   await page.waitForTimeout(300) // Complete the explicit fit animation before visual inspection.
-  await page.screenshot({path:testInfo.outputPath('attachment-sources.png')})
+  await page.screenshot({ path: testInfo.outputPath('attachment-sources.png') })
   expect(viewport).not.toBeNull()
   await page.reload()
   await openHistory(page)
-  await page.getByRole('button',{name:'첨부 이미지와 파일을 설명해줘',exact:true}).click()
+  await page.getByRole('button', { name: '첨부 이미지와 파일을 설명해줘', exact: true }).click()
   await expect(page.locator('.react-flow__node-attachment')).toHaveCount(2)
-  expect(await page.locator('.react-flow__node-attachment').first().evaluate(el => (el as HTMLElement).style.transform)).toBe(position)
+  expect(
+    await page
+      .locator('.react-flow__node-attachment')
+      .first()
+      .evaluate((el) => (el as HTMLElement).style.transform),
+  ).toBe(position)
   expect(uploads).toBe(2)
   expect(await calls(page)).toHaveLength(0)
-  const imageCard = page.getByRole('article', {name: '첨부 소스 · photo.png'})
-  const fileCard = page.getByRole('article', {name: '첨부 소스 · notes.txt'})
+  const imageCard = page.getByRole('article', { name: '첨부 소스 · photo.png' })
+  const fileCard = page.getByRole('article', { name: '첨부 소스 · notes.txt' })
   await expect(fileCard).not.toContainText('첨부 문서의 실제 내용')
-  await expect(fileCard.getByRole('link', {name: 'notes.txt 다운로드'})).toHaveText('')
-  await imageCard.getByRole('button', {name: '노드 펼치기'}).click()
+  await expect(fileCard.getByRole('link', { name: 'notes.txt 다운로드' })).toHaveText('')
+  await imageCard.getByRole('button', { name: '노드 펼치기' }).click()
   await expect(imageCard.getByRole('img')).toHaveAttribute('src', /\/content$/)
-  await imageCard.getByRole('button', {name: '노드 접기'}).click()
+  await imageCard.getByRole('button', { name: '노드 접기' }).click()
   await page.evaluate(() => {
-    Object.defineProperty(navigator, 'clipboard', {configurable:true, value: {
-      writeText: async (text: string) => { (window as unknown as {copiedText: string}).copiedText = text },
-      write: async (items: ClipboardItem[]) => {
-        const data = await items[0].getType('image/png')
-        ;(window as unknown as {copiedBytes: number}).copiedBytes = data.size
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          ;(window as unknown as { copiedText: string }).copiedText = text
+        },
+        write: async (items: ClipboardItem[]) => {
+          const data = await items[0].getType('image/png')
+          ;(window as unknown as { copiedBytes: number }).copiedBytes = data.size
+        },
       },
-    }})
+    })
   })
-  await fileCard.getByRole('button', {name: '복사하기', exact:true}).click()
-  await expect(fileCard.getByRole('button', {name: '복사 완료'})).toBeVisible()
-  expect(await page.evaluate(() => (window as unknown as {copiedText:string}).copiedText)).toBe('첨부 문서의 실제 내용')
-  await imageCard.getByRole('button', {name: '복사하기', exact:true}).click()
-  await expect(imageCard.getByRole('button', {name: '복사 완료'})).toBeVisible()
-  expect(await page.evaluate(() => (window as unknown as {copiedBytes:number}).copiedBytes)).toBe(png.length)
-  await imageCard.getByRole('button', {name: '다음 응답에 사용'}).click()
-  await fileCard.getByRole('button', {name: '다음 응답에 사용'}).click()
-  await expect(page.getByRole('list', {name:'첨부 자료'}).getByRole('listitem')).toHaveCount(2)
-  await expect(page.getByRole('textbox',{name:'메시지 입력'})).toBeFocused()
-  await page.getByRole('textbox',{name:'메시지 입력'}).fill('첨부 원본을 다시 비교해줘')
-  await page.getByRole('button',{name:'메시지 보내기'}).click()
+  await fileCard.getByRole('button', { name: '복사하기', exact: true }).click()
+  await expect(fileCard.getByRole('button', { name: '복사 완료' })).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { copiedText: string }).copiedText)).toBe(
+    '첨부 문서의 실제 내용',
+  )
+  await imageCard.getByRole('button', { name: '복사하기', exact: true }).click()
+  await expect(imageCard.getByRole('button', { name: '복사 완료' })).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { copiedBytes: number }).copiedBytes)).toBe(
+    png.length,
+  )
+  await imageCard.getByRole('button', { name: '다음 응답에 사용' }).click()
+  await fileCard.getByRole('button', { name: '다음 응답에 사용' }).click()
+  await expect(page.getByRole('list', { name: '첨부 자료' }).getByRole('listitem')).toHaveCount(2)
+  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toBeFocused()
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('첨부 원본을 다시 비교해줘')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
   await expect.poll(async () => (await calls(page)).length).toBe(1)
-  expect((await calls(page))[0].attachment_ids).toEqual(['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222'])
+  expect((await calls(page))[0].attachment_ids).toEqual([
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222',
+  ])
   expect(uploads).toBe(2)
   await expect(page.locator('.react-flow__node-attachment')).toHaveCount(2)
   await finishStream(page)
 })
 
-test('canvas node and edge editing supports shortcuts, history and restore without model calls', async ({ page, context }, testInfo) => {
+test('inline editing preserves copied cards and reports keyboard and menu actions', async ({
+  page,
+  context,
+}, testInfo) => {
   const history = memoryHistoryApi()
   const session = attachInformation(entitySession(), 'response_entity', entityResult('stored-hash'))
   session.viewport = { x: 100, y: 120, zoom: 0.7 }
   await history.save(session.id, { session, revision: 0 })
   await mockHistory(context, history)
   let calls = 0
-  await page.route(/\/api\/(structure|agent|title)/, async route => { calls++; await route.abort() })
+  await page.route(/\/api\/(structure|agent|title)/, async (route) => {
+    calls++
+    await route.abort()
+  })
+  await page.goto('/')
+  await openHistory(page)
+  await page.getByRole('button', { name: session.query, exact: true }).click()
+  const response = page.locator('.react-flow__node[data-id="response_entity"]')
+  await response.getByRole('heading').click()
+  await page.keyboard.press('Control+c')
+  await expect(page.locator('.action-toast')).toHaveText('복사를 완료했습니다')
+  await expect(page.locator('.action-toast')).toHaveCSS('background-color', 'rgb(15, 118, 110)')
+  await expect(page.locator('.action-toast')).toHaveCSS('border-radius', '999px')
+  await page.keyboard.press('Control+v')
+  const copies = page.locator('.react-flow__node-user')
+  await expect(copies).toHaveCount(1)
+  await expect(page.locator('.action-toast')).toContainText('붙여넣기를 완료했습니다')
+  await expect(copies.locator('article')).toHaveClass(/response-card/)
+  await expect(copies.locator('.node-tag')).toHaveText('응답')
+  await expect(copies.locator('.response-status')).toHaveText('완료')
+  expect(await copies.evaluate((el) => getComputedStyle(el).width)).toBe(
+    await response.evaluate((el) => getComputedStyle(el).width),
+  )
+  await expect(copies.getByRole('button', { name: '다음 응답에 사용', exact: true })).toBeEnabled()
+  await page.keyboard.press('Meta+Backspace')
+  await expect(copies).toHaveCount(0)
+  await expect(page.locator('.action-toast')).toContainText('삭제를 완료했습니다')
+  await page.keyboard.press('Meta+z')
+  await expect(copies).toHaveCount(1)
+  await page.getByRole('button', { name: '다시 실행', exact: true }).click()
+  await expect(copies).toHaveCount(0)
+  await response.getByRole('button', { name: '수정하기', exact: true }).click()
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  const editor = response.getByRole('form', { name: '수정하기', exact: true })
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await editor.getByRole('combobox', { name: '노드 유형' }).press('ArrowDown')
+  await expect(page.getByRole('listbox')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(editor).toBeVisible()
+  await expect(page.getByRole('listbox')).toHaveCount(0)
+  await expect(editor).toHaveCSS('overflow-y', 'visible')
+  await expect(editor.locator('.inline-editor-fields')).toHaveCSS('overflow-y', 'visible')
+  await expect(editor.getByLabel('응답', { exact: true })).toHaveCSS('overflow-y', 'auto')
+  await expect(editor.locator('footer')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await editor.getByLabel('사용자 질문', { exact: true }).fill('수정된 질문')
+  await editor.getByLabel('응답', { exact: true }).fill('수정된 응답')
+  await page.keyboard.press('Control+z')
+  await expect(editor).toBeVisible()
+  await editor.getByLabel('응답', { exact: true }).fill('수정된 응답')
+  await editor.getByLabel('상태 / 분류', { exact: true }).fill('검토 완료')
+  await editor.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(response).toContainText('수정된 질문')
+  await expect(response.locator('.response-status')).toHaveText('검토 완료')
+  await expect(page.locator('.action-toast')).toContainText('수정을 완료했습니다')
+  await response.getByRole('button', { name: '수정하기', exact: true }).click()
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await editor.getByRole('combobox', { name: '노드 유형' }).click()
+  await page.getByRole('option', { name: '이미지', exact: true }).click()
+  await expect(editor.locator('select')).toHaveCount(0)
+  await editor.getByLabel('이미지 URL').fill('javascript:alert(1)')
+  await editor.getByLabel('원본 페이지 URL').fill('https://example.com/page')
+  await editor.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(editor.getByRole('alert')).toContainText('이미지 주소')
+  await editor.getByRole('combobox', { name: '노드 유형' }).click()
+  await page.getByRole('option', { name: '엔티티', exact: true }).click()
+  await expect(response.locator('article')).toHaveClass(/entity-card/)
+  await editor.getByLabel('엔티티 이름').fill('사용자 엔티티')
+  await editor.getByLabel('상태 / 분류').fill('개념')
+  await page.screenshot({ path: testInfo.outputPath('inline-node-editor.png') })
+  await editor.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(response.locator('article')).toHaveClass(/entity-card/)
+  await expect(response.locator('.entity-type')).toHaveText('개념')
+  await expect(response.getByRole('button', { name: '이전 노드로' })).toBeDisabled()
+  await expect(response.getByRole('button', { name: '관련 정보로' })).toBeDisabled()
+  await response.getByRole('heading').click()
+  await page.keyboard.press('Meta+c')
+  await page.keyboard.press('Meta+v')
+  const entityCopy = page.locator('.react-flow__node-user').last()
+  await expect(entityCopy.locator('article')).toHaveClass(/entity-card/)
+  await expect(entityCopy.locator('.entity-type')).toHaveText('개념')
+  await page.keyboard.press('Delete')
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  const edge = page.locator('.react-flow__edge').first()
+  await expect(edge.locator('.react-flow__edge-path')).toHaveCSS('stroke', 'rgb(188, 96, 78)')
+  await edge.click({ button: 'right', force: true })
+  await page.getByRole('menuitem', { name: '수정하기', exact: true }).click()
+  const edgeEditor = page.locator('.edge-inline-editor')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await edgeEditor.getByLabel('연결 이름').fill('내 연결')
+  const [inputBox, saveBox] = await edgeEditor.evaluate((form) => [
+    form.querySelector('input')!.getBoundingClientRect().toJSON(),
+    form.querySelector('button[type=submit]')!.getBoundingClientRect().toJSON(),
+  ])
+  expect(inputBox.x + inputBox.width).toBeLessThan(saveBox.x)
+  await expect(edgeEditor.getByLabel('연결 이름')).toHaveCSS('outline-style', 'none')
+  await page.screenshot({ path: testInfo.outputPath('inline-edge-editor.png') })
+  await edgeEditor.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(page.locator('.content-edge-label').filter({ hasText: '내 연결' })).toHaveCount(1)
+  await page.screenshot({ path: testInfo.outputPath('edited-canvas.png') })
+  await expect
+    .poll(
+      async () =>
+        (await history.get(session.id)).session.canvasEdits?.nodes.find((n) => n.id === 'response_entity')
+          ?.data.title,
+    )
+    .toBe('사용자 엔티티')
+  await page.reload()
+  await openHistory(page)
+  await page.getByRole('button', { name: session.query, exact: true }).click()
+  await expect(response).toContainText('사용자 엔티티')
+  await expect(response.locator('.entity-type')).toHaveText('개념')
+  await expect(page.getByRole('button', { name: '실행 취소', exact: true })).toBeDisabled()
+  expect(calls).toBe(0)
+})
+
+test('dragging connection handles creates persistent editable edges and copies can supply the next response', async ({
+  page,
+  context,
+}, testInfo) => {
+  const history = memoryHistoryApi()
+  const session = entitySession()
+  session.continuation = 'signed-context'
+  session.titleRequested = true
+  session.nodes[0].position = { x: 0, y: 0 }
+  await history.save(session.id, { session, revision: 0 })
+  await mockHistory(context, history)
   await page.goto('/')
   await openHistory(page)
   await page.getByRole('button', { name: session.query, exact: true }).click()
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
-  const response = page.getByRole('article', { name: '에이전트 응답', exact: true })
-  await response.click({ button: 'right' })
-  await page.getByRole('menuitem', { name: /복사하기/ }).click()
+  const original = page.locator('.react-flow__node-response')
+  await original.getByRole('heading').click()
+  await page.keyboard.press('Control+c')
   await page.keyboard.press('Control+v')
-  const edited = page.getByRole('article', { name: '사용자 편집 노드', exact: true })
-  await expect(edited).toHaveCount(1)
-  await page.keyboard.press('Delete')
-  await expect(edited).toHaveCount(0)
-  await page.keyboard.press('Control+z')
-  await expect(edited).toHaveCount(1)
-  await page.getByRole('button', { name: '다시 실행', exact: true }).click()
-  await expect(edited).toHaveCount(0)
-  await response.getByRole('button', { name: '노드 수정하기', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '노드 수정', exact: true })
-  await dialog.getByLabel('사용자 질문', { exact: true }).fill('수정된 질문')
-  await dialog.getByLabel('응답', { exact: true }).fill('수정된 응답')
-  await page.keyboard.press('Control+z') // Native text undo must not undo the graph.
-  await expect(dialog).toBeVisible()
-  await dialog.getByLabel('응답', { exact: true }).fill('수정된 응답')
-  await dialog.getByRole('button', { name: '저장', exact: true }).click()
-  await expect(edited).toContainText('수정된 질문')
-  await expect(edited).toContainText('수정된 응답')
-  await edited.getByRole('button', { name: '노드 수정하기', exact: true }).click()
-  await dialog.getByLabel('노드 유형').selectOption('image')
-  await dialog.getByLabel('이미지 URL').fill('javascript:alert(1)')
-  await dialog.getByLabel('원본 페이지 URL').fill('https://example.com/page')
-  await dialog.getByRole('button', { name: '저장', exact: true }).click()
-  await expect(dialog.getByRole('alert')).toContainText('이미지 주소')
-  await dialog.getByLabel('노드 유형').selectOption('entity')
-  await dialog.getByLabel('엔티티 이름').fill('사용자 엔티티')
-  await page.screenshot({ path: testInfo.outputPath('node-editor.png') })
-  await dialog.getByRole('button', { name: '저장', exact: true }).click()
-  await expect(edited.getByRole('button', { name: '이전 노드로' })).toBeDisabled()
-  await expect(edited.getByRole('button', { name: /관련 정보/ })).toBeDisabled()
-  const edge = page.locator('.react-flow__edge').first()
-  await edge.click({ button: 'right', force: true })
-  await page.getByRole('menuitem', { name: '간선 수정하기', exact: true }).click()
-  const edgeDialog = page.getByRole('dialog', { name: '간선 수정', exact: true })
-  await edgeDialog.getByLabel('연결 이름').fill('내 연결')
-  await edgeDialog.getByRole('button', { name: '저장', exact: true }).click()
-  await expect(page.locator('.content-edge-label').filter({ hasText: '내 연결' })).toHaveCount(1)
-  await page.screenshot({ path: testInfo.outputPath('edited-canvas.png') })
-  await expect.poll(async () => (await history.get(session.id)).session.canvasEdits?.nodes.find(n => n.id === 'response_entity')?.data.title).toBe('사용자 엔티티')
+  const copy = page.locator('.react-flow__node-user')
+  await copy.getByRole('button', { name: '수정하기', exact: true }).click()
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  const editor = copy.getByRole('form', { name: '수정하기', exact: true })
+  await editor.getByLabel('응답', { exact: true }).fill('복사본에서 직접 수정한 내용')
+  await editor.getByRole('button', { name: '저장', exact: true }).click()
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  // Put the copied node below the original so both handles have clear hit targets.
+  const box = await copy.getByRole('heading').boundingBox()
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2 + 180, { steps: 12 })
+  await page.mouse.up()
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  const source = original.locator('.react-flow__handle.source')
+  const target = copy.locator('.react-flow__handle.target')
+  await expect(source).toBeVisible()
+  await source.dragTo(target)
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+  await expect(page.locator('.action-toast')).toContainText('연결을 완료했습니다')
+  await page.locator('.edge-inline-editor').getByLabel('연결 이름').fill('직접 만든 연결')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.content-edge-label')).toHaveText('직접 만든 연결')
+  await expect(page.locator('.react-flow__edge-path')).toHaveCSS('stroke', 'rgb(69, 140, 128)')
+  await expect(copy.getByRole('button', { name: '이전 노드로' })).toBeEnabled()
+  await page.screenshot({ path: testInfo.outputPath('dragged-connection.png') })
+  await expect.poll(async () => (await history.get(session.id)).session.canvasEdits?.edges.length).toBe(1)
   await page.reload()
   await openHistory(page)
   await page.getByRole('button', { name: session.query, exact: true }).click()
-  await expect(edited).toContainText('사용자 엔티티')
-  await expect(page.getByRole('button', { name: '실행 취소', exact: true })).toBeDisabled()
-  expect(calls).toBe(0)
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+  let submitted: { node_context: { node_id: string; text: string }; query: string } | undefined
+  await page.route('**/api/agent', async (route) => {
+    const request = route.request().postDataJSON()
+    submitted = request
+    const events = [
+      ['response_started', { id: 'response_followup' }],
+      ['response_delta', { id: 'response_followup', delta: '새 응답' }],
+      ['done', { status: 'partial' }],
+    ]
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: events
+        .map(
+          ([type, data], i) =>
+            `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'j', seq: i + 1, type, data })}\n\n`,
+        )
+        .join(''),
+    })
+  })
+  await copy.getByRole('button', { name: '다음 응답에 사용', exact: true }).click()
+  await expect(copy.locator('article')).toHaveClass(/is-reply-target/)
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('이 내용을 더 설명해줘')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  await expect.poll(() => submitted?.node_context.text).toContain('복사본에서 직접 수정한 내용')
+  await expect(page.locator('.react-flow__edge-conversation')).toHaveCount(1)
+  const edge = await history.get(session.id)
+  expect(submitted?.node_context.node_id).toBe(edge.session.canvasEdits!.nodes[0].id)
+})
+
+test('empty canvas context menu creates nodes and preserves default relation labels and colors', async ({
+  page,
+  context,
+}, testInfo) => {
+  const history = memoryHistoryApi()
+  await mockHistory(context, history)
+  await page.goto('/')
+  const viewport = page.viewportSize()!
+  await page.mouse.click(viewport.width - 30, 220, { button: 'right' })
+  await page.getByRole('menuitem', { name: '노드 생성', exact: true }).click()
+  const node = page.locator('.react-flow__node-user')
+  await expect(node).toHaveCount(1)
+  await expect(page.locator('.action-toast')).toHaveText('노드 생성을 완료했습니다')
+  // Fit the newly created node before interacting with its inline form at the viewport edge.
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  const editor = node.getByRole('form', { name: '수정하기', exact: true })
+  await expect(editor.getByRole('combobox', { name: '노드 유형' })).toHaveText('응답')
+  await expect(node.locator('article')).toHaveCSS('background-color', 'rgb(237, 247, 243)')
+  await editor.getByRole('combobox', { name: '노드 유형' }).click()
+  await expect(page.getByRole('listbox')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('shared-node-dropdown.png') })
+  await page.getByRole('option', { name: '엔티티', exact: true }).click()
+  await editor.getByLabel('엔티티 이름').fill('직접 만든 엔티티')
+  await editor.getByLabel('상태 / 분류').fill('개념')
+  await editor.getByRole('button', { name: '저장', exact: true }).click()
+  await expect(node.locator('.entity-type')).toHaveText('개념')
+  await expect(node.getByRole('button', { name: '다음 응답에 사용', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: '실행 취소', exact: true }).click()
+  await page.getByRole('button', { name: '실행 취소', exact: true }).click()
+  await expect(node).toHaveCount(0)
+  await page.getByRole('button', { name: '다시 실행', exact: true }).click()
+  await page.getByRole('button', { name: '다시 실행', exact: true }).click()
+  await expect(node.getByRole('heading')).toHaveText('직접 만든 엔티티')
 })

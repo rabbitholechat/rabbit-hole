@@ -1841,6 +1841,28 @@
       },
       "UserEdge": {
         "properties": {
+          "sourceHandle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcehandle"
+          },
+          "targetHandle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targethandle"
+          },
           "id": {
             "type": "string",
             "title": "Id"
@@ -1923,6 +1945,121 @@
           "imageUrl": {
             "type": "string",
             "title": "Imageurl"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "attachment": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "presentation": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presentation"
+          },
+          "entitySubtype": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "concept",
+                  "technology",
+                  "company",
+                  "product",
+                  "person",
+                  "organization",
+                  "service",
+                  "software",
+                  "model",
+                  "standard",
+                  "method",
+                  "field",
+                  "event",
+                  "place",
+                  "country",
+                  "work",
+                  "material",
+                  "species",
+                  "metric",
+                  "dataset",
+                  "policy",
+                  "project",
+                  "language",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitysubtype"
+          },
+          "qualifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualifier"
+          },
+          "aliases": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliases"
           },
           "collapsed": {
             "anyOf": [

@@ -1,9 +1,9 @@
-import { emptyEdits, editLocked, visibleNodes, nodeDraft, validateDraft, visibleLinks } from './lib/canvasEditing'
-import type { CanvasEdits, UserNodeData } from './types'
+import { emptyEdits, defaultConnectionLabel, editLocked, visibleNodes, nodeDraft, validateDraft, visibleLinks } from './lib/canvasEditing'
+import type { CanvasEdits, UserNodeData, UserEdge } from './types'
 import { appendResponse, attachmentLimits, deleteDraftAttachment, uploadAttachment } from './lib/attachments'
 import { nodeContext } from './lib/nodeActions'
 import { create } from 'zustand'
-import { applyNodeChanges, type NodeChange, type Viewport } from '@xyflow/react'
+import { applyNodeChanges, type NodeChange, type Viewport, type Connection } from '@xyflow/react'
 import type { CanvasNode, Envelope, Session, ResponseNode, RequestedTool, AgentRequest, DraftAttachment, Attachment } from './types'
 import { deleteSession, loadSession, loadSessions, saveSession } from './lib/db'
 import { consumeSSE } from './lib/sse'
@@ -54,17 +54,21 @@ function persist(session: Session) {
 interface State {
   undoStack: CanvasEdits[]
   redoStack: CanvasEdits[]
-  clipboard: UserNodeData | null
+  clipboard: { data: UserNodeData; width: number } | null
+  actionNotice: { id: string; message: string } | null
+  editingDraft: UserNodeData | null
   editingNode: string | null
   editingEdge: string | null
   selectedLink: string | null
   editNode: (id: string | null) => void
   editEdge: (id: string | null) => void
   copyNode: (id: string) => void
-  pasteNode: (position?: { x: number; y: number }) => void
+  createNode: (position: { x: number; y: number }, viewport?: Viewport) => void
+  pasteNode: (position?: { x: number; y: number }, viewport?: Viewport) => void
   saveNode: (id: string, data: UserNodeData) => boolean
   deleteNode: (id: string) => void
-  saveEdge: (edge: { id: string; source: string; target: string; label: string }) => void
+  saveEdge: (edge: UserEdge) => void
+  connect: (connection: Connection) => void
   deleteEdge: (id: string) => void
   undo: () => void
   redo: () => void
@@ -124,11 +128,15 @@ function commit(session: Session) {
   }))
   persist(session)
 }
+function notifyAction(message: string) {
+  useStore.setState({ actionNotice: { id: crypto.randomUUID(), message } })
+}
 function commitEdits(edits: CanvasEdits) {
   const state = useStore.getState()
-  if (editLocked(state.session) || state.activeRequest || state.loadingSessionId) return
+  if (editLocked(state.session) || state.activeRequest || state.loadingSessionId) return false
   useStore.setState({ undoStack: [...state.undoStack.slice(-49), structuredClone(state.session!.canvasEdits ?? emptyEdits())], redoStack: [] })
   commit({ ...state.session!, canvasEdits: edits, updatedAt: Date.now() })
+  return true
 }
 let dragBefore: CanvasEdits | undefined
 function updateSession(id: string, change: (session: Session) => Session) {
@@ -246,22 +254,40 @@ function restoreSession(session: Session): Session {
 }
 
 export const useStore = create<State>((set, get) => ({
-  undoStack: [], redoStack: [], clipboard: null, editingNode: null, editingEdge: null, selectedLink: null,
-  editNode: (id) => set({ editingNode: id, editingEdge: null }),
-  editEdge: (id) => set({ editingEdge: id, editingNode: null, selectedLink: id, selected: null }),
+  undoStack: [], redoStack: [], clipboard: null, actionNotice: null, editingDraft: null, editingNode: null, editingEdge: null, selectedLink: null,
+  editNode: (id) => set({ editingDraft: id && get().session ? nodeDraft(get().session!, id) : null, editingNode: id, editingEdge: null, ...(id ? { selected: id, selectedLink: null } : {}) }),
+  editEdge: (id) => set({ editingEdge: id, editingDraft: null, editingNode: null, selectedLink: id, selected: null }),
   copyNode: (id) => {
     const session = get().session
-    if (session) set({ clipboard: nodeDraft(session, id) ?? null })
+    const data = session && nodeDraft(session, id)
+    const node = visibleNodes(session).find(n => n.id === id)
+    if (!data || !node) return
+    set({ clipboard: { data, width: node.width ?? node.measured?.width ?? (data.kind === 'response' ? 560 : data.kind === 'entity' ? 340 : 460) } })
+    notifyAction('복사를 완료했습니다')
   },
-  pasteNode: (position) => {
-    const { session, clipboard } = get()
-    if (!session || !clipboard || editLocked(session)) return
+  createNode: (position, viewport) => {
+    if (get().activeRequest || get().loadingSessionId || get().session && editLocked(get().session)) return
+    if (!get().session) set({ session: { ...emptySession('새 캔버스'), fitted: true, viewport: viewport ?? { x: 0, y: 0, zoom: 1 } }, undoStack: [], redoStack: [] })
+    const session = get().session!
+    const id = `user_${crypto.randomUUID()}`
+    const edits = structuredClone(session.canvasEdits ?? emptyEdits())
+    edits.nodes.push({ id, type: 'user', position, width: 560, data: { kind: 'response', title: '새 질문', text: '', url: '', imageUrl: '', label: '완료' } })
+    if (!commitEdits(edits)) return
+    set({ selected: id, selectedLink: null, editingDraft: nodeDraft(get().session!, id), editingNode: id, editingEdge: null })
+    notifyAction('노드 생성을 완료했습니다')
+  },
+  pasteNode: (position, viewport) => {
+    const clipboard = get().clipboard
+    if (!clipboard || get().activeRequest || get().loadingSessionId || get().session && editLocked(get().session)) return
+    if (!get().session) set({ session: { ...emptySession('새 캔버스'), fitted: true, viewport: viewport ?? { x: 0, y: 0, zoom: 1 } }, undoStack: [], redoStack: [] })
+    const session = get().session!
     const selected = visibleNodes(session).find(n => n.id === get().selected)
     const id = `user_${crypto.randomUUID()}`
     const edits = structuredClone(session.canvasEdits ?? emptyEdits())
-    edits.nodes.push({ id, type: 'user', position: position ?? { x: (selected?.position.x ?? 0) + 80, y: (selected?.position.y ?? 0) + 80 }, width: clipboard.kind === 'entity' ? 340 : 460, data: structuredClone(clipboard) })
-    commitEdits(edits)
+    edits.nodes.push({ id, type: 'user', position: position ?? { x: (selected?.position.x ?? 0) + 80, y: (selected?.position.y ?? 0) + 80 }, width: clipboard.width, data: structuredClone(clipboard.data) })
+    if (!commitEdits(edits)) return false
     set({ selected: id, selectedLink: null })
+    notifyAction('붙여넣기를 완료했습니다')
   },
   saveNode: (id, data) => {
     const session = get().session
@@ -269,9 +295,19 @@ export const useStore = create<State>((set, get) => ({
     const node = visibleNodes(session).find(n => n.id === id)
     if (!node) return false
     const edits = structuredClone(session.canvasEdits ?? emptyEdits())
-    edits.nodes = [...edits.nodes.filter(n => n.id !== id), { id, type: 'user', position: node.position, width: data.kind === 'entity' ? 340 : 460, data: structuredClone(data) }]
-    commitEdits(edits)
-    set({ editingNode: null, replyTo: get().replyTo === id ? null : get().replyTo })
+    const previous = nodeDraft(session, id)!
+    const saved = structuredClone(data)
+    if (['kind', 'title', 'text', 'url', 'imageUrl'].some(key => previous[key as keyof UserNodeData] !== data[key as keyof UserNodeData])) {
+      delete saved.attachment
+      delete saved.page
+    }
+    if (previous.kind !== data.kind || previous.text !== data.text) delete saved.presentation
+    else if (saved.presentation) saved.presentation.heading = data.title
+    const width = previous.kind === data.kind ? node.width : data.kind === 'response' ? 560 : data.kind === 'entity' ? 340 : 460
+    edits.nodes = [...edits.nodes.filter(n => n.id !== id), { id, type: 'user', position: node.position, width, data: saved }]
+    if (!commitEdits(edits)) return false
+    set({ editingDraft: null, editingNode: null, replyTo: get().replyTo === id ? null : get().replyTo })
+    notifyAction('수정을 완료했습니다')
     return true
   },
   deleteNode: (id) => {
@@ -279,8 +315,17 @@ export const useStore = create<State>((set, get) => ({
     if (!session || editLocked(session) || !visibleNodes(session).some(n => n.id === id)) return
     const edits = structuredClone(session.canvasEdits ?? emptyEdits())
     edits.hiddenNodes.push(id)
-    commitEdits(edits)
-    set({ selected: null, selectedLink: null, editingNode: null, replyTo: get().replyTo === id ? null : get().replyTo })
+    if (!commitEdits(edits)) return false
+    set({ selected: null, selectedLink: null, editingDraft: null, editingNode: null, replyTo: get().replyTo === id ? null : get().replyTo })
+    notifyAction('삭제를 완료했습니다')
+  },
+  connect: (connection) => {
+    const session = get().session
+    if (editLocked(session) || !connection.source || !connection.target || connection.source === connection.target) return
+    if (visibleLinks(session).some(e => e.source === connection.source && e.target === connection.target && (e.sourceHandle ?? null) === connection.sourceHandle && (e.targetHandle ?? null) === connection.targetHandle)) return
+    const id = `manual_${crypto.randomUUID()}`
+    get().saveEdge({ ...connection, id, label: defaultConnectionLabel(session, connection.source, connection.target) })
+    if (get().session?.canvasEdits?.edges.some(e => e.id === id)) { set({ editingEdge: id }); notifyAction('연결을 완료했습니다') }
   },
   saveEdge: (edge) => {
     const session = get().session
@@ -288,29 +333,31 @@ export const useStore = create<State>((set, get) => ({
     const ids = visibleNodes(session).map(n => n.id)
     if (edge.source === edge.target || !ids.includes(edge.source) || !ids.includes(edge.target)) return
     const edits = structuredClone(session.canvasEdits ?? emptyEdits())
-    edits.edges = [...edits.edges.filter(e => e.id !== edge.id), { ...edge, label: edge.label.trim() || '사용자 연결' }]
-    commitEdits(edits)
+    edits.edges = [...edits.edges.filter(e => e.id !== edge.id), { ...edge, label: edge.label.trim() || defaultConnectionLabel(session, edge.source, edge.target) }]
+    if (!commitEdits(edits)) return false
     set({ editingEdge: null })
+    notifyAction('수정을 완료했습니다')
   },
   deleteEdge: (id) => {
     const session = get().session
     if (!session || editLocked(session) || !visibleLinks(session).some(e => e.id === id)) return
     const edits = structuredClone(session.canvasEdits ?? emptyEdits())
     edits.hiddenEdges.push(id)
-    commitEdits(edits)
+    if (!commitEdits(edits)) return false
     set({ selectedLink: null, editingEdge: null })
+    notifyAction('삭제를 완료했습니다')
   },
   undo: () => {
     const { session, undoStack, redoStack } = get()
     if (!session || editLocked(session) || !undoStack.length) return
-    set({ undoStack: undoStack.slice(0, -1), redoStack: [...redoStack, structuredClone(session.canvasEdits ?? emptyEdits())], selected: null, selectedLink: null, editingNode: null, editingEdge: null })
+    set({ undoStack: undoStack.slice(0, -1), redoStack: [...redoStack, structuredClone(session.canvasEdits ?? emptyEdits())], selected: null, selectedLink: null, editingDraft: null, editingNode: null, editingEdge: null })
     const edits = undoStack.at(-1)!
     commit({ ...session, canvasEdits: edits, nodes: session.nodes.map(n => ({ ...n, position: edits.positions[n.id] ?? n.position })), updatedAt: Date.now() })
   },
   redo: () => {
     const { session, undoStack, redoStack } = get()
     if (!session || editLocked(session) || !redoStack.length) return
-    set({ undoStack: [...undoStack, structuredClone(session.canvasEdits ?? emptyEdits())], redoStack: redoStack.slice(0, -1), selected: null, selectedLink: null, editingNode: null, editingEdge: null })
+    set({ undoStack: [...undoStack, structuredClone(session.canvasEdits ?? emptyEdits())], redoStack: redoStack.slice(0, -1), selected: null, selectedLink: null, editingDraft: null, editingNode: null, editingEdge: null })
     const edits = redoStack.at(-1)!
     commit({ ...session, canvasEdits: edits, nodes: session.nodes.map(n => ({ ...n, position: edits.positions[n.id] ?? n.position })), updatedAt: Date.now() })
   },
@@ -503,7 +550,7 @@ export const useStore = create<State>((set, get) => ({
   requestedTool: null,
   setRequestedTool: (requestedTool) => set({ requestedTool }),
   newConversation: () => {
-    set({ undoStack: [], redoStack: [], editingNode: null, editingEdge: null, selectedLink: null })
+    set({ actionNotice: null, undoStack: [], redoStack: [], editingDraft: null, editingNode: null, editingEdge: null, selectedLink: null })
     dragBefore = undefined
     get().clearAttachments()
     historyController?.abort()
@@ -514,7 +561,7 @@ export const useStore = create<State>((set, get) => ({
     set({ session: null, requestedTool: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
   },
   open: async (id) => {
-    set({ undoStack: [], redoStack: [], editingNode: null, editingEdge: null, selectedLink: null })
+    set({ actionNotice: null, undoStack: [], redoStack: [], editingDraft: null, editingNode: null, editingEdge: null, selectedLink: null })
     dragBefore = undefined
     get().clearAttachments()
     if (get().loadingSessionId === id) return
@@ -560,6 +607,10 @@ export const useStore = create<State>((set, get) => ({
   toggleNode: (id) => {
     const session = get().session
     if (!session) return
+    if (session.canvasEdits?.nodes.some(n => n.id === id)) {
+      commit({ ...session, canvasEdits: { ...session.canvasEdits, nodes: session.canvasEdits.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, collapsed: !n.data.collapsed } } : n) } })
+      return
+    }
     commit({ ...session, nodes: session.nodes.map((node) => {
       if (node.id !== id || node.type === 'response') return node
       const { height: _height, ...rest } = node
@@ -568,6 +619,7 @@ export const useStore = create<State>((set, get) => ({
   },
   toggleResponse: (id) => {
     const session = get().session
+    if (session?.canvasEdits?.nodes.some(n => n.id === id)) { get().toggleNode(id); return }
     if (session)
       commit({
         ...session,
@@ -629,7 +681,7 @@ export const useStore = create<State>((set, get) => ({
       : (before.replyTo ??
         session.nodes.filter((n) => n.type === 'response' && n.data.status === 'completed').at(-1)?.id ??
         null)
-    const parent = session.nodes.find((n): n is ResponseNode => n.type === 'response' && n.id === parentId)
+    const parent = visibleNodes(session).find((n): n is ResponseNode => n.type === 'response' && n.id === parentId)
     const continuation = options.retry
       ? session.continuation
       : (parent?.data.continuation ?? session.continuation)
@@ -732,7 +784,7 @@ export const useStore = create<State>((set, get) => ({
         const id = String(event.data.id)
         if (state.responseId && state.responseId !== id) break
         Object.assign(session, appendResponse(session, id, state.activeRequest!, state.pendingParentId, state.pendingQuery, session.lastAttachments ?? []))
-        if (session.lastNodeContext && session.nodes.some((n) => n.id === session.lastNodeContext!.node_id)) {
+        if (session.lastNodeContext && visibleNodes(session).some((n) => n.id === session.lastNodeContext!.node_id)) {
           const graph = session.contentGraph ?? emptyContentGraph()
           const target = session.lastNodeContext.node_id
           session.contentGraph = { ...graph, relations: [...graph.relations, {

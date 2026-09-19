@@ -375,10 +375,20 @@ Attachment 필드: id(UUID), name, kind(image/file), media_type, size(원본 바
 
 `Session.canvasEdits?: { nodes: UserNode[]; hiddenNodes: string[]; edges: UserEdge[]; hiddenEdges: string[]; positions: Record<string, { x: number; y: number }> }`
 
-- `UserNode`: `{ id, type: "user", position, width?, data: { kind: "response" | "entity" | "information" | "source" | "image", title, text, url, imageUrl, collapsed? } }`.
-- `UserEdge`: `{ id, source, target, label }`. 사용자 연결이며 인용·의미적 근거를 새로 부여하지 않는다.
+- `UserNode`: `{ id, type: "user", position, width?, data: { kind: "response" | "entity" | "information" | "source" | "image", title, text, url, imageUrl, collapsed?, label?, attachment?, page?, presentation?, entitySubtype?, qualifier?, aliases? } }`.
+- `UserEdge`: `{ id, source, target, label, sourceHandle?, targetHandle? }`. 사용자 연결이며 인용·의미적 근거를 새로 부여하지 않는다.
 - 원본 노드 내용, `contentGraph`, `sources`, 대화 continuation은 편집으로 변경하지 않는다. 동일 ID의 사용자 노드는 표시를 대체하며, 숨김 ID는 연결과 탐색에서도 제외한다. 노드 이동은 기존 노드 위치와 `positions`에 저장하며 실행 취소는 `positions`를 우선 적용한다.
 - 원본 간선은 기존 표시 ID로 재연결/숨김 처리한다. 사용자 편집 노드에 연결된 간선은 사용자 연결로 표시하며 원본 근거는 저장 데이터에 보존한다.
 - 응답은 `title`에 사용자 질문, `text`에 응답을 저장한다. 엔티티는 `title`에 이름, 정보는 `title`/`text`에 제목/내용, 출처는 `url`/`text`에 출처 URL/요약, 이미지는 `imageUrl`/`url`에 이미지/원본 페이지 URL을 저장한다. 링크 표시는 기존 안전 URL 검사를 적용한다.
 - 편집·삭제·붙여넣기·이동은 기존 revision 기반 기록 PUT으로 저장/복원한다. 기록 조회는 추출·모델 호출을 실행하지 않는다. 실행 취소/다시 실행은 현재 열린 기록의 최근 50개 편집 작업에 적용하며 화면 위치와 새 응답 생성 결과를 되돌리지 않는다. 기록 전환 시 실행 취소 기록을 초기화한다.
 - 복사 버퍼는 앱 내 메모리에 유지하며 붙여넣기는 새 사용자 노드 ID를 부여한다. 연결·원문 참조·도구 조회 이력은 복제하지 않는다. 생성/구조화 중에는 내용 변경 작업을 비활성화하며 위치 이동은 유지한다.
+
+- 복사본은 원본과 같은 카드 컴포넌트, 너비, 접힘 상태, `label`(상태/분류), 정보의 표·목록 `presentation`, 엔티티 분류·보조 설명을 유지한다. 이 표시 스냅샷은 새 도구 조회 이력이나 인용 근거를 만들지 않는다. 정보 내용이나 유형을 수정하면 기존 `presentation`을 제거하며, 제목만 수정하면 표시 제목을 갱신한다.
+- 편집 폼은 노드 내부에 표시하고 간선 편집은 캔버스 연결 위치에 표시한다. 복사·붙여넣기·수정·삭제·연결 완료 알림은 일시적인 UI 상태로 저장하지 않는다.
+- 연결점 드래그 또는 연결점 두 번 클릭으로 사용자 간선을 생성한다. 시작/도착 핸들 ID를 저장해 첨부 자료 연결도 복원하며 자기 연결은 거부한다.
+- 복사한 노드도 `node_context`로 다음 응답에 사용할 수 있다. 응답/정보는 `information`, 엔티티는 `entity`, 출처/이미지는 `source`로 실제 표시 내용을 전달한다. 이전 응답의 서명된 continuation을 복제하지 않으며 실제 캔버스 노드를 맥락 연결 대상으로 사용한다.
+- 사용자 연결의 기본 이름은 연결한 노드 유형을 따른다. 응답→엔티티 `대상`, 엔티티→정보 `관련 정보`, 정보→엔티티 `설명 대상`, →출처 `출처`, →이미지 `관련 이미지` 등을 사용한다. 간선 색상과 화살표는 도착 노드 색상을 따르며, 이름은 선 위 입력칸에서 직접 수정한다. 표시 이름이 같아도 사용자 연결은 수동 간선으로 유지하며 원문 근거나 도구 조회 이력을 새로 생성하지 않는다.
+
+- 첨부/이전 페이지 복사본은 `attachment`/`page` 표시 스냅샷으로 기존 카드 디자인과 동작을 유지한다. 내용을 바꾸거나 유형을 변경하면 이 표시 스냅샷을 제거해 수정된 내용을 일반 사용자 카드로 표시한다. 첨부 스냅샷은 기존 자료 ID의 참조이며 업로드나 조회를 새로 실행하지 않는다.
+- 편집의 유형 선택은 공용 메뉴 표면/옵션 스타일을 사용하는 사용자 정의 드롭다운이다. 복사·붙여넣기·수정·삭제 알림은 기존 녹색 캡슐 토스트를 사용하고 `복사를 완료했습니다`처럼 마침표 없는 완료형 문구로 표시한다.
+- 빈 캔버스 우클릭 `노드 생성`은 선택 좌표에 새 사용자 노드를 만들고 바로 내부 편집을 시작한다. 대화가 없으면 모델 호출 없이 편집용 세션을 생성하며 viewport를 보존한다. 생성 역시 실행 취소/다시 실행 및 기존 기록 API 저장을 지원한다.

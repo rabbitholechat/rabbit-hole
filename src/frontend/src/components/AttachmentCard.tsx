@@ -1,4 +1,4 @@
-import { EditNodeActions } from './CanvasEditor'
+import { EditNodeActions, EditableNodeContent } from './CanvasEditor'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { Check, Copy, Download, FileText, Maximize2, MessageCirclePlus, Minimize2, Paperclip } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -27,6 +27,7 @@ export function AttachmentCard({id, data, selected}: NodeProps<AttachmentNode>) 
   const type = attachment.kind === 'image' ? attachment.media_type.split('/')[1].toUpperCase()
     : attachment.media_type === 'application/pdf' ? 'PDF' : attachment.name.split('.').at(-1)?.toUpperCase()
   return <>
+    <Handle type="target" position={Position.Left} />
     <article className={`content-card attachment-card ${collapsed ? 'is-compact' : 'is-expanded'} ${selected ? 'is-selected' : ''} ${inComposer ? 'is-reply-target' : ''}`} aria-label={`첨부 소스 · ${attachment.name}`}>
       <header><span className="node-tag"><Paperclip size={16} />소스</span>
         <div className="response-actions nodrag nopan" onClick={event => event.stopPropagation()}>
@@ -42,6 +43,7 @@ export function AttachmentCard({id, data, selected}: NodeProps<AttachmentNode>) 
             onClick={() => reuse(attachment)}><MessageCirclePlus size={18} /></button>
         </div>
       </header>
+      <EditableNodeContent id={id}>
       {attachment.kind === 'image' && !failed ?
         <img className="attachment-preview nodrag" src={attachmentPath(attachment.id, collapsed ? '/preview' : '/content')}
           alt={attachment.name} onError={() => setFailed(true)} /> :
@@ -51,7 +53,8 @@ export function AttachmentCard({id, data, selected}: NodeProps<AttachmentNode>) 
         </div>}
       <h2 title={attachment.name}>{attachment.name}</h2>
       <footer><span>입력 자료</span><span>{type}{attachment.pages ? ` · ${attachment.pages}페이지` : ''} · {(attachment.size / 1000).toFixed(1)} KB</span></footer>
+      </EditableNodeContent>
     </article>
-    <Handle type="source" id="attachment-output" position={Position.Bottom} isConnectable={false} />
+    <Handle type="source" id="attachment-output" position={Position.Bottom} />
   </>
 }

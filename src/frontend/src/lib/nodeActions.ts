@@ -53,7 +53,11 @@ export function nodeLabel(session: Session | null, id: string): string {
 }
 export function nodeText(session: Session | null, id: string): string {
   const node = visibleNodes(session).find((n) => n.id === id)
-  if (node?.type === 'user') return `${node.data.title}\n${node.data.text}\n${node.data.url}`
+  if (node?.type === 'user') {
+    const data = node.data
+    if (data.kind === 'entity') return [data.title, data.qualifier, data.aliases?.join(', '), ...entityInformationIds(session, id).map(key => nodeText(session, key))].filter(Boolean).join('\n\n')
+    return [data.title, data.text, data.url, data.kind === 'image' ? data.imageUrl : ''].filter(Boolean).join('\n')
+  }
   if (node?.type === 'attachment') return `${node.data.attachment.name}\n${node.data.attachment.text_excerpt}`
   if (node?.type === 'response') return node.data.text
   if (node?.type === 'page') return `${node.data.source.title}\n${node.data.source.url}\n\n${node.data.source.summary}`
@@ -66,7 +70,7 @@ export function nodeContext(session: Session | null, id: string | null): NodeCon
   if (!id || session?.protocol !== 2 || session.mode !== 'live') return
   const visible = visibleNodes(session).find(n => n.id === id)
   if (!visible) return
-  if (visible.type === 'user') return { node_id: id, kind: 'information', title: visible.data.title, text: Array.from(nodeText(session, id)).slice(0, 12000).join('') }
+  if (visible.type === 'user') return { node_id: id, kind: visible.data.kind === 'entity' ? 'entity' : ['source', 'image'].includes(visible.data.kind) ? 'source' : 'information', title: visible.data.title, text: Array.from(nodeText(session, id)).slice(0, 12000).join('') }
   const entity = session.contentGraph?.entities[id]
   if (!entity) return
   if (entity.type === 'entity') return { node_id: id, kind: 'entity', title: entity.name, text: entityContextText(session, id) }
@@ -77,7 +81,7 @@ export function nodeContext(session: Session | null, id: string | null): NodeCon
 export function responseParentId(session: Session, response: ResponseNode): string | null {
   const selected = session.contentGraph?.relations.filter((edge) =>
     edge.kind === 'uses_context' && edge.source === response.id &&
-    session.nodes.some((n) => n.id === edge.target && (n.type === 'information' || n.type === 'source' || n.type === 'entity')),
+    visibleNodes(session).some((n) => n.id === edge.target && (n.type === 'information' || n.type === 'source' || n.type === 'entity' || n.type === 'user')),
   ) ?? []
   if (selected.length === 1) return selected[0].target
   if (response.data.parentId !== undefined) return response.data.parentId

@@ -1,3 +1,5 @@
+import { useStore } from '../store'
+import { EditableNodeContent } from './CanvasEditor'
 import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { NodeActions } from './NodeActions'
 import { PreviousNodeButton } from './PreviousNodeButton'
@@ -6,13 +8,14 @@ import { ExternalLink, Globe2 } from 'lucide-react'
 import type { PageNode } from '../types'
 import { cn, safeUrl } from '../lib/utils'
 export function PageCard({ id, data, selected }: NodeProps<PageNode>) {
+  const editing = useStore(s => s.editingNode === id)
   const source = data.source,
     href = safeUrl(source.url)
-  const { contentRef, canCollapse } = useCollapsibleContent(source.summary, data.collapsed)
+  const { contentRef, canCollapse } = useCollapsibleContent(`${source.summary}:${editing}`, data.collapsed)
   const collapsed = Boolean(data.collapsed && canCollapse)
   return (
     <>
-      <Handle type="target" position={Position.Left} isConnectable={false} />
+      <Handle type="target" position={Position.Left} />
       <article
         className={cn(
           'page-card',
@@ -43,6 +46,7 @@ export function PageCard({ id, data, selected }: NodeProps<PageNode>) {
           )}
         </div>
         <NodeActions id={id} collapsed={collapsed} canCollapse={canCollapse} />
+        <EditableNodeContent id={id}>
         <h2>{source.title}</h2>
         <div ref={contentRef} className={`page-summary response-content nodrag nopan ${collapsed ? 'nowheel' : ''}`} tabIndex={collapsed ? 0 : undefined}>{source.summary || '요약이 제공되지 않은 자료입니다.'}</div>
         <footer>
@@ -56,8 +60,9 @@ export function PageCard({ id, data, selected }: NodeProps<PageNode>) {
           </span>
         </footer>
         <PreviousNodeButton id={id} />
+        </EditableNodeContent>
       </article>
-      <Handle type="source" position={Position.Right} isConnectable={false} />
+      <Handle type="source" position={Position.Right} />
     </>
   )
 }

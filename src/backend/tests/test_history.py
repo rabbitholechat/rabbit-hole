@@ -156,3 +156,20 @@ def test_canvas_edits_contract_preserves_originals_and_validates_types():
     invalid = deepcopy(original)
     invalid["canvasEdits"]["nodes"][0]["data"]["kind"] = "verified_source"
     assert client.put("/api/sessions/shared-session", json={"session": invalid, "revision": 1}).status_code == 422
+
+
+def test_copied_display_and_connection_handles_round_trip():
+    client = TestClient(create_app(Settings(_env_file=None), history_repository=MemoryHistory()))
+    edits = {
+        "nodes": [{"id": "copy", "type": "user", "position": {"x": 500, "y": 200}, "width": 560,
+                   "data": {"kind": "information", "title": "제목", "text": "내용", "url": "", "imageUrl": "",
+                            "label": "개념", "collapsed": True, "entitySubtype": "concept", "qualifier": None,
+                            "aliases": [], "presentation": {"heading": "제목", "summary": None, "sections": [],
+                                                              "table": None}}}],
+        "hiddenNodes": [], "hiddenEdges": [], "positions": {},
+        "edges": [{"id": "manual", "source": "r", "target": "copy", "label": "사용자 연결",
+                   "sourceHandle": "attachment-output", "targetHandle": None}],
+    }
+    original = session(canvasEdits=edits)
+    assert client.put("/api/sessions/shared-session", json={"session": original, "revision": 0}).status_code == 200
+    assert client.get("/api/sessions/shared-session").json()["session"] == original

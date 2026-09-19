@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-export function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+export function ErrorToast({ message, onDismiss, role = 'alert', className = '' }: { message: string; onDismiss: () => void; role?: 'alert' | 'status'; className?: string }) {
   const [leaving, setLeaving] = useState(false)
   useEffect(() => {
     const fade = window.setTimeout(() => setLeaving(true), 4000)
@@ -8,7 +8,7 @@ export function ErrorToast({ message, onDismiss }: { message: string; onDismiss:
     return () => { window.clearTimeout(fade); window.clearTimeout(dismiss) }
   }, [onDismiss])
   return (
-    <div className={`error-toast ${leaving ? 'is-leaving' : ''}`} role="alert" aria-atomic="true">
+    <div className={`error-toast ${className} ${leaving ? 'is-leaving' : ''}`} role={role} aria-atomic="true">
       {message}
     </div>
   )
