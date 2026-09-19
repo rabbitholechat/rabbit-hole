@@ -1361,10 +1361,28 @@ svg {
     gap: 0;
   }
 }
-.response-card > h2 {
-  margin: 16px 0;
-  font-size: 17px;
-  line-height: 1.5;
+.response-prompt {
+  margin: 14px 0 18px;
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: #eef3ef;
+  min-width: 0;
+  user-select: text;
+  cursor: text;
+}
+.response-prompt-label {
+  display: block;
+  margin-bottom: 5px;
+  color: #788a7e;
+  font-size: 11px;
+  font-weight: 500;
+}
+.response-prompt > h2 {
+  margin: 0;
+  color: #43574b;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   min-width: 0;

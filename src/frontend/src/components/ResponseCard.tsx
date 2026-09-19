@@ -123,7 +123,10 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
             </button>
           </div>
         </header>
-        <h2 title={data.prompt}>{data.prompt}</h2>
+        <section className="response-prompt nodrag nopan" aria-label="사용자 질문">
+          <span className="response-prompt-label">질문</span>
+          <h2>{data.prompt}</h2>
+        </section>
         <div
           ref={contentRef}
           className={`response-content nodrag nopan ${data.collapsed && canResize ? 'nowheel' : ''}`}
