@@ -518,9 +518,14 @@ async def test_korean_subject_context_survives_wrong_name_candidates_and_query_r
     wrong = {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": [
         {"url": "https://example.com/wrong-person", "title": "전효성 소속사 소식"}
     ]}}]}
-    correct = {"output": [{"type": "web_search_call", "status": "completed", "action": {"sources": [
-        {"url": "https://example.com/album", "title": "전소연 새 앨범"}
-    ]}}]}
+    correct = {"output": [
+        {"type": "web_search_call", "status": "completed", "action": {"sources": [
+            {"url": "https://example.com/album", "title": "전소연 새 앨범"}
+        ]}},
+        {"type": "message", "content": [{"annotations": [
+            {"type": "url_citation", "url": "https://example.com/album", "title": "전소연 새 앨범"}
+        ]}]},
+    ]}
     create = AsyncMock(side_effect=[
         SimpleNamespace(status="completed", output_text="대상이 다른 결과로 확인 불가", model_dump=lambda: wrong),
         SimpleNamespace(status="completed", output_text="전소연 관련 자료", model_dump=lambda: correct),
@@ -530,9 +535,9 @@ async def test_korean_subject_context_survives_wrong_name_candidates_and_query_r
     first = await tools.web_search("전소연 새 앨범")
     assert first["remaining_searches"] == 1
     assert first["remaining_tool_calls"] == 7
-    assert "not verified or necessarily relevant" in first["usage_notice"]
-    # Candidate metadata is preserved honestly, never relabelled as the requested person.
-    assert first["sources"][0]["title"] == "전효성 소속사 소식"
+    assert "Raw discovery candidates are excluded" in first["usage_notice"]
+    # An unrelated raw candidate is not exposed as evidence or a public source node.
+    assert first["status"] == "no_sources" and first["sources"] == []
     second = await tools.web_search('"전소연" 앨범 발매')
     assert second["remaining_searches"] == 0
     assert second["remaining_tool_calls"] == 6

@@ -159,7 +159,10 @@ async def test_real_sdk_with_mock_http_stream(monkeypatch, tool_case):
                 {"id": "ws_test", "type": "web_search_call", "status": "completed",
                  "action": {"type": "search", "query": "current information", "sources": [
                      {"type": "url", "url": "https://example.com/current"}]}},
-                message,
+                {**message, "content": [{"type": "output_text", "text": "**응답**", "annotations": [{
+                    "type": "url_citation", "url": "https://example.com/current", "title": "Current page",
+                    "start_index": 0, "end_index": 6,
+                }]}]},
             ]})
         batch = wire_events
         if tool_case != "none" and len(captured) == 1:
