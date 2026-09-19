@@ -168,6 +168,8 @@ type StructureResult = {
 
 `done(completed)` 후 signed checkpoint로 구조화를 시작하고 결과 전체 검증 후 원자적으로 추가합니다. 실패·중지는 기존 답변·출처·배치를 유지하며 사용자가 재시도할 수 있습니다. `jobs[responseId]`에 상태와 시도 ID를 저장해 중복 요청과 오래된 결과를 차단합니다. 완료된 작업은 재실행하지 않고 원문 해시·카드 내용 기반 노드 ID와 관계 ID로 재적용을 중복 제거합니다. 새 노드만 기존 카드와 겹치지 않는 위치에 추가하고 사용자가 옮긴 좌표·viewport는 보존합니다.
 
+구조화가 `running`인 동안 응답 노드의 생성 반사 효과를 유지하고, 응답 오른쪽에 `생성 중` 정보 노드를 즉시 표시합니다. 이 노드는 표시 전용이며 기록에 저장하거나 확정된 내용 관계를 만들지 않습니다. 결과가 검증되면 임시 노드를 제거하고 실제 정보 노드와 관계를 원자적으로 추가하며, 실패·중지 시에는 임시 노드만 제거합니다.
+
 화면 전환/삭제는 해당 구조화를 취소합니다. PostgreSQL 복원은 모델을 호출하지 않으며 중단된 작업은 cancelled로 복원합니다. 예전 v2 조회 메타데이터는 로컬에서 출처 노드로 표시할 수 있지만 과거 답변의 정보 추출은 자동 실행하지 않습니다. 구조화 실패가 원래 답변 표시와 후속 질문을 막지 않습니다.
 
 구조화 실패 로그는 원문 없이 `structure_invalid_selection`(원문 참조 범위 오류), `structure_invalid_schema`(출력 형식 오류), `structure_output_limit`(출력 토큰 제한), `structure_incomplete`(미완료), `structure_refused`(거절), `structure_missing_output`(파싱 결과 없음)을 구분합니다. HTTP 실패는 기존 502 계약을 유지합니다. 구조화 출력 방식은 [공식 OpenAI 구조화 출력 문서](https://developers.openai.com/api/docs/guides/structured-outputs)를 참고합니다.

@@ -21,6 +21,7 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
   const readingSources = useStore((s) => s.responseId === id && Boolean(s.activeRequest) && s.stage === '출처 본문을 읽고 있어요')
   const showStructureAction = data.status === 'completed' && !readingSources && graphJob?.status !== 'completed'
   const isStructuring = data.status === 'completed' && graphJob?.status === 'running'
+  const isGenerating = data.status === 'streaming' || isStructuring || readingSources
   const status = isStructuring || readingSources ? 'structuring' : data.status
   const statusText = readingSources ? '출처 읽는 중' : isStructuring
     ? '정보 정리 중'
@@ -60,14 +61,14 @@ export function ResponseCard({ id, data, selected }: NodeProps<ResponseNode>) {
     <>
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <article
-        className={`response-card ${data.status === 'streaming' ? 'is-generating' : ''} ${arrivalFinished ? 'arrival-finished' : ''} ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
+        className={`response-card ${isGenerating ? 'is-generating' : ''} ${arrivalFinished ? 'arrival-finished' : ''} ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
         onAnimationEnd={(event) => {
           if (event.target === event.currentTarget && ['content-arrive', 'page-arrive'].includes(event.animationName)) setArrivalFinished(true)
         }}
         aria-label="에이전트 응답"
         aria-busy={data.status === 'streaming' || isStructuring || readingSources}
       >
-        {data.status === 'streaming' && <div className="response-glass" aria-hidden="true" />}
+        {isGenerating && <div className="response-glass" aria-hidden="true" />}
         <header>
           <NodeTag kind="response" />
           <small className="response-status" data-status={status} role="status">

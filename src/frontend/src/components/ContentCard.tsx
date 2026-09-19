@@ -27,6 +27,7 @@ const sourceErrors: Record<string, string> = {
 }
 const kinds = { concept: '개념', entity: '대상', claim: '주장', example: '예시', comparison: '비교', procedure: '진행 방법' }
 export function ContentCard({ id, data, selected }: NodeProps<InformationNode | SourceNode>) {
+  const informationPending = 'pendingForResponseId' in data && Boolean(data.pendingForResponseId)
   const isReplyTarget = useStore((s) => s.replyTo === id)
   const [arrivalFinished, setArrivalFinished] = useState(false)
   useEffect(() => {
@@ -36,6 +37,26 @@ export function ContentCard({ id, data, selected }: NodeProps<InformationNode | 
   const { contentRef, canCollapse } = useCollapsibleContent(entity?.type === 'information' ? entity.presentation ? cardText(entity.presentation) : entity.excerpt.quote : `${entity?.source.content?.status ?? ''}:${entity?.source.content?.summary || entity?.source.content?.text || ''}`, data.collapsed)
   const collapsed = Boolean(data.collapsed && canCollapse)
   const [imageFailed, setImageFailed] = useState(false)
+  if (informationPending) return (
+    <>
+      <Handle type="target" position={Position.Left} isConnectable={false} />
+      <article className="content-card information-card information-pending" aria-label="정보 노드" aria-busy="true">
+        <header>
+          <NodeTag kind="information" />
+          <small className="response-status" data-status="structuring" role="status">
+            <RabbitLoader /> 생성 중
+          </small>
+        </header>
+        <h2>응답을 정보로 정리하고 있어요</h2>
+        <div className="information-body response-content" aria-hidden="true">
+          <span className="information-pending-line" />
+          <span className="information-pending-line short" />
+          <span className="information-pending-line" />
+        </div>
+      </article>
+      <Handle type="source" position={Position.Right} isConnectable={false} />
+    </>
+  )
   if (!entity) return null
   const source = entity.type === 'source' ? entity.source : null
   const content = source?.content

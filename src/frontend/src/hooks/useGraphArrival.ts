@@ -37,7 +37,8 @@ export function useGraphArrival(sessionId: string | undefined, nodes: CanvasNode
   return {
     nodes: nodes.map((node) => {
       const delay = seen.nodes.get(node.id)
-      if (delay == null || !['information', 'source'].includes(node.type!)) return node
+      if (delay == null || !['information', 'source'].includes(node.type!) ||
+        (node.type === 'information' && Boolean(node.data.pendingForResponseId))) return node
       return {
         ...node,
         className: [node.className, 'node-arriving'].filter(Boolean).join(' '),

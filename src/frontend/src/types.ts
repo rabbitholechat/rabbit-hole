@@ -109,7 +109,12 @@ export type ContentGraph = {
   relations: ContentRelation[]
   jobs: Record<string, StructureJob>
 }
-export type InformationNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'information'>
+export type InformationNode = Node<{
+  entityId: string
+  pendingForResponseId?: string
+  collapsed?: boolean
+  expandedHeight?: number
+}, 'information'>
 export type SourceNode = Node<{ entityId: string; collapsed?: boolean; expandedHeight?: number }, 'source'>
 export type CanvasNode = PageNode | ResponseNode | InformationNode | SourceNode
 export type NodeContext = { node_id: string; kind: 'information' | 'source'; title: string; text: string }
