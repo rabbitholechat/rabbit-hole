@@ -81,6 +81,8 @@ openai-agents==0.20.0
     # via rabbit-hole-backend
 opentelemetry-api==1.44.0
     # via mcp
+pillow==12.3.0
+    # via rabbit-hole-backend
 psycopg==3.3.5
     # via rabbit-hole-backend
 psycopg-binary==3.3.5 ; implementation_name != 'pypy'
@@ -101,6 +103,8 @@ pydantic-settings==2.15.0
     # via rabbit-hole-backend
 pyjwt==2.14.0
     # via mcp
+pypdf==6.19.0
+    # via rabbit-hole-backend
 python-dotenv==1.2.3
     # via
     #   pydantic-settings
