@@ -2368,9 +2368,9 @@ svg {
   .welcome-question-actions { margin-top: 5px; }
 }
 
-.welcome-question.tone-1 { background: #eef7f0; }
-.welcome-question.tone-2 { background: #e8f4ed; }
-.welcome-question.tone-3 { background: #f0f7ee; }
+.welcome-question.tone-1 { background: #edf4fb; border-color: #bed2e4; border-top-color: #6d96ba; }
+.welcome-question.tone-2 { background: #f3eef9; border-color: #d3c5e2; border-top-color: #9a7caf; }
+.welcome-question.tone-3 { background: #fcf1e8; border-color: #e7cdbb; border-top-color: #c3916d; }
 .workspace .welcome-question-actions button:hover:not(:disabled) { background: #d9ebe2; color: #245c4b; }
 .workspace .welcome-question-actions button:focus-visible { outline: 2px solid #458c80; outline-offset: 2px; }
 
