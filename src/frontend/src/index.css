@@ -193,6 +193,11 @@ svg {
   flex-shrink: 0;
   color: #8b928e;
 }
+.history-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .history-delete {
   padding: 8px;
   margin-right: 4px;

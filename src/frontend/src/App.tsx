@@ -23,6 +23,7 @@ import {
   type Edge,
 } from '@xyflow/react'
 import {
+  LoaderCircle,
   Undo2,
   Redo2,
   ArrowUp,
@@ -658,6 +659,12 @@ function Workspace({ shared = false }: { shared?: boolean }) {
                 }}
               >
                 <span>{h.title || h.query}</span>
+                {(h.status === 'running' || Object.values(h.contentGraph?.jobs ?? {}).some((job) => job.status === 'running')) && (
+                  <small className="history-progress" role="status">
+                    <LoaderCircle size={12} className="attachment-spinner" aria-hidden="true" />
+                    생성 중
+                  </small>
+                )}
                 {h.mode === 'sample' && <small>예시</small>}
               </button>
               <button

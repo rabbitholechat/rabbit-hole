@@ -192,7 +192,7 @@ it('failure preserves answers and sources; retry commits atomically at latest po
   expect(fetch).toHaveBeenCalledTimes(2)
 })
 
-it('switching records cancels structuring and late results cannot resurrect deleted records', async () => {
+it('switching records preserves structuring and deletion rejects late results', async () => {
   const initial = session()
   initial.responseTimings = { switching: { ...startResponseTiming('switching'), responseId: response.id } }
   useStore.setState({ session: initial, history: [initial] })
@@ -206,8 +206,9 @@ it('switching records cancels structuring and late results cannot resurrect dele
   const pending = useStore.getState().structure(response.id)
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
   useStore.getState().newConversation()
-  expect(useStore.getState().history.find((item) => item.id === initial.id)?.responseTimings?.switching.status).toBe('cancelled')
+  expect(useStore.getState().history.find((item) => item.id === initial.id)?.responseTimings?.switching.status).toBe('running')
   await useStore.getState().remove(initial.id)
+  expect((fetch.mock.calls[0][1]?.signal as AbortSignal).aborted).toBe(true)
   resolve(new Response(JSON.stringify(await result())))
   await pending
   expect(useStore.getState().session).toBeNull()

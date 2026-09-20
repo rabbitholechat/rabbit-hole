@@ -2,6 +2,10 @@ import { test, expect } from '@playwright/test'
 import { entitySession } from '../fixtures/entities'
 import type { Session } from '../../src/types'
 
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => localStorage.setItem('rabbit-hole:landing-seen', '1'))
+})
+
 function snapshot() {
   const session = entitySession()
   session.viewport = { x: 35, y: 155, zoom: 0.55 }

@@ -90,6 +90,7 @@ test('compact entity hubs explore copy and send connected information', async ({
   await expect(page.locator('.react-flow__edge-conversation')).toHaveCount(1)
 })
 async function mockHistory(context: BrowserContext, history = memoryHistoryApi()) {
+  await context.addInitScript(() => localStorage.setItem('rabbit-hole:landing-seen', '1'))
   await context.route('**/api/sessions**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -2246,6 +2247,8 @@ test('dragging connection handles creates persistent editable edges and copies c
   await editor.getByLabel('응답', { exact: true }).fill('복사본에서 직접 수정한 내용')
   await editor.getByRole('button', { name: '저장', exact: true }).click()
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  // Wait for fit-view motion before measuring the manual drag coordinates.
+  await copy.getByRole('heading').hover()
   // Put the copied node below the original so both handles have clear hit targets.
   const box = await copy.getByRole('heading').boundingBox()
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
@@ -2336,4 +2339,47 @@ test('active canvas context menu creates nodes and preserves default relation la
   await page.getByRole('button', { name: '다시 실행', exact: true }).click()
   await page.getByRole('button', { name: '다시 실행', exact: true }).click()
   await expect(node.getByRole('heading')).toHaveText('직접 만든 엔티티')
+})
+
+test('sidebar shows generation across conversations and clears it after background completion', async ({ page }, testInfo) => {
+  let release!: () => void
+  const ready = new Promise<void>(resolve => { release = resolve })
+  let calls = 0
+  await page.route('**/api/agent', async route => {
+    calls++
+    const request = route.request().postDataJSON()
+    const id = `response_${request.request_id}`
+    await ready
+    await route.fulfill({ contentType: 'text/event-stream', body: [
+      ['response_started', { id }],
+      ['response_completed', { id, text: '백그라운드에서 완료한 답변' }],
+      ['checkpoint', { continuation: 'test-context' }],
+      ['done', { status: 'completed' }],
+    ].map(([type, data], index) => `data: ${JSON.stringify({ version: 2, request_id: request.request_id, job_id: 'job', seq: index + 1, type, data })}\n\n`).join('') })
+  })
+  await page.goto('/')
+  await page.getByRole('textbox', { name: '메시지 입력' }).fill('세션 생성 표시 확인')
+  await page.getByRole('button', { name: '메시지 보내기' }).click()
+  await openHistory(page)
+  const row = page.locator('.history-row').filter({ hasText: '세션 생성 표시 확인' })
+  await expect(row.getByRole('status')).toHaveText('생성 중')
+  await expect(row.locator('svg.attachment-spinner')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('session-generating.png') })
+  await page.getByRole('button', { name: '새 대화', exact: true }).click()
+  await openHistory(page)
+  await expect(row.getByRole('status')).toBeVisible()
+  await row.locator('.history-item').click()
+  await expect(page.getByRole('button', { name: '응답 중지' })).toBeVisible()
+  await openHistory(page)
+  await page.getByRole('button', { name: '새 대화', exact: true }).click()
+  release()
+  await openHistory(page)
+  await expect(row.getByRole('status')).toHaveCount(0)
+  await row.locator('.history-item').click()
+  await expect(page.getByText('백그라운드에서 완료한 답변', { exact: true }).first()).toBeVisible()
+  await page.reload()
+  await openHistory(page)
+  await row.locator('.history-item').click()
+  await expect(page.getByText('백그라운드에서 완료한 답변', { exact: true }).first()).toBeVisible()
+  expect(calls).toBe(1)
 })

@@ -117,8 +117,8 @@ interface State {
   newConversation: () => void
   open: (id: string) => Promise<void>
   remove: (id: string) => Promise<void>
-  structure: (responseId: string) => Promise<void>
-  cancelStructure: (responseId: string) => void
+  structure: (responseId: string, sessionId?: string) => Promise<void>
+  cancelStructure: (responseId: string, sessionId?: string) => void
   navigation: { id: string } | null
   navigateTo: (id: string) => void
   select: (id: string | null) => void
@@ -150,6 +150,13 @@ function commitSession(session: Session) {
     }))
     persist(session)
   }
+}
+function currentSession(id: string) {
+  const state = useStore.getState()
+  return state.session?.id === id ? state.session : state.history.find((item) => item.id === id)
+}
+function hasSessionWork(id: string) {
+  return !!jobForSession(id) || [...structureRequests.keys()].some((key) => key.startsWith(`${id}:`))
 }
 function jobForSession(sessionId: string | undefined) {
   if (!sessionId) return undefined
@@ -187,11 +194,11 @@ function updateSession(id: string, change: (session: Session) => Session) {
   })
   persist(next)
 }
-function cancelSessionStructures() {
-  const session = useStore.getState().session
+function cancelSessionStructures(sessionId: string) {
+  const session = currentSession(sessionId)
   if (!session) return
   for (const [id, job] of Object.entries(session.contentGraph?.jobs ?? {})) {
-    if (job.status === 'running') useStore.getState().cancelStructure(id)
+    if (job.status === 'running') useStore.getState().cancelStructure(id, session.id)
   }
 }
 // Independent request: title work never holds the response stream or changes the viewport.
@@ -416,8 +423,8 @@ export const useStore = create<State>((set, get) => ({
   storageError: null,
   serverError: false,
   retryingServer: true,
-  cancelStructure: (responseId) => {
-    const session = get().session
+  cancelStructure: (responseId, sessionId) => {
+    const session = sessionId ? currentSession(sessionId) : get().session
     if (!session) return
     structureRequests.get(`${session.id}:${responseId}`)?.abort()
     updateSession(session.id, (current) => {
@@ -430,8 +437,8 @@ export const useStore = create<State>((set, get) => ({
       }
     })
   },
-  structure: async (responseId) => {
-    const session = get().session
+  structure: async (responseId, sessionId) => {
+    const session = sessionId ? currentSession(sessionId) : get().session
     if (!session || session.readOnly || session.protocol !== 2 || session.mode !== 'live') return
     const response = responseById(session, responseId)
     if (!response || response.data.status !== 'completed') return
@@ -524,7 +531,7 @@ export const useStore = create<State>((set, get) => ({
         await persistence
         set({ storageError: null })
         const history = await loadSessions((storageError) => set({ storageError }))
-        set({ serverError: false, history: history.map(restoreSession) })
+        set({ serverError: false, history: history.map((session) => hasSessionWork(session.id) ? currentSession(session.id) ?? session : restoreSession(session)) })
       } catch {
         set({ serverError: true, storageError: null })
       }
@@ -592,7 +599,6 @@ export const useStore = create<State>((set, get) => ({
     historyController?.abort()
     historyController = undefined
     set({ loadingSessionId: null, failedSessionId: null })
-    cancelSessionStructures()
     set({ session: null, requestedTool: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
     set({ activeRequest: null, responseId: null, stage: '' })
   },
@@ -604,11 +610,17 @@ export const useStore = create<State>((set, get) => ({
     historyController?.abort()
     const abort = new AbortController()
     historyController = abort
-    cancelSessionStructures()
     set({ loadingSessionId: id, failedSessionId: null, selected: null, selectedEdge: null, navigation: null })
     try {
       await persistence
-      const session = restoreSession(await loadSession(id, abort.signal))
+      const cached = currentSession(id)
+      const session = cached && hasSessionWork(id)
+        ? cached
+        : await (async () => {
+          const saved = await loadSession(id, abort.signal)
+          const latest = currentSession(id)
+          return latest && (latest !== cached || hasSessionWork(id)) ? latest : restoreSession(saved)
+        })()
       if (abort.signal.aborted) return
       set((state) => ({
         session,
@@ -617,6 +629,9 @@ export const useStore = create<State>((set, get) => ({
         activeRequest: jobForSession(id)?.requestId ?? null,
         responseId: jobForSession(id)?.responseId ?? null,
         stage: jobForSession(id)?.stage ?? '',
+        pendingQuery: jobForSession(id)?.pendingQuery ?? '',
+        pendingParentId: jobForSession(id)?.pendingParentId ?? null,
+        lastSeq: jobForSession(id)?.lastSeq ?? 0,
       }))
     } catch {
       if (!abort.signal.aborted) set({ serverError: true, failedSessionId: id })
@@ -628,10 +643,16 @@ export const useStore = create<State>((set, get) => ({
     }
   },
   remove: async (id) => {
+    cancelSessionStructures(id)
     const job = jobForSession(id)
     if (job) {
       job.controller.abort()
+      if (job.access) void fetch(`/api/jobs/${job.access.id}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${job.access.token}` },
+      }).catch(() => {})
       jobs.delete(job.requestId)
+      const session = currentSession(id)
+      if (session) commitSession(finishResponseTiming(finish(session, 'cancelled'), job.requestId, 'cancelled'))
     }
     if (get().session?.id === id || get().loadingSessionId === id) get().newConversation()
     // Remove only after the server confirms deletion; failures keep the history accessible.
@@ -894,7 +915,10 @@ export const useStore = create<State>((set, get) => ({
         )
         if (event.type === 'response_completed') commitSession(session)
         else {
-          if (foreground) set({ session })
+          set((state) => ({
+            ...(foreground ? { session } : {}),
+            history: state.history.map((item) => item.id === session.id ? session : item),
+          }))
           scheduleSessionPersist(session)
         }
         break
@@ -935,7 +959,7 @@ export const useStore = create<State>((set, get) => ({
           job.responseId!,
         ))
         if (event.data.status === 'completed') {
-          if (foreground && job.responseId) void get().structure(job.responseId)
+          if (job.responseId) void get().structure(job.responseId, job.sessionId)
           const latest = get().session?.id === job.sessionId
             ? get().session
             : get().history.find((item) => item.id === job.sessionId)
