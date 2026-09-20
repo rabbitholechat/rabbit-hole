@@ -88,7 +88,6 @@ export function welcomeGraph(
     '아이폰 폴더블, 언제 나오고 무엇이 달라질까요? 공개된 정보와 전망을 나눠 알려주세요.',
     'gpt-6-astra는 어떤 모델인가요? 주요 특징과 잘 맞는 활용 사례를 알려주세요.',
     '원티드 AI Championship 2026에 참가하고 싶어요. 일정, 참가 조건, 주제를 정리해 주세요.',
-    '원티드랩은 어떤 회사인가요? 주요 서비스와 AI 사업을 쉽게 소개해 주세요.',
     'https://github.com/rabbitholechat/rabbit-hole 해당 링크에서제공하는 오픈소스 프로젝트를 활용해보고 싶어요. 설치와 실행 방법을 알려주세요.',
   ]
   const positions = mobile
@@ -97,14 +96,12 @@ export function welcomeGraph(
         { x: cardWidth / 2 + 42, y: -386 },
         { x: -cardWidth / 2 - 16, y: 100 },
         { x: cardWidth / 2 + 62, y: 162 },
-        { x: -cardWidth / 2 - 40, y: 50 },
       ]
     : [
         { x: -410, y: -352 },
         { x: 84, y: -380 },
         { x: -382, y: 100 },
         { x: 116, y: 158 },
-        { x: -420, y: 350 },
       ]
   const nodes: WelcomeCanvasNode[] = [
     { ...common, id: 'welcome-brand', position: { x: -160, y: -180 }, width: 320, data: { kind: 'brand' } },
