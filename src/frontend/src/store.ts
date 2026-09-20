@@ -34,12 +34,22 @@ const emptySession = (query: string): Session => ({
   status: 'idle',
   failedParts: [],
 })
-let controller: AbortController | undefined
-let access: { id: string; token: string } | undefined
+interface RunningJob {
+  requestId: string
+  sessionId: string
+  controller: AbortController
+  access?: { id: string; token: string }
+  responseId: string | null
+  pendingQuery: string
+  pendingParentId: string | null
+  lastSeq: number
+  stage: string
+}
+const jobs = new Map<string, RunningJob>()
 let persistence: Promise<unknown> = Promise.resolve()
 let historyController: AbortController | undefined
 let initialization: Promise<void> | undefined
-let saveTimer: ReturnType<typeof setTimeout> | undefined
+const saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const uploadRequests = new Map<string, AbortController>()
 const structureRequests = new Map<string, AbortController>()
 function persist(session: Session) {
@@ -130,6 +140,31 @@ function commit(session: Session) {
   }))
   persist(session)
 }
+function commitSession(session: Session) {
+  if (useStore.getState().session?.id === session.id) commit(session)
+  else {
+    useStore.setState((state) => ({
+      history: [session, ...state.history.filter((item) => item.id !== session.id)].sort(
+        (a, b) => b.updatedAt - a.updatedAt,
+      ),
+    }))
+    persist(session)
+  }
+}
+function jobForSession(sessionId: string | undefined) {
+  if (!sessionId) return undefined
+  return [...jobs.values()].find((job) => job.sessionId === sessionId)
+}
+function scheduleSessionPersist(session: Session) {
+  if (saveTimers.has(session.id)) return
+  saveTimers.set(session.id, setTimeout(() => {
+    saveTimers.delete(session.id)
+    const current = useStore.getState().session?.id === session.id
+      ? useStore.getState().session
+      : useStore.getState().history.find((item) => item.id === session.id)
+    if (current) commitSession(current)
+  }, 500))
+}
 function notifyAction(message: string) {
   useStore.setState({ actionNotice: { id: crypto.randomUUID(), message } })
 }
@@ -163,7 +198,7 @@ function cancelSessionStructures() {
 async function generateTitle(session: Session) {
   if (session.titleRequested || !session.continuation || session.mode !== 'live') return
   if (session.nodes.filter((n) => n.type === 'response' && n.data.status === 'completed').length !== 1) return
-  commit({ ...session, titleRequested: true })
+  commitSession({ ...session, titleRequested: true })
   try {
     const response = await fetch('/api/title', {
       method: 'POST',
@@ -185,7 +220,7 @@ async function generateTitle(session: Session) {
       ...(state.session?.id === session.id ? { session: updated } : {}),
       history: state.history.map((item) => (item.id === session.id ? updated : item)),
     })
-    persist(updated)
+    commitSession(updated)
   } catch {
     // Keep the original query as the title; response completion is independent.
   }
@@ -558,8 +593,8 @@ export const useStore = create<State>((set, get) => ({
     historyController = undefined
     set({ loadingSessionId: null, failedSessionId: null })
     cancelSessionStructures()
-    get().stop()
     set({ session: null, requestedTool: null, selected: null, selectedEdge: null, input: '', error: null, replyTo: null, navigation: null })
+    set({ activeRequest: null, responseId: null, stage: '' })
   },
   open: async (id) => {
     set({ actionNotice: null, undoStack: [], redoStack: [], editingDraft: null, editingNode: null, editingEdge: null, selectedLink: null })
@@ -570,7 +605,6 @@ export const useStore = create<State>((set, get) => ({
     const abort = new AbortController()
     historyController = abort
     cancelSessionStructures()
-    get().stop()
     set({ loadingSessionId: id, failedSessionId: null, selected: null, selectedEdge: null, navigation: null })
     try {
       await persistence
@@ -580,6 +614,9 @@ export const useStore = create<State>((set, get) => ({
         session,
         history: [session, ...state.history.filter((item) => item.id !== id)].sort((a, b) => b.updatedAt - a.updatedAt),
         input: '', requestedTool: null, error: null, replyTo: null, serverError: false,
+        activeRequest: jobForSession(id)?.requestId ?? null,
+        responseId: jobForSession(id)?.responseId ?? null,
+        stage: jobForSession(id)?.stage ?? '',
       }))
     } catch {
       if (!abort.signal.aborted) set({ serverError: true, failedSessionId: id })
@@ -591,6 +628,11 @@ export const useStore = create<State>((set, get) => ({
     }
   },
   remove: async (id) => {
+    const job = jobForSession(id)
+    if (job) {
+      job.controller.abort()
+      jobs.delete(job.requestId)
+    }
     if (get().session?.id === id || get().loadingSessionId === id) get().newConversation()
     // Remove only after the server confirms deletion; failures keep the history accessible.
     await persistence
@@ -637,22 +679,26 @@ export const useStore = create<State>((set, get) => ({
   stop: () => {
     const state = get()
     if (!state.activeRequest) return
-    clearTimeout(saveTimer)
-    saveTimer = undefined
-    controller?.abort()
-    if (access)
-      void fetch(`/api/jobs/${access.id}`, {
+    const job = jobs.get(state.activeRequest)
+    if (!job) return
+    const pendingSave = saveTimers.get(job.sessionId)
+    if (pendingSave) {
+      clearTimeout(pendingSave)
+      saveTimers.delete(job.sessionId)
+    }
+    job.controller.abort()
+    if (job.access)
+      void fetch(`/api/jobs/${job.access.id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${access.token}` },
+        headers: { Authorization: `Bearer ${job.access.token}` },
       }).catch(() => {})
-    controller = undefined
-    access = undefined
+    jobs.delete(job.requestId)
     set({ activeRequest: null, responseId: null, stage: '' })
     if (state.session) commit(finishResponseTiming(finish(state.session, 'cancelled'), state.activeRequest, 'cancelled'))
   },
   run: async (options = {}) => {
     const before = get()
-    if (before.activeRequest || before.session?.readOnly) return
+    if (jobForSession(before.session?.id) || before.session?.readOnly) return
     const latest = before.session?.nodes.filter((n): n is ResponseNode => n.type === 'response').at(-1)
     if (!options.retry && before.draftAttachments.some(a => a.status !== 'ready')) {
       set({error: '첨부 업로드를 완료하거나 실패한 첨부를 제거해 주세요.'})
@@ -706,7 +752,16 @@ export const useStore = create<State>((set, get) => ({
     const initialResponseId = attachments.length ? `response_${requestId}` : null
     if (initialResponseId) session = appendResponse(session, initialResponseId, requestId, parentId ?? null, query, attachments)
     const abort = new AbortController()
-    controller = abort
+    jobs.set(requestId, {
+      requestId,
+      sessionId: session.id,
+      controller: abort,
+      responseId: initialResponseId,
+      pendingQuery: query,
+      pendingParentId: parentId ?? null,
+      lastSeq: 0,
+      stage: '응답을 준비하고 있어요',
+    })
     set({
       session,
       activeRequest: requestId,
@@ -723,7 +778,9 @@ export const useStore = create<State>((set, get) => ({
       requestedTool: null,
       draftAttachments: options.retry ? before.draftAttachments : [],
     })
-    if (initialResponseId) commit(session)
+    // Persist the running session before streaming so it remains addressable
+    // if the user opens another conversation immediately.
+    commit(session)
     try {
       const response = await fetch('/api/agent', {
         method: 'POST',
@@ -740,52 +797,72 @@ export const useStore = create<State>((set, get) => ({
       })
       await consumeSSE(response, get().receive, abort.signal)
     } catch {
-      if (get().activeRequest !== requestId || abort.signal.aborted) return
-      set({ error: '응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.' })
-      const current = get().session
+      const currentState = get()
+      const current = currentState.session?.id === session.id
+        ? currentState.session
+        : currentState.history.find((item) => item.id === session.id)
+      if (abort.signal.aborted) return
+      if (currentState.session?.id === session.id) set({ error: '응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.' })
       if (current)
-        commit(
+        commitSession(
           finishResponseTiming(finish(
             current,
-            current.nodes.some((n) => n.type === 'response' && n.id === get().responseId && n.data.text)
+            current.nodes.some((n) => n.type === 'response' && n.id === jobs.get(requestId)?.responseId && n.data.text)
               ? 'partial'
               : 'failed',
           ), requestId, 'failed'),
         )
     } finally {
-      if (get().activeRequest === requestId) {
-        const current = get().session
-        // An SSE connection ending without `done` must not leave a live timer behind.
-        if (current?.status === 'running')
-          commit(finishResponseTiming(finish(current, 'partial'), requestId, 'failed'))
-        set({ activeRequest: null, responseId: null, stage: '' })
-        access = undefined
-        controller = undefined
-      }
+      const job = jobs.get(requestId)
+      const currentState = get()
+      const current = currentState.session?.id === session.id
+        ? currentState.session
+        : currentState.history.find((item) => item.id === session.id)
+      if (job && !abort.signal.aborted && current?.status === 'running')
+        commitSession(finishResponseTiming(finish(current, 'partial'), requestId, 'failed'))
+      jobs.delete(requestId)
+      if (currentState.activeRequest === requestId) set({ activeRequest: null, responseId: null, stage: '' })
     }
   },
   receive: (event) => {
     const state = get()
-    if (
-      event.version !== 2 ||
-      event.request_id !== state.activeRequest ||
-      event.seq <= state.lastSeq ||
-      !state.session
-    )
-      return
-    set({ lastSeq: event.seq })
-    const session = { ...state.session }
+    let job = jobs.get(event.request_id)
+    // Keep direct store consumers and older persisted UI state compatible while
+    // all new requests use the session-scoped job registry above.
+    if (!job && state.activeRequest === event.request_id && state.session) {
+      job = {
+        requestId: event.request_id,
+        sessionId: state.session.id,
+        controller: new AbortController(),
+        responseId: state.responseId,
+        pendingQuery: state.pendingQuery,
+        pendingParentId: state.pendingParentId,
+        lastSeq: state.lastSeq,
+        stage: state.stage,
+      }
+      jobs.set(event.request_id, job)
+    }
+    if (event.version !== 2 || !job || event.seq <= job.lastSeq) return
+    const source = state.session?.id === job.sessionId
+      ? state.session
+      : state.history.find((item) => item.id === job.sessionId)
+    if (!source) return
+    job.lastSeq = event.seq
+    const foreground = state.session?.id === job.sessionId
+    const session = { ...source }
     switch (event.type) {
       case 'started':
-        access = { id: event.job_id, token: String(event.data.access_token) }
+        job.access = { id: event.job_id, token: String(event.data.access_token) }
         break
       case 'status':
-        set({ stage: event.data.stage === 'reading_sources' ? '출처 본문을 읽고 있어요' : '응답을 작성하고 있어요' })
+        job.stage = event.data.stage === 'reading_sources' ? '출처 본문을 읽고 있어요' : '응답을 작성하고 있어요'
+        if (foreground) set({ stage: job.stage })
         break
       case 'response_started': {
         const id = String(event.data.id)
-        if (state.responseId && state.responseId !== id) break
-        Object.assign(session, appendResponse(session, id, state.activeRequest!, state.pendingParentId, state.pendingQuery, session.lastAttachments ?? []))
+        if (job.responseId && job.responseId !== id) break
+        job.responseId = id
+        Object.assign(session, appendResponse(session, id, job.requestId, job.pendingParentId, job.pendingQuery, session.lastAttachments ?? []))
         if (session.lastNodeContext && visibleNodes(session).some((n) => n.id === session.lastNodeContext!.node_id)) {
           const graph = session.contentGraph ?? emptyContentGraph()
           const target = session.lastNodeContext.node_id
@@ -793,15 +870,15 @@ export const useStore = create<State>((set, get) => ({
             id: `uses_context:${id}:${target}`, source: id, target, kind: 'uses_context', responseId: id, spans: [],
           }] }
         }
-        set({ responseId: id })
-        commit(session)
+        if (foreground) set({ responseId: id })
+        commitSession(session)
         break
       }
       case 'response_delta':
       case 'response_completed': {
-        if (event.data.id !== state.responseId) break
+        if (event.data.id !== job.responseId) break
         session.nodes = session.nodes.map((n) =>
-          n.type === 'response' && n.id === state.responseId
+          n.type === 'response' && n.id === job.responseId
             ? {
                 ...n,
                 data: {
@@ -815,56 +892,54 @@ export const useStore = create<State>((set, get) => ({
               }
             : n,
         )
-        if (event.type === 'response_completed') commit(session)
+        if (event.type === 'response_completed') commitSession(session)
         else {
-          set({ session })
-          if (!saveTimer)
-            saveTimer = setTimeout(() => {
-              saveTimer = undefined
-              const current = get().session
-              if (current?.id === session.id) commit(current)
-            }, 500)
+          if (foreground) set({ session })
+          scheduleSessionPersist(session)
         }
         break
       }
       case 'response_sources': {
-        if (event.data.id !== state.responseId) break
+        if (event.data.id !== job.responseId) break
         const sources = parseToolSources(event.data.sources)
         if (!sources) break
         session.nodes = session.nodes.map((n) =>
-          n.type === 'response' && n.id === state.responseId
+          n.type === 'response' && n.id === job.responseId
             ? { ...n, data: { ...n.data, toolSources: sources } }
             : n,
         )
-        commit(attachSources(session, state.responseId!))
+        commitSession(attachSources(session, job.responseId!))
         break
       }
       case 'part_error': {
         session.failedParts = ['response']
-        set({ session, error: '응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.' })
+        if (foreground) set({ session, error: '응답을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.' })
+        commitSession(session)
         break
       }
       case 'checkpoint':
         session.continuation = String(event.data.continuation)
         session.nodes = session.nodes.map((n) =>
-          n.type === 'response' && n.id === state.responseId && n.data.status === 'completed'
+          n.type === 'response' && n.id === job.responseId && n.data.status === 'completed'
             ? { ...n, data: { ...n.data, continuation: session.continuation } }
             : n,
         )
-        commit(session)
+        commitSession(session)
         break
       case 'done':
-        commit(attachSources(
+        commitSession(attachSources(
           event.data.status === 'completed'
             ? finish(session, 'completed')
-            : finishResponseTiming(finish(session, event.data.status as Session['status']), state.activeRequest,
+            : finishResponseTiming(finish(session, event.data.status as Session['status']), job.requestId,
               event.data.status === 'cancelled' ? 'cancelled' : 'failed'),
-          state.responseId!,
+          job.responseId!,
         ))
         if (event.data.status === 'completed') {
-          if (state.responseId) void get().structure(state.responseId)
-          else commit(finishResponseTiming(get().session!, state.activeRequest, 'failed'))
-          void generateTitle(get().session!)
+          if (foreground && job.responseId) void get().structure(job.responseId)
+          const latest = get().session?.id === job.sessionId
+            ? get().session
+            : get().history.find((item) => item.id === job.sessionId)
+          if (latest) void generateTitle(latest)
         }
         break
     }
