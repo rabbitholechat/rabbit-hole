@@ -69,6 +69,34 @@ type WorkspaceNode = CanvasNode | WelcomeCanvasNode
 
 const nodeTypes = { welcome: WelcomeNode, user: UserCard, attachment: AttachmentCard, page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
   edgeTypes = { welcomeExample: WelcomeExampleEdge, relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
+
+const LANDING_SEEN_KEY = 'rabbit-hole:landing-seen'
+
+function markLandingSeen() {
+  try {
+    window.localStorage.setItem(LANDING_SEEN_KEY, '1')
+  } catch {
+    // A restricted storage context should still be able to use the app.
+  }
+}
+
+function LandingView({ gated = false }: { gated?: boolean }) {
+  const [showLanding] = useState(() => {
+    if (!gated) return true
+    try {
+      return window.localStorage.getItem(LANDING_SEEN_KEY) !== '1'
+    } catch {
+      return true
+    }
+  })
+
+  useEffect(() => {
+    if (showLanding) markLandingSeen()
+  }, [showLanding])
+
+  return showLanding ? <LandingPage /> : <Workspace />
+}
+
 function Workspace({ shared = false }: { shared?: boolean }) {
   const state = useStore(),
     session = state.session
@@ -898,11 +926,11 @@ function Workspace({ shared = false }: { shared?: boolean }) {
   )
 }
 export default function App() {
-  if (window.location.pathname.replace(/\/$/, '') === '/landing') return <LandingPage />
+  if (window.location.pathname.replace(/\/$/, '') === '/landing') return <LandingView />
   const shareMatch = window.location.pathname.match(/^\/share\/([^/]+)\/?$/)
   return (
     <ReactFlowProvider>
-      {shareMatch ? <SharedCanvasPage id={shareMatch[1]}><Workspace shared /></SharedCanvasPage> : <Workspace />}
+      {shareMatch ? <SharedCanvasPage id={shareMatch[1]}><Workspace shared /></SharedCanvasPage> : <LandingView gated />}
       <TooltipLayer />
     </ReactFlowProvider>
   )
