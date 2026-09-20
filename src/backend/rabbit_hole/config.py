@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     max_history_bytes: int = Field(4_000_000, ge=10000, le=4_000_000)
     openai_api_key: SecretStr = SecretStr("")
     debug_diagnostics: bool = False
-    openai_model: str = "gpt-4.1-mini"
+    openai_model: str = "gpt-5.4-mini"
     openai_background_model: str = "gpt-4o-mini"
     openai_search_model: str = "gpt-4.1-mini"
     openai_structure_model: str = "gpt-4.1-mini"
