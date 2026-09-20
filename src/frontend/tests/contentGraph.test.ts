@@ -93,6 +93,7 @@ it('sources are page-level nodes with retrieval/citation edges and no relocation
   const original = session()
   const next = attachSources(original, response.id)
   expect(next.nodes).toHaveLength(3)
+  expect(next.nodes[1].position.x - response.position.x - response.width!).toBe(88)
   expect(next.contentGraph!.relations.map((r) => r.kind)).toEqual(['cites', 'consulted'])
   next.nodes[1].position = { x: 2500, y: 3500 }
   const again = attachSources(next, response.id)

@@ -1769,6 +1769,22 @@ test('responses pulse throughout generation and conversation edges animate only 
   const edge = page.locator('.react-flow__edge-conversation .react-flow__edge-path')
   await expect(edge).toHaveCSS('stroke', 'rgb(69, 140, 128)')
   await expect(edge).toHaveCSS('stroke-width', '2.6px')
+  await second.evaluate(element => {
+    const animation = element.getAnimations().find(item => (item as CSSAnimation).animationName === 'response-grow')!
+    animation.pause()
+    animation.currentTime = 900
+  })
+  await expect.poll(async () => page.evaluate(() => {
+    const cards = document.querySelectorAll('.response-card')
+    const card = cards[cards.length - 1]
+    const handle = card.querySelector('.react-flow__handle-left')!.getBoundingClientRect()
+    const path = document.querySelector('.react-flow__edge-conversation .react-flow__edge-path') as SVGPathElement
+    const endpoint = path.getPointAtLength(path.getTotalLength())
+    const screen = new DOMPoint(endpoint.x, endpoint.y).matrixTransform(path.getScreenCTM()!)
+    return Math.hypot(screen.x - handle.x, screen.y - handle.y - handle.height / 2)
+  })).toBeLessThan(1)
+  await second.evaluate(element => element.getAnimations().forEach(animation => animation.play()))
+
   const counts = () =>
     page.evaluate(() => (window as unknown as { edgeStarts: Record<string, number> }).edgeStarts)
   await expect.poll(async () => Object.values(await counts())).toEqual([1])

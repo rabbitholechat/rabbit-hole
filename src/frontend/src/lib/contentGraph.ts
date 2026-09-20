@@ -103,7 +103,7 @@ function place(session: Session, ids: string[], response: ResponseNode): CanvasN
       response.position.x +
       (response.measured?.width ?? response.width ?? 560) +
       88 +
-      (entity.type === 'information' && hasSubjects ? 428 : entity.type === 'source' ? 976 + (entity.source.image ? 460 + 88 : 0) : 0)
+      (entity.type === 'information' && hasSubjects ? 428 : 0)
     const x = Math.max(baseX, ...subjectParents.map((n) => n.position.x + (n.measured?.width ?? n.width ?? 340) + 88))
     let y = imageParent?.position.y ?? (subjectParents.length ? Math.max(response.position.y, subjectParents[0].position.y) : response.position.y)
     while (true) {

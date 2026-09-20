@@ -2,7 +2,7 @@ import { EditNodeActions, EditableNodeContent } from './CanvasEditor'
 import { RabbitLoader } from './RabbitLoader'
 import { useCollapsibleContent } from '../hooks/useCollapsibleContent'
 import { PreviousNodeButton } from './PreviousNodeButton'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
 import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, Minimize2, Maximize2, MessageCirclePlus, Square, RotateCcw, ListTree } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -26,6 +26,17 @@ export function ResponseCard({ id, data, selected, edited = false, displayLabel 
   const isStructuring = data.status === 'completed' && graphJob?.status === 'running'
   const requestRunning = useStore((s) => s.responseId === id && Boolean(s.activeRequest))
   const isGenerating = data.status === 'streaming' || isStructuring || requestRunning
+  // CSS transforms do not trigger ResizeObserver; keep edge anchors on the animated handles.
+  const updateNodeInternals = useUpdateNodeInternals()
+  useEffect(() => {
+    let frame = 0
+    const sync = () => {
+      updateNodeInternals(id)
+      if (isGenerating) frame = requestAnimationFrame(sync)
+    }
+    sync()
+    return () => cancelAnimationFrame(frame)
+  }, [id, isGenerating, updateNodeInternals])
   const status = isStructuring || readingSources ? 'structuring' : data.status
   const statusText = edited ? displayLabel ?? '완료' : readingSources ? '출처 읽는 중' : isStructuring
     ? '정보 정리 중'
@@ -60,13 +71,14 @@ export function ResponseCard({ id, data, selected, edited = false, displayLabel 
   }
   return (
     <>
-      {!!data.attachments?.length && <Handle type="target" id="attachment-input" position={Position.Top} />}
-      <Handle type="target" position={Position.Left} />
       <article
         className={`response-card ${isGenerating ? 'is-generating' : ''} ${selected ? 'is-selected' : ''} ${isReplyTarget ? 'is-reply-target' : ''} ${data.collapsed ? 'is-collapsed' : ''}`}
         aria-label="에이전트 응답"
         aria-busy={isGenerating}
       >
+        {!!data.attachments?.length && <Handle type="target" id="attachment-input" position={Position.Top} />}
+        <Handle type="target" position={Position.Left} />
+        <Handle type="source" position={Position.Right} />
         <header>
           <NodeTag kind="response" />
           <small className="response-status" data-status={status} role="status" title={edited ? '사용자가 복사하거나 수정한 내용' : undefined}>
@@ -175,7 +187,6 @@ export function ResponseCard({ id, data, selected, edited = false, displayLabel 
         <PreviousNodeButton id={id} />
         </EditableNodeContent>
       </article>
-      <Handle type="source" position={Position.Right} />
     </>
   )
 }
