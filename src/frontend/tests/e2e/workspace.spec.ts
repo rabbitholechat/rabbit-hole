@@ -186,7 +186,7 @@ test('welcome canvas examples copy and fill the centered composer without starti
   await expect(example.getByRole('button')).toHaveCount(2)
   await example.getByRole('button', { name: '복사하기' }).click()
   expect(await page.evaluate(() => (window as unknown as { welcomeCopy: string }).welcomeCopy)).toBe('아이폰 폴더블, 언제 나오고 무엇이 달라질까요? 공개된 정보와 전망을 나눠 알려주세요.')
-  await example.getByRole('button', { name: '다음 응답에 활용' }).click()
+  await example.getByText('아이폰 폴더블,', { exact: false }).click()
   await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('아이폰 폴더블, 언제 나오고 무엇이 달라질까요? 공개된 정보와 전망을 나눠 알려주세요.')
   await expect(page.getByRole('textbox', { name: '메시지 입력' })).toBeFocused()
   await expect(page.locator('.workspace')).toHaveClass(/is-empty/)
@@ -198,7 +198,7 @@ test('welcome canvas examples copy and fill the centered composer without starti
     await page.mouse.wheel(700, 0)
     await page.waitForTimeout(300)
   }
-  await page.getByRole('article', { name: /예시 질문 · gpt-6-astra/ }).getByRole('button', { name: '다음 응답에 활용' }).click()
+  await page.getByRole('article', { name: /예시 질문 · gpt-6-astra/ }).getByRole('button', { name: '질문 입력하기' }).click()
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
   await page.waitForTimeout(350)
   await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('gpt-6-astra는 어떤 모델인가요? 주요 특징과 잘 맞는 활용 사례를 알려주세요.')

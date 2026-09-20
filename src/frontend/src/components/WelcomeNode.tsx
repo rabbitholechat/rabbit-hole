@@ -8,14 +8,14 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { Copy, MessageCirclePlus } from 'lucide-react'
+import { Copy } from 'lucide-react'
 import { RabbitIcon } from './RabbitIcon'
 import { useStore } from '../store'
 
 // Presentation-only nodes: never stored in sessions or sent as response context.
 export type WelcomeCanvasNode = Node<
   | { kind: 'brand' }
-  | { kind: 'question'; prompt: string; above: boolean; tone: number; usePrompt: (prompt: string) => void },
+  | { kind: 'question'; prompt: string; label: string; above: boolean; tone: number; usePrompt: (prompt: string) => void },
   'welcome'
 >
 
@@ -67,20 +67,21 @@ export function WelcomeNode({ data }: NodeProps<WelcomeCanvasNode>) {
         position={data.above ? Position.Bottom : Position.Top}
         className="welcome-handle"
       />
-      <p>{data.prompt}</p>
-      <div className="welcome-question-actions nodrag nopan">
-        <button type="button" aria-label="복사하기" data-tooltip="복사하기" onClick={() => void copy()}>
-          <Copy size={16} />
-        </button>
-        <button
-          type="button"
-          aria-label="다음 응답에 활용"
-          data-tooltip="다음 응답에 활용"
-          onClick={() => data.usePrompt(data.prompt)}
-        >
-          <MessageCirclePlus size={17} />
-        </button>
-      </div>
+      <button
+        className="welcome-question-select nodrag nopan"
+        type="button"
+        aria-label="질문 입력하기"
+        onClick={() => data.usePrompt(data.prompt)}
+      >
+        <svg className="welcome-question-ring" viewBox="0 0 340 160" preserveAspectRatio="none" fill="none" aria-hidden="true">
+          <path d="M304 34C267 5 150 0 74 18C23 30 3 59 12 96C23 137 108 155 202 148C284 144 332 117 330 77C329 51 311 32 283 23" />
+          <path d="M291 20C226 -1 117 6 58 31C17 48 4 82 25 111C54 149 155 157 237 139C300 126 326 101 324 72" />
+        </svg>
+        <span>{data.label}</span>
+      </button>
+      <button className="welcome-question-copy nodrag nopan" type="button" aria-label="복사하기" data-tooltip="복사하기" onClick={() => void copy()}>
+        <Copy size={14} />
+      </button>
     </article>
   )
 }
@@ -109,6 +110,12 @@ export function welcomeGraph(
     '원티드 AI Championship 2026에 참가하고 싶어요. 일정, 참가 조건, 주제를 정리해 주세요.',
     'https://github.com/rabbitholechat/rabbit-hole 해당 링크에서제공하는 오픈소스 프로젝트를 활용해보고 싶어요. 설치와 실행 방법을 알려주세요.',
   ]
+  const labels = [
+    '아이폰 폴더블,\n무엇이 달라질까요?',
+    'gpt-6-astra,\n어떤 모델일까요?',
+    '원티드 AI 챔피언십,\n어떻게 참가하나요?',
+    '이 프로젝트,\n어떻게 시작하나요?',
+  ]
   const positions = mobile
     ? [
         { x: -cardWidth / 2, y: -350 },
@@ -129,7 +136,7 @@ export function welcomeGraph(
       id: `welcome-question-${index}`,
       width: cardWidth,
       position: positions[index],
-      data: { kind: 'question', prompt, above: index < 2, tone: index, usePrompt },
+      data: { kind: 'question', prompt, label: labels[index], above: index < 2, tone: index, usePrompt },
     })),
   ]
   const edges: Edge[] = prompts.map((_, index) => ({

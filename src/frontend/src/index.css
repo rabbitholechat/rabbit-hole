@@ -2363,22 +2363,65 @@ svg {
 .welcome-canvas-brand .welcome-brand { margin-bottom: 14px; }
 .welcome-canvas-brand h1 { margin: 0; color: #3e5145; font-size: 26px; font-weight: 500; letter-spacing: -1px; }
 .welcome-handle { opacity: 0; pointer-events: none; }
-.welcome-question { position: relative; min-height: 130px; padding: 18px 18px 12px; border: 1px solid #b9d7ce; border-top: 3px solid #458c80; border-radius: 16px; background: #edf7f3; box-shadow: none; }
-.welcome-question p { margin: 0; font-size: 14px; line-height: 1.6; color: #304c43; word-break: keep-all; }
-.welcome-question-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 10px; }
-.welcome-question-actions button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: #52766a; }
+.welcome-question { position: relative; min-height: 150px; --question-tilt: -3deg; }
+.welcome-question.tone-1 { --question-tilt: 3deg; }
+.welcome-question.tone-2 { --question-tilt: -2deg; }
+.welcome-question.tone-3 { --question-tilt: 2deg; }
+.welcome-question-select {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 150px;
+  padding: 25px 38px 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #397757;
+  cursor: pointer;
+  font-family: 'Nanum Pen Welcome', cursive;
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.15;
+  text-align: center;
+}
+.welcome-question-select span { white-space: pre-line; transform: rotate(var(--question-tilt)); }
+.welcome-question-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  transform: rotate(var(--question-tilt));
+  stroke: #69987b;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.welcome-question-ring path:first-child { fill: #f0f6ed; fill-opacity: .45; }
+.welcome-question-ring path:last-child { opacity: .35; stroke-width: 1.1; }
+.workspace .welcome-question-select:hover { background: transparent; color: #245c40; }
+.welcome-question-select:hover .welcome-question-ring path:first-child { fill-opacity: .9; stroke: #3b7956; }
+.welcome-question-select:focus-visible { outline: 2px dashed #458c80; outline-offset: 6px; }
+.welcome-question-copy {
+  position: absolute;
+  right: 48px;
+  bottom: 22px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #668773;
+}
+.workspace .welcome-question-copy:hover { background: #e0eddf; color: #245c40; }
+.welcome-question-copy:focus-visible { outline: 2px solid #458c80; outline-offset: 2px; }
 @media (max-width: 700px) {
   .workspace.is-empty .canvas-tools { right: 14px; bottom: max(12px, env(safe-area-inset-bottom)); }
-  .welcome-question { padding: 12px 16px 9px; }
-  .welcome-question p { font-size: 13px; }
-  .welcome-question-actions { margin-top: 5px; }
+  .welcome-question-select { font-size: 27px; }
 }
-
-.welcome-question.tone-1 { background: #edf4fb; border-color: #bed2e4; border-top-color: #6d96ba; }
-.welcome-question.tone-2 { background: #f3eef9; border-color: #d3c5e2; border-top-color: #9a7caf; }
-.welcome-question.tone-3 { background: #fcf1e8; border-color: #e7cdbb; border-top-color: #c3916d; }
-.workspace .welcome-question-actions button:hover:not(:disabled) { background: #d9ebe2; color: #245c4b; }
-.workspace .welcome-question-actions button:focus-visible { outline: 2px solid #458c80; outline-offset: 2px; }
 
 .sidebar-footer { display: flex; flex-direction: column; flex: none; gap: 6px; padding-top: 12px; margin-top: 12px; border-top: 1px solid #dce5de; }
 .sidebar-footer > button, .sidebar-footer > a { display: flex; flex: 1; align-items: center; justify-content: flex-start; gap: 8px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: #52675b; font-size: 13px; text-decoration: none; }
