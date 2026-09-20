@@ -23,6 +23,18 @@ export function WelcomeNode({ data }: NodeProps<WelcomeCanvasNode>) {
   if (data.kind === 'brand')
     return (
       <section className="welcome-canvas-brand" aria-label="Rabbit Hole 시작 노드">
+        <div className="welcome-side-note welcome-side-note-left" aria-hidden="true">
+          <p>작은 궁금함도<br />좋아요</p>
+          <svg viewBox="0 0 90 46" fill="none">
+            <path d="M5 7C19 34 50 39 81 22M69 20L83 21L77 34" />
+          </svg>
+        </div>
+        <div className="welcome-side-note welcome-side-note-right" aria-hidden="true">
+          <p>답을 따라,<br />다음 생각으로</p>
+          <svg viewBox="0 0 110 30" fill="none">
+            <path d="M6 18C30 8 56 8 78 13M86 8L92 2M89 18L103 17M86 25L95 29" />
+          </svg>
+        </div>
         <div className="welcome-brand">
           <RabbitIcon />
           <span>Rabbit Hole</span>

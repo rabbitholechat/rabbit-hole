@@ -2448,3 +2448,34 @@ svg {
   stroke-linecap: round;
   opacity: .45;
 }
+
+.welcome-canvas-brand { position: relative; }
+.welcome-side-note {
+  position: absolute;
+  width: 164px;
+  color: #518569;
+  font-family: 'Nanum Pen Welcome', cursive;
+  font-size: 27px;
+  line-height: 1.1;
+  text-align: left;
+  pointer-events: none;
+  user-select: none;
+}
+.welcome-side-note p { margin: 0; }
+.welcome-side-note-left { right: calc(100% + 22px); top: 8px; transform: rotate(-10deg); }
+.welcome-side-note-right { left: calc(100% + 42px); top: 61px; transform: rotate(7deg); }
+.welcome-side-note svg {
+  display: block;
+  width: 86px;
+  height: 40px;
+  margin: 1px 0 0 48px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .65;
+}
+.welcome-side-note-right svg { width: 110px; height: 30px; margin: 0 0 0 5px; }
+@media (max-width: 700px) {
+  .welcome-side-note { display: none; }
+}
