@@ -15,6 +15,21 @@ test('landing explains the product, previews real screenshots and opens the canv
   const before = await page.locator('.landing-hero').boundingBox()
   expect(before!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
   await page.screenshot({ path: testInfo.outputPath('landing-top.png') })
+  const nav = page.getByRole('navigation', { name: '랜딩 페이지 탐색' })
+  await expect(nav.getByRole('link', { name: '호기심이 이어지는 곳' })).toHaveCount(0)
+  await expect(page.locator('.landing-doodle')).toHaveCount(0)
+  await expect(page.locator('html')).toHaveCSS('scroll-behavior', 'smooth')
+  await nav.getByRole('link', { name: '조금 더 알아보기', exact: true }).click()
+  await expect(page).toHaveURL(/#faq$/)
+  await expect
+    .poll(() => page.locator('#faq').evaluate((el) => Math.abs(el.getBoundingClientRect().top - 30)))
+    .toBeLessThan(3)
+  const models = page.locator('details').filter({ hasText: '어떤 AI 모델을 사용하나요?' })
+  await models.locator('summary').click()
+  await expect(models.locator('p')).toContainText('gpt-5.4-mini')
+  await expect(models.locator('p')).toContainText('gpt-4o-mini')
+  await expect(models.locator('p')).toContainText('모델을 따로 선택하지 않습니다')
+
   for (const title of ['필요한 내용 담기', '내 흐름에 옮기기', '내 말로 다듬기', '생각끼리 연결하기']) {
     await page
       .locator('.landing-edit-tabs')
@@ -31,7 +46,9 @@ test('landing explains the product, previews real screenshots and opens the canv
   await expect(preview).toHaveCount(0)
   await expect(shot).toBeFocused()
   await page.locator('summary').filter({ hasText: '이미지나 파일로도 질문할 수 있나요?' }).click()
-  await expect(page.locator('details[open]')).toContainText('입력창의 + 버튼')
+  await expect(
+    page.locator('details[open]').filter({ hasText: '이미지나 파일로도 질문할 수 있나요?' }),
+  ).toContainText('입력창의 + 버튼')
   for (const img of await page.locator('.landing-shot img').all()) {
     await img.scrollIntoViewIfNeeded()
     await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0)
@@ -48,7 +65,9 @@ test('landing explains the product, previews real screenshots and opens the canv
   expect(apiRequests).toEqual([])
   const start = page.getByRole('link', { name: '내 호기심 따라가 보기', exact: true })
   await expect(start).toHaveAttribute('href', '/')
-  await page.route('**/api/sessions**', async (route) => route.fulfill({ json: await memoryHistoryApi().list() }))
+  await page.route('**/api/sessions**', async (route) =>
+    route.fulfill({ json: await memoryHistoryApi().list() }),
+  )
   await start.click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole('textbox', { name: '메시지 입력' })).toBeVisible()

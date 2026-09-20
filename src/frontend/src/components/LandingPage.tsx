@@ -29,6 +29,10 @@ const edits: { key: ImageKey; title: string; text: string }[] = [
 ]
 const faqs = [
   [
+    '어떤 AI 모델을 사용하나요?',
+    '현재 데모 버전에서는 모델을 따로 선택하지 않습니다. 질문에 답하는 모델은 gpt-5.4-mini이며, 백그라운드 태스크에는 gpt-4o-mini를 사용합니다.',
+  ],
+  [
     'Rabbit Hole은 어떤 서비스인가요?',
     '질문과 답변을 하나의 캔버스에서 탐색하는 AI 서비스예요. 응답, 핵심 정보, 출처와 이미지를 각각의 노드로 살펴보고, 궁금한 지점에서 다음 질문을 이어 갈 수 있어요.',
   ],
@@ -77,9 +81,8 @@ export function LandingPage() {
           <span>Rabbit Hole</span>
         </a>
         <nav aria-label="랜딩 페이지 탐색">
-          <a href="#explore">호기심이 이어지는 곳</a>
           <a href="#features">주요 기능</a>
-          <a href="#faq">자주 묻는 질문</a>
+          <a href="#faq">조금 더 알아보기</a>
           <a className="landing-cta small" href="/">
             Rabbit Hole 시작하기 <ArrowUpRight size={16} />
           </a>
@@ -87,14 +90,6 @@ export function LandingPage() {
       </header>
       <main>
         <section className="landing-hero" aria-labelledby="landing-title">
-          <span className="landing-doodle doodle-left">
-            궁금한 것이
-            <br />
-            있나요?
-            <svg viewBox="0 0 90 70" aria-hidden="true">
-              <path d="M8 8Q64 0 64 53m-15-12 15 15 12-19" />
-            </svg>
-          </span>
           <div className="landing-hero-brand">
             <RabbitIcon />
             <span>Rabbit Hole</span>
@@ -115,14 +110,6 @@ export function LandingPage() {
           <a className="landing-scroll" href="#explore">
             어떻게 탐색하나요? <ArrowDown size={15} />
           </a>
-          <span className="landing-doodle doodle-right">
-            질문이 생각으로
-            <br />
-            이어지는 새로운 방식
-            <svg viewBox="0 0 100 65" aria-hidden="true">
-              <path d="M80 4c-55 0-61 58-32 39S17 9 20 40q2 20 53 15m-12-9 15 9-15 8" />
-            </svg>
-          </span>
         </section>
         <div className="landing-stories">
           <section className="landing-story" id="explore">
