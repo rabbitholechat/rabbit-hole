@@ -81,7 +81,7 @@ export function LandingPage() {
           <span>Rabbit Hole</span>
         </a>
         <nav aria-label="랜딩 페이지 탐색">
-          <a href="#features">주요 기능</a>
+          <a href="#explore">주요 기능</a>
           <a href="#faq">조금 더 알아보기</a>
           <a className="landing-cta small" href="/">
             Rabbit Hole 시작하기 <ArrowUpRight size={16} />
@@ -105,7 +105,7 @@ export function LandingPage() {
             <br /> Rabbit Hole은 질문이 이어질수록 나만의 탐색 지도가 펼쳐지는 공간입니다.
           </p>
           <a className="landing-cta" href="/">
-            내 호기심 따라가 보기 <ArrowRight size={18} />
+            Rabbit Hole 시작하기 <ArrowRight size={18} />
           </a>
           <a className="landing-scroll" href="#explore">
             어떻게 탐색하나요? <ArrowDown size={15} />
