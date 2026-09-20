@@ -1,3 +1,5 @@
+import { CanvasShareActions } from './components/CanvasShareActions'
+import { SharedCanvasPage } from './components/SharedCanvasPage'
 import { UserCard } from './components/UserCard'
 import { ActionToast } from './components/ActionToast'
 import { editLocked, visibleNodes, visibleLinks, defaultConnectionLabel } from './lib/canvasEditing'
@@ -62,7 +64,7 @@ import type { CanvasNode } from './types'
 
 const nodeTypes = { user: UserCard, attachment: AttachmentCard, page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
   edgeTypes = { relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
-function Workspace() {
+function Workspace({ shared = false }: { shared?: boolean }) {
   const state = useStore(),
     session = state.session
   const [menu, setMenu] = useState<{ x: number; y: number; node?: string; edge?: string } | null>(null)
@@ -88,7 +90,7 @@ function Workspace() {
     () => canvasBounds(visibleNodes(session), viewport, screenSize),
     [session, viewport, screenSize],
   )
-  const [historyOpen, setHistoryOpen] = useState(() => window.innerWidth > 700)
+  const [historyOpen, setHistoryOpen] = useState(() => !shared && window.innerWidth > 700)
   useEffect(() => {
     const mobile = window.matchMedia('(max-width: 700px)')
     const collapseOnMobile = () => {
@@ -148,17 +150,17 @@ function Workspace() {
       }
       if (event.repeat || !['b', '+', '=', '-', '0'].includes(key)) return
       event.preventDefault()
-      if (key === 'b') setHistoryOpen((open) => !open)
+      if (key === 'b') { if (!shared) setHistoryOpen((open) => !open) }
       else if (key === '0') fitRef.current()
       else if (key === '-') void flow.zoomOut({ duration: 150 })
       else void flow.zoomIn({ duration: 150 })
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [flow])
+  }, [flow, shared])
   useEffect(() => {
-    void useStore.getState().initialize()
-  }, [])
+    if (!shared) void useStore.getState().initialize()
+  }, [shared])
   useEffect(() => {
     const s = useStore.getState().session
     void flow.setViewport(s?.viewport ?? { x: 0, y: 0, zoom: 1 })
@@ -395,15 +397,17 @@ function Workspace() {
   }
   return (
     <main
-      className={`workspace ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'} ${state.serverError ? 'has-server-error' : ''} ${opening ? 'is-loading-content' : ''}`}
+      className={`workspace ${shared ? 'shared-workspace' : ''} ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'} ${state.serverError ? 'has-server-error' : ''} ${opening ? 'is-loading-content' : ''}`}
       aria-label="대화 캔버스"
     >
       <ReactFlow<CanvasNode>
         translateExtent={extent}
-        nodes={(state.serverError || opening) ? [] : arrivingGraph.nodes}
+        nodes={(state.serverError || opening) ? [] : shared ? arrivingGraph.nodes.map(n => ({ ...n, draggable: false, connectable: false })) : arrivingGraph.nodes}
         edges={(state.serverError || opening) ? [] : arrivingGraph.edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        nodesDraggable={!shared}
+        edgesReconnectable={!shared}
         onNodesChange={state.nodesChange}
         onNodeContextMenu={(event, node) => { event.preventDefault(); state.select(node.id); setMenu({ x: event.clientX, y: event.clientY, node: node.id }) }}
         onPaneContextMenu={event => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }) }}
@@ -463,7 +467,7 @@ function Workspace() {
         <Background variant={BackgroundVariant.Lines} gap={28} lineWidth={0.6} color="#e2e6df" />
       </ReactFlow>
       <ActionToast />
-      {menu && <div className="canvas-context-menu panel" role="menu" aria-label="캔버스 편집 메뉴" style={{ left: Math.min(menu.x, window.innerWidth - 228), top: Math.min(menu.y, window.innerHeight - 280) }} onPointerDown={e => e.stopPropagation()}>
+      {!shared && menu && <div className="canvas-context-menu panel" role="menu" aria-label="캔버스 편집 메뉴" style={{ left: Math.min(menu.x, window.innerWidth - 228), top: Math.min(menu.y, window.innerHeight - 280) }} onPointerDown={e => e.stopPropagation()}>
         {!menu.node && !menu.edge && <button role="menuitem" disabled={Boolean(state.activeRequest || state.loadingSessionId || session && editLocked(session))} onClick={() => {
           state.createNode(flow.screenToFlowPosition({ x: menu.x, y: menu.y }), flow.getViewport()); setMenu(null)
         }}>노드 생성</button>}
@@ -485,7 +489,7 @@ function Workspace() {
       ) : (
       <>
       <div className="canvas-topbar">
-      <header className="sidebar-header">
+      {shared ? <header className="sidebar-header"><a className="brand" href="/" aria-label="Rabbit Hole" data-tooltip="새 대화 열기" data-tooltip-position="bottom"><RabbitIcon /><span>Rabbit Hole</span></a></header> : <header className="sidebar-header">
         <button
           className="brand"
           aria-label={historyOpen ? 'Rabbit Hole' : '대화 기록 펼치기'}
@@ -521,13 +525,14 @@ function Workspace() {
         >
           <PanelLeftClose size={18} />
         </Button>
-      </header>
+      </header>}
       {!opening && session && (
         <div className="canvas-heading">
           <div>
             <h1>{(session.title || session.query).split('\n')[0]}</h1>
           </div>
           <span className="canvas-metadata">
+            {shared && <span className="shared-label">공유 · 읽기 전용</span>}
             <span className="canvas-node-counts">
             {session.protocol === 2
               ? `${visibleNodes(session).filter((n) => n.type === 'response' || n.type === 'user' && n.data.kind === 'response').length} 응답 · ${visibleNodes(session).filter((n) => n.type === 'information' || n.type === 'user' && n.data.kind === 'information').length} 정보 · ${visibleNodes(session).filter((n) => n.type === 'entity' || n.type === 'user' && n.data.kind === 'entity').length} 엔티티 · ${visibleNodes(session).filter((n) => n.type === 'source' || n.type === 'attachment' || n.type === 'user' && ['source', 'image'].includes(n.data.kind)).length} 출처`
@@ -540,6 +545,7 @@ function Workspace() {
       )}
       {!opening && Boolean(visibleNodes(session).length) && (
         <nav className="node-navigation panel" aria-label="노드 탐색">
+          {!shared && session && <CanvasShareActions key={session.id} session={session} />}
           <Button
             variant="ghost"
             size="icon"
@@ -570,7 +576,7 @@ function Workspace() {
         </nav>
       )}
       </div>
-      <aside
+      {!shared && <aside
         className="history-panel panel"
         aria-label="대화 기록"
         aria-hidden={!historyOpen}
@@ -614,7 +620,7 @@ function Workspace() {
             </div>
           ))}
         </div>
-      </aside>
+      </aside>}
       {opening && <HistoryLoading canvas />}
       {!opening && session?.protocol !== 2 && <AnswerPanel />}
       {(selectedSource || selectedRelation) && (
@@ -712,7 +718,7 @@ function Workspace() {
             <span>받은 응답부터 캔버스에 표시합니다.</span>
           </div>
         )}
-        {!busy && session && session.mode === 'live' && session.protocol === 2 && (
+        {!shared && !busy && session && session.mode === 'live' && session.protocol === 2 && (
           <div className="result-status">
             <span>
               {
@@ -742,9 +748,9 @@ function Workspace() {
           </section>
         )}
       {!opening && <nav className="canvas-tools panel" aria-label="캔버스 도구">
-        <Button variant="ghost" size="icon" aria-label="실행 취소" data-tooltip="실행 취소 · Ctrl/⌘+Z" disabled={!state.undoStack.length || editLocked(session)} onClick={state.undo}><Undo2 /></Button>
+        {!shared && <><Button variant="ghost" size="icon" aria-label="실행 취소" data-tooltip="실행 취소 · Ctrl/⌘+Z" disabled={!state.undoStack.length || editLocked(session)} onClick={state.undo}><Undo2 /></Button>
         <Button variant="ghost" size="icon" aria-label="다시 실행" data-tooltip="다시 실행 · Ctrl/⌘+Shift+Z" disabled={!state.redoStack.length || editLocked(session)} onClick={state.redo}><Redo2 /></Button>
-        <i />
+        <i /></>}
         <Button
           variant="ghost"
           size="icon"
@@ -783,7 +789,7 @@ function Workspace() {
           <Plus />
         </Button>
       </nav>}
-        <form className={`composer panel ${state.replyTo ? 'has-reply' : ''} ${state.requestedTool || state.draftAttachments.length ? 'has-tool' : ''}`} onSubmit={submit}>
+        {!shared && <form className={`composer panel ${state.replyTo ? 'has-reply' : ''} ${state.requestedTool || state.draftAttachments.length ? 'has-tool' : ''}`} onSubmit={submit}>
           {state.replyTo && (
             <div className="reply-slot">
               <div className="reply-context" aria-label="이어서 질문할 응답">
@@ -849,8 +855,8 @@ function Workspace() {
               <ArrowUp />
             </Button>
           )}
-        </form>
-        {session?.mode === 'sample' && (
+        </form>}
+        {!shared && session?.mode === 'sample' && (
           <p className="composer-note">
             이전 가상 데이터 기록입니다. 메시지를 보내면 새로운 대화를 시작합니다.
           </p>
@@ -875,9 +881,10 @@ function Workspace() {
   )
 }
 export default function App() {
+  const shareMatch = window.location.pathname.match(/^\/share\/([^/]+)\/?$/)
   return (
     <ReactFlowProvider>
-      <Workspace />
+      {shareMatch ? <SharedCanvasPage id={shareMatch[1]}><Workspace shared /></SharedCanvasPage> : <Workspace />}
       <TooltipLayer />
     </ReactFlowProvider>
   )

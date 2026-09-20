@@ -12,7 +12,7 @@ class BodyLimitMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["method"] not in {"POST", "PUT"}:
             return await self.app(scope, receive, send)
-        limit = self.max_history_bytes if scope["path"].startswith("/api/sessions/") else self.max_bytes
+        limit = self.max_history_bytes if (scope["path"].startswith("/api/sessions/") or scope["path"] == "/api/shares") else self.max_bytes
         if scope["path"] == "/api/attachments":
             limit = self.max_attachment_bytes
         body = bytearray()

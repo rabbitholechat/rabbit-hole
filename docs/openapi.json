@@ -244,6 +244,89 @@
         }
       }
     },
+    "/api/shares": {
+      "post": {
+        "tags": [
+          "shared canvas"
+        ],
+        "summary": "Create Share",
+        "operationId": "create_share_api_shares_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HistorySession"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareCreated"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/shares/{share_id}": {
+      "get": {
+        "tags": [
+          "shared canvas"
+        ],
+        "summary": "Get Share",
+        "operationId": "get_share_api_shares__share_id__get",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedCanvas"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/attachments/limits": {
       "get": {
         "tags": [
@@ -1687,6 +1770,31 @@
           "revision"
         ],
         "title": "SessionWrite"
+      },
+      "ShareCreated": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "ShareCreated"
+      },
+      "SharedCanvas": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/HistorySession"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session"
+        ],
+        "title": "SharedCanvas"
       },
       "StoredSession": {
         "properties": {

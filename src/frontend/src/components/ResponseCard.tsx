@@ -13,6 +13,7 @@ import { useStore } from '../store'
 import { safeUrl } from '../lib/utils'
 
 export function ResponseCard({ id, data, selected, edited = false, displayLabel }: NodeProps<ResponseNode> & { edited?: boolean; displayLabel?: string }) {
+  const readOnly = useStore(s => s.session?.readOnly)
   const editing = useStore(s => s.editingNode === id)
   const toggle = useStore((s) => s.toggleResponse)
   const reply = useStore((s) => s.reply)
@@ -21,7 +22,7 @@ export function ResponseCard({ id, data, selected, edited = false, displayLabel 
   const cancelStructure = useStore((s) => s.cancelStructure)
   const graphJob = useStore((s) => s.session?.contentGraph?.jobs[id])
   const readingSources = useStore((s) => s.responseId === id && Boolean(s.activeRequest) && s.stage === '출처 본문을 읽고 있어요')
-  const showStructureAction = !edited && data.status === 'completed' && !readingSources && graphJob?.status !== 'completed'
+  const showStructureAction = !readOnly && !edited && data.status === 'completed' && !readingSources && graphJob?.status !== 'completed'
   const isStructuring = data.status === 'completed' && graphJob?.status === 'running'
   const requestRunning = useStore((s) => s.responseId === id && Boolean(s.activeRequest))
   const isGenerating = data.status === 'streaming' || isStructuring || requestRunning
@@ -110,7 +111,7 @@ export function ResponseCard({ id, data, selected, edited = false, displayLabel 
             >
               {data.collapsed ? <Maximize2 size={17} /> : <Minimize2 size={17} />}
             </button>
-            <button
+            {!readOnly && <button
               type="button"
               aria-label={edited ? "다음 응답에 사용" : "이어서 질문하기"}
               aria-pressed={isReplyTarget}
@@ -125,7 +126,7 @@ export function ResponseCard({ id, data, selected, edited = false, displayLabel 
               onClick={() => reply(id)}
             >
               <MessageCirclePlus size={18} />
-            </button>
+            </button>}
           </div>
         </header>
         <EditableNodeContent id={id}>

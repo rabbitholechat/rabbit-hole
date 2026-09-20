@@ -190,6 +190,8 @@ export type ResponseTiming = {
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'
 }
 export type Session = {
+  /** Local shared-view flag; never used as a server authorization mechanism. */
+  readOnly?: boolean
   canvasEdits?: CanvasEdits
   responseTimings?: Record<string, ResponseTiming>
   lastNodeContext?: NodeContext
@@ -236,3 +238,6 @@ export type HistoryWrite = { session: Session; revision: number }
 export type HistoryList = { sessions: HistoryWrite[]; next_cursor?: string | null }
 export type Revision = { revision: number }
 export type ImportResult = { imported: boolean }
+
+export type ShareCreated = { id: string }
+export type SharedCanvas = { session: Session }

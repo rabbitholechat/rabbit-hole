@@ -7,6 +7,7 @@ import { attachmentPath, copyAttachment } from '../lib/attachments'
 import { useStore } from '../store'
 
 export function AttachmentCard({id, data, selected}: NodeProps<AttachmentNode>) {
+  const readOnly = useStore(s => s.session?.readOnly)
   const attachment = data.attachment
   const collapsed = data.collapsed ?? true
   const [failed, setFailed] = useState(false)
@@ -39,8 +40,8 @@ export function AttachmentCard({id, data, selected}: NodeProps<AttachmentNode>) 
             aria-label={`${attachment.name} 다운로드`} data-tooltip="다운로드"><Download size={17} /></a>
           <button type="button" aria-label={collapsed ? '노드 펼치기' : '노드 접기'} data-tooltip={collapsed ? '노드 펼치기' : '노드 접기'}
             aria-expanded={!collapsed} onClick={() => toggle(id)}>{collapsed ? <Maximize2 size={17} /> : <Minimize2 size={17} />}</button>
-          <button type="button" aria-label="다음 응답에 사용" data-tooltip="다음 응답에 사용" disabled={busy || inComposer} aria-pressed={inComposer}
-            onClick={() => reuse(attachment)}><MessageCirclePlus size={18} /></button>
+          {!readOnly && <button type="button" aria-label="다음 응답에 사용" data-tooltip="다음 응답에 사용" disabled={busy || inComposer} aria-pressed={inComposer}
+            onClick={() => reuse(attachment)}><MessageCirclePlus size={18} /></button>}
         </div>
       </header>
       <EditableNodeContent id={id}>

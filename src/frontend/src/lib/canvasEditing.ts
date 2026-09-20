@@ -11,7 +11,7 @@ export const emptyEdits = (): CanvasEdits => ({
   positions: {},
 })
 export const editLocked = (session: Session | null) =>
-  !session ||
+  !session || session.readOnly ||
   session.status === 'running' ||
   Object.values(session.contentGraph?.jobs ?? {}).some((j) => j.status === 'running')
 export function visibleNodes(session: Session | null): CanvasNode[] {

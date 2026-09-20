@@ -151,7 +151,8 @@ class AttachmentRepository(HistoryRepository):
         from psycopg.types.json import Jsonb
         with self.connection() as conn:
             conn.execute("""DELETE FROM rabbit_hole_attachments a WHERE expires_at < now()
-                AND NOT EXISTS (SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id)""")
+                AND NOT EXISTS (SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id)
+                AND NOT EXISTS (SELECT 1 FROM rabbit_hole_share_attachment_refs r WHERE r.attachment_id = a.id)""")
             conn.execute("""INSERT INTO rabbit_hole_attachments (id, metadata, original, model_data, preview)
                 VALUES (%s, %s, %s, %s, %s)""", (record["metadata"].id, Jsonb(record["metadata"].model_dump(mode="json")),
                 record["original"], record["model_data"], record["preview"]))
@@ -170,7 +171,8 @@ class AttachmentRepository(HistoryRepository):
                     raise AttachmentFailure("대화의 첨부 용량이 제한을 초과했습니다. 새 대화에서 필요한 파일만 첨부해 주세요.", 413)
             rows = conn.execute("""SELECT a.* FROM rabbit_hole_attachments a WHERE a.id = ANY(%s)
                 AND (a.expires_at > now() OR EXISTS (
-                    SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id)) ORDER BY a.id FOR UPDATE""", (ids,)).fetchall()
+                    SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id) OR EXISTS (
+                    SELECT 1 FROM rabbit_hole_share_attachment_refs r WHERE r.attachment_id = a.id)) ORDER BY a.id FOR UPDATE""", (ids,)).fetchall()
             if len(rows) != len(ids):
                 raise AttachmentFailure("첨부 자료가 만료되었거나 삭제되었습니다. 다시 첨부해 주세요.", 404)
             if claim:
@@ -181,7 +183,8 @@ class AttachmentRepository(HistoryRepository):
     def delete_draft(self, key: UUID):
         with self.connection() as conn:
             conn.execute("""DELETE FROM rabbit_hole_attachments a WHERE id = %s AND claimed_at IS NULL
-                AND NOT EXISTS (SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id)""", (key,))
+                AND NOT EXISTS (SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id)
+                AND NOT EXISTS (SELECT 1 FROM rabbit_hole_share_attachment_refs r WHERE r.attachment_id = a.id)""", (key,))
 
 
 def model_inputs(conversation, records: dict):

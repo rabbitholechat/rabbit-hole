@@ -8,6 +8,8 @@ import { editLocked, validateDraft, visibleLinks } from '../lib/canvasEditing'
 
 export function EditNodeActions({ id }: { id: string }) {
   const locked = useStore(s => editLocked(s.session) || !!s.loadingSessionId)
+  const readOnly = useStore(s => s.session?.readOnly)
+  if (readOnly) return null
   return <>
     <button type="button" aria-label="수정하기" data-tooltip="수정하기 · F2" disabled={locked} onClick={e => { e.stopPropagation(); useStore.getState().editNode(id) }}><Pencil size={16} /></button>
     <button type="button" aria-label="삭제하기" data-tooltip="삭제하기 · Delete / ⌘⌫" disabled={locked} onClick={e => { e.stopPropagation(); useStore.getState().deleteNode(id) }}><Trash2 size={16} /></button>

@@ -31,9 +31,9 @@ export function NodeActions({ id, collapsed, canCollapse }: { id: string; collap
       aria-expanded={!collapsed} onClick={() => toggle(id)}>
       {collapsed ? <Maximize2 size={17} /> : <Minimize2 size={17} />}
     </button>
-    <button aria-label="다음 응답에 사용" data-tooltip="다음 응답에 사용" aria-pressed={replyTo === id}
+    {!session?.readOnly && <button aria-label="다음 응답에 사용" data-tooltip="다음 응답에 사용" aria-pressed={replyTo === id}
       disabled={busy || !nodeContext(session, id)} onClick={() => reply(id)}>
       <MessageCirclePlus size={18} />
-    </button>
+    </button>}
   </div>
 }

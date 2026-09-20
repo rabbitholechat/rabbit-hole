@@ -43,6 +43,7 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined
 const uploadRequests = new Map<string, AbortController>()
 const structureRequests = new Map<string, AbortController>()
 function persist(session: Session) {
+  if (session.readOnly) return
   const snapshot = structuredClone(session)
   persistence = persistence
     .catch(() => {})
@@ -120,6 +121,7 @@ interface State {
   markFitted: () => void
 }
 function commit(session: Session) {
+  if (session.readOnly) { useStore.setState({ session }); return }
   useStore.setState((state) => ({
     session,
     history: [session, ...state.history.filter((s) => s.id !== session.id)].sort(
@@ -255,8 +257,8 @@ function restoreSession(session: Session): Session {
 
 export const useStore = create<State>((set, get) => ({
   undoStack: [], redoStack: [], clipboard: null, actionNotice: null, editingDraft: null, editingNode: null, editingEdge: null, selectedLink: null,
-  editNode: (id) => set({ editingDraft: id && get().session ? nodeDraft(get().session!, id) : null, editingNode: id, editingEdge: null, ...(id ? { selected: id, selectedLink: null } : {}) }),
-  editEdge: (id) => set({ editingEdge: id, editingDraft: null, editingNode: null, selectedLink: id, selected: null }),
+  editNode: (id) => { if (id && get().session?.readOnly) return; set({ editingDraft: id && get().session ? nodeDraft(get().session!, id) : null, editingNode: id, editingEdge: null, ...(id ? { selected: id, selectedLink: null } : {}) }) },
+  editEdge: (id) => { if (id && get().session?.readOnly) return; set({ editingEdge: id, editingDraft: null, editingNode: null, selectedLink: id, selected: null }) },
   copyNode: (id) => {
     const session = get().session
     const data = session && nodeDraft(session, id)
@@ -397,7 +399,7 @@ export const useStore = create<State>((set, get) => ({
   },
   structure: async (responseId) => {
     const session = get().session
-    if (!session || session.protocol !== 2 || session.mode !== 'live') return
+    if (!session || session.readOnly || session.protocol !== 2 || session.mode !== 'live') return
     const response = responseById(session, responseId)
     if (!response || response.data.status !== 'completed') return
     const graph = session.contentGraph ?? emptyContentGraph()
@@ -512,6 +514,7 @@ export const useStore = create<State>((set, get) => ({
     if (draft?.attachment && !draft.reused) void deleteDraftAttachment(draft.attachment.id)
   },
   reuseAttachment: (attachment) => {
+    if (get().session?.readOnly) return
     const state = get()
     if (state.activeRequest || state.draftAttachments.some(draft => draft.attachment?.id === attachment.id)) return
     if (state.draftAttachments.length >= 4) { set({error: '첨부는 한 번에 최대 4개까지 추가할 수 있어요.'}); return }
@@ -601,6 +604,7 @@ export const useStore = create<State>((set, get) => ({
     }
   },
   reply: (id) => {
+    if (get().session?.readOnly) return
     if (get().activeRequest) return
     set({ replyTo: get().replyTo === id ? null : id })
   },
@@ -650,7 +654,7 @@ export const useStore = create<State>((set, get) => ({
   },
   run: async (options = {}) => {
     const before = get()
-    if (before.activeRequest) return
+    if (before.activeRequest || before.session?.readOnly) return
     const latest = before.session?.nodes.filter((n): n is ResponseNode => n.type === 'response').at(-1)
     if (!options.retry && before.draftAttachments.some(a => a.status !== 'ready')) {
       set({error: '첨부 업로드를 완료하거나 실패한 첨부를 제거해 주세요.'})
@@ -870,6 +874,7 @@ export const useStore = create<State>((set, get) => ({
   nodesChange: (changes) => {
     const session = get().session
     if (!session) return
+    if (session.readOnly) changes = changes.filter(c => c.type === 'dimensions' || c.type === 'select')
     const selection = changes.find(c => c.type === 'select' && c.selected)
     if (selection?.type === 'select') set({ selected: selection.id, selectedEdge: null, selectedLink: null })
     const moved = changes.filter(c => c.type === 'position' && c.position)

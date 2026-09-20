@@ -144,3 +144,25 @@ def test_postgres_attachment_context_limit_before_loading_binary(settings):
     assert failure.value.status == 413
     with repository.connection() as conn:
         assert conn.execute("SELECT count(*) AS count FROM rabbit_hole_attachments WHERE claimed_at IS NOT NULL").fetchone()["count"] == 0
+
+
+def test_postgres_share_retains_attachments_after_original_deletion(settings):
+    client = TestClient(create_app(settings))
+    attachment = client.post("/api/attachments?filename=notes.txt", content=b"public attachment", headers={"Content-Type": "application/octet-stream"})
+    assert attachment.status_code == 201
+    meta = attachment.json()
+    original = session()
+    original["nodes"].append({"id": "attachment_" + meta["id"], "type": "attachment", "position": {"x": 10, "y": 20}, "data": {"attachment": meta}})
+    assert client.put("/api/sessions/shared-session", json={"session": original, "revision": 0}).status_code == 200
+    shared = client.post("/api/shares", json=original)
+    assert shared.status_code == 201
+    key = shared.json()["id"]
+    assert client.delete("/api/sessions/shared-session?revision=1").status_code == 204
+    with HistoryRepository(settings).connection() as conn:
+        conn.execute("UPDATE rabbit_hole_attachments SET expires_at = now() - interval '1 day'")
+    # Cleanup of expired drafts must also preserve shared attachments.
+    client.post("/api/attachments?filename=next.txt", content=b"next", headers={"Content-Type": "application/octet-stream"})
+    restored = TestClient(create_app(settings)).get(f"/api/shares/{key}")
+    assert restored.status_code == 200
+    assert restored.json()["session"]["nodes"] == original["nodes"]
+    assert client.get(meta["download_url"]).content == b"public attachment"

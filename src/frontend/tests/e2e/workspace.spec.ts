@@ -2052,7 +2052,20 @@ test('inline editing preserves copied cards and reports keyboard and menu action
   await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
   const edge = page.locator('.react-flow__edge').first()
   await expect(edge.locator('.react-flow__edge-path')).toHaveCSS('stroke', 'rgb(188, 96, 78)')
-  await edge.click({ button: 'right', force: true })
+  // Wait for viewport movement and hit an exposed part of the curved SVG path.
+  let edgePoint: { x: number; y: number } | null = null
+  await expect.poll(async () => {
+    edgePoint = await edge.locator('.react-flow__edge-interaction').evaluate((element) => {
+      const path = element as SVGPathElement
+      for (let i = 1; i < 20; i++) {
+        const point = path.getPointAtLength(path.getTotalLength() * i / 20).matrixTransform(path.getScreenCTM()!)
+        if (document.elementFromPoint(point.x, point.y)?.closest('.react-flow__edge') === path.closest('.react-flow__edge')) return { x: point.x, y: point.y }
+      }
+      return null
+    })
+    return edgePoint !== null
+  }).toBe(true)
+  await page.mouse.click(edgePoint!.x, edgePoint!.y, { button: 'right' })
   await page.getByRole('menuitem', { name: '수정하기', exact: true }).click()
   const edgeEditor = page.locator('.edge-inline-editor')
   await expect(page.getByRole('dialog')).toHaveCount(0)

@@ -18,7 +18,7 @@ from .agent import AgentService
 from .attachments import AttachmentFailure, AttachmentRepository, attachment_router
 from .config import Settings, get_settings
 from .errors import MESSAGES, StageFailure, error_code, error_location, provider_diagnostics
-from .history import HistoryRepository, HistoryUnavailable, history_router
+from .history import HistoryRepository, HistoryUnavailable, history_router, share_router
 from .middleware import BodyLimitMiddleware
 from .models import AgentRequest, ConversationTurn, Snapshot, TitleRequest, TitleResponse
 from .security import SnapshotSigner
@@ -91,6 +91,7 @@ def create_app(settings: Settings | None = None, service_factory=AgentService, h
     app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_request_bytes,
                        max_history_bytes=settings.max_history_bytes, max_attachment_bytes=settings.max_attachment_bytes)
     app.include_router(history_router(history_repository or HistoryRepository(settings)))
+    app.include_router(share_router(history_repository or HistoryRepository(settings)))
     attachments = attachment_repository or AttachmentRepository(settings)
     app.include_router(attachment_router(attachments, settings))
 

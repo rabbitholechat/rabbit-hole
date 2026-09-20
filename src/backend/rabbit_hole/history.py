@@ -2,6 +2,7 @@
 
 import json
 import logging
+import secrets
 from contextlib import contextmanager
 from typing import Annotated, Literal
 
@@ -183,6 +184,55 @@ class HistoryRepository:
             """)
 
             initialize_attachments(conn)
+            conn.execute("""CREATE TABLE IF NOT EXISTS rabbit_hole_shares (
+                id varchar(64) PRIMARY KEY, payload jsonb NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT now()
+            )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS rabbit_hole_share_attachment_refs (
+                attachment_id uuid REFERENCES rabbit_hole_attachments(id) ON DELETE CASCADE,
+                share_id varchar(64) REFERENCES rabbit_hole_shares(id) ON DELETE CASCADE,
+                PRIMARY KEY (attachment_id, share_id)
+            )""")
+
+    def create_share(self, session: HistorySession):
+        from uuid import UUID
+
+        from .attachments import AttachmentFailure
+
+        share_id = secrets.token_urlsafe(24)
+        payload = public_snapshot(session)
+        ids = set()
+        def collect(value):
+            if isinstance(value, dict):
+                attachment = value.get("attachment")
+                if isinstance(attachment, dict) and attachment.get("id"):
+                    try:
+                        ids.add(UUID(attachment["id"]))
+                    except (ValueError, TypeError):
+                        raise AttachmentFailure("첨부 기록이 올바르지 않습니다.") from None
+                for child in value.values():
+                    collect(child)
+            elif isinstance(value, list):
+                for child in value:
+                    collect(child)
+        collect(payload)
+        with self.connection() as conn:
+            if ids:
+                found = conn.execute("SELECT id FROM rabbit_hole_attachments WHERE id = ANY(%s) ORDER BY id FOR UPDATE", (list(ids),)).fetchall()
+                if len(found) != len(ids):
+                    raise AttachmentFailure("첨부 자료가 만료되었거나 삭제되었습니다.", 409)
+            conn.execute("INSERT INTO rabbit_hole_shares (id, payload) VALUES (%s, %s)", (share_id, Jsonb(payload)))
+            if ids:
+                with conn.cursor() as cursor:
+                    cursor.executemany("INSERT INTO rabbit_hole_share_attachment_refs (attachment_id, share_id) VALUES (%s, %s)", [(key, share_id) for key in ids])
+        return {"id": share_id}
+
+    def get_share(self, share_id: str):
+        with self.connection() as conn:
+            row = conn.execute("SELECT payload AS session FROM rabbit_hole_shares WHERE id = %s", (share_id,)).fetchone()
+        if row is None:
+            raise HistoryNotFound()
+        return row
 
     def list(self, cursor: str = ""):
         with self.connection() as conn:
@@ -256,9 +306,61 @@ class HistoryRepository:
             ids = conn.execute("DELETE FROM rabbit_hole_attachment_refs WHERE session_id = %s RETURNING attachment_id", (session_id,)).fetchall()
             if ids:
                 conn.execute("""DELETE FROM rabbit_hole_attachments a WHERE a.id = ANY(%s)
-                    AND NOT EXISTS (SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id)""",
+                    AND NOT EXISTS (SELECT 1 FROM rabbit_hole_attachment_refs r WHERE r.attachment_id = a.id)
+                    AND NOT EXISTS (SELECT 1 FROM rabbit_hole_share_attachment_refs r WHERE r.attachment_id = a.id)""",
                     ([row["attachment_id"] for row in ids],))
         # Keep only an ID tombstone so another tab or a legacy import cannot resurrect a deletion.
+
+
+class ShareCreated(BaseModel):
+    id: str
+
+
+class SharedCanvas(BaseModel):
+    session: HistorySession
+
+
+def public_snapshot(session: HistorySession):
+    # Public canvas only: never distribute signed continuation/model context.
+    payload = session.model_dump(exclude_unset=True)
+    for key in ("continuation", "lastNodeContext", "lastAttachments", "readOnly"):
+        payload.pop(key, None)
+    for node in payload["nodes"]:
+        node["data"].pop("continuation", None)
+        if node["type"] == "response" and node["data"].get("status") == "streaming":
+            node["data"]["status"] = "partial"
+    if payload["status"] == "running":
+        payload["status"] = "partial"
+    for job in (payload.get("contentGraph") or {}).get("jobs", {}).values():
+        if job.get("status") == "running":
+            job["status"] = "cancelled"
+    for timing in (payload.get("responseTimings") or {}).values():
+        if timing.get("status") == "running":
+            timing["status"] = "interrupted"
+    return payload
+
+
+def share_router(repository: HistoryRepository):
+    router = APIRouter(prefix="/api/shares", tags=["shared canvas"])
+
+    @router.post("", response_model=ShareCreated, status_code=201)
+    def create_share(body: HistorySession):
+        try:
+            return repository.create_share(body)
+        except HistoryUnavailable:
+            raise HTTPException(503, "공유 저장소에 연결할 수 없습니다.") from None
+
+    @router.get("/{share_id}", response_model=SharedCanvas, response_model_exclude_unset=True)
+    def get_share(response: Response, share_id: SessionId = Path()):
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return repository.get_share(share_id)
+        except HistoryNotFound:
+            raise HTTPException(404, "공유 캔버스를 찾을 수 없습니다.") from None
+        except HistoryUnavailable:
+            raise HTTPException(503, "공유 저장소에 연결할 수 없습니다.") from None
+
+    return router
 
 
 def history_router(repository: HistoryRepository):
