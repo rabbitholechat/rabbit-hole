@@ -161,14 +161,9 @@ test('sidebar settings show the demo account and shortcuts, preserve the canvas 
   await expect(page.locator('.landing-hero').getByRole('link', { name: 'Rabbit Hole 시작하기', exact: true })).toBeVisible()
 })
 
-test('welcome canvas examples copy and fill the centered composer without starting a session', async ({ page }, testInfo) => {
+test('welcome canvas examples fill the centered composer without starting a session', async ({ page }, testInfo) => {
   const writes: string[] = []
   page.on('request', request => { if (request.url().includes('/api/') && request.method() !== 'GET') writes.push(request.url()) })
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => {
-      (window as unknown as { welcomeCopy: string }).welcomeCopy = text
-    } } })
-  })
   await page.goto('/')
   await expect(page.locator('.react-flow__node-welcome')).toHaveCount(5)
   await expect(page.locator('.react-flow__edge-welcomeExample')).toHaveCount(4)
@@ -183,9 +178,8 @@ test('welcome canvas examples copy and fill the centered composer without starti
   const before = (await composer.boundingBox())!
   const viewport = await page.locator('.react-flow__viewport').getAttribute('style')
   const example = page.getByRole('article', { name: /예시 질문 · 아이폰 폴더블/ })
-  await expect(example.getByRole('button')).toHaveCount(2)
-  await example.getByRole('button', { name: '복사하기' }).click()
-  expect(await page.evaluate(() => (window as unknown as { welcomeCopy: string }).welcomeCopy)).toBe('아이폰 폴더블, 언제 나오고 무엇이 달라질까요? 공개된 정보와 전망을 나눠 알려주세요.')
+  await expect(example.getByRole('button')).toHaveCount(1)
+  await expect(page.locator('.welcome-question').getByRole('button', { name: '복사하기' })).toHaveCount(0)
   await example.getByText('아이폰 폴더블,', { exact: false }).click()
   await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('아이폰 폴더블, 언제 나오고 무엇이 달라질까요? 공개된 정보와 전망을 나눠 알려주세요.')
   await expect(page.getByRole('textbox', { name: '메시지 입력' })).toBeFocused()

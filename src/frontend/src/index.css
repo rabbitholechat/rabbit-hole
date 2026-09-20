@@ -2403,21 +2403,6 @@ svg {
 .workspace .welcome-question-select:hover { background: transparent; color: #245c40; }
 .welcome-question-select:hover .welcome-question-ring path:first-child { fill-opacity: .9; stroke: #3b7956; }
 .welcome-question-select:focus-visible { outline: 2px dashed #458c80; outline-offset: 6px; }
-.welcome-question-copy {
-  position: absolute;
-  right: 48px;
-  bottom: 22px;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: #668773;
-}
-.workspace .welcome-question-copy:hover { background: #e0eddf; color: #245c40; }
-.welcome-question-copy:focus-visible { outline: 2px solid #458c80; outline-offset: 2px; }
 @media (max-width: 700px) {
   .workspace.is-empty .canvas-tools { right: 14px; bottom: max(12px, env(safe-area-inset-bottom)); }
   .welcome-question-select { font-size: 27px; }

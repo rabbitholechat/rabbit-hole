@@ -8,9 +8,7 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { Copy } from 'lucide-react'
 import { RabbitIcon } from './RabbitIcon'
-import { useStore } from '../store'
 
 // Presentation-only nodes: never stored in sessions or sent as response context.
 export type WelcomeCanvasNode = Node<
@@ -52,14 +50,6 @@ export function WelcomeNode({ data }: NodeProps<WelcomeCanvasNode>) {
       </section>
     )
 
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(data.kind === 'question' ? data.prompt : '')
-      useStore.setState({ actionNotice: { id: crypto.randomUUID(), message: '복사를 완료했습니다' } })
-    } catch {
-      useStore.setState({ error: '예시 질문을 복사하지 못했습니다. 다시 시도해 주세요.' })
-    }
-  }
   return (
     <article className={`welcome-question tone-${data.tone}`} aria-label={`예시 질문 · ${data.prompt}`}>
       <Handle
@@ -78,9 +68,6 @@ export function WelcomeNode({ data }: NodeProps<WelcomeCanvasNode>) {
           <path d="M291 20C226 -1 117 6 58 31C17 48 4 82 25 111C54 149 155 157 237 139C300 126 326 101 324 72" />
         </svg>
         <span>{data.label}</span>
-      </button>
-      <button className="welcome-question-copy nodrag nopan" type="button" aria-label="복사하기" data-tooltip="복사하기" onClick={() => void copy()}>
-        <Copy size={14} />
       </button>
     </article>
   )
