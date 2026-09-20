@@ -63,7 +63,7 @@ test('landing explains the product, previews real screenshots and opens the canv
   const headerBox = (await headerStart.boundingBox())!
   expect(headerBox.x + headerBox.width).toBeLessThanOrEqual(320)
   expect(apiRequests).toEqual([])
-  const start = page.getByRole('link', { name: '내 호기심 따라가 보기', exact: true })
+  const start = page.locator('.landing-hero').getByRole('link', { name: 'Rabbit Hole 시작하기', exact: true })
   await expect(start).toHaveAttribute('href', '/')
   await page.route('**/api/sessions**', async (route) =>
     route.fulfill({ json: await memoryHistoryApi().list() }),

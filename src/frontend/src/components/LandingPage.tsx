@@ -101,14 +101,15 @@ export function LandingPage() {
             <em>다음 호기심으로.</em>
           </h1>
           <p className="landing-lead">
-            답변을 읽고, 출처를 살피고, 떠오른 생각을 연결하세요.
-            <br /> Rabbit Hole은 질문이 이어질수록 나만의 탐색 지도가 펼쳐지는 공간입니다.
+            답변을 읽는 것을 넘어, 핵심 정보와 출처를 연결해 탐색하세요.
+            <br /> Rabbit Hole은 AI의 응답을 노드 그래프로 구조화해 질문이 이어질수록 탐색의 흐름을 시각적으로
+            확장합니다.
           </p>
           <a className="landing-cta" href="/">
             Rabbit Hole 시작하기 <ArrowRight size={18} />
           </a>
           <a className="landing-scroll" href="#explore">
-            어떻게 탐색하나요? <ArrowDown size={15} />
+            어떻게 시작하나요? <ArrowDown size={15} />
           </a>
         </section>
         <div className="landing-stories">
