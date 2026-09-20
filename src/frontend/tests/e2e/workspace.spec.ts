@@ -122,23 +122,93 @@ async function openHistory(page: Page) {
   const expand = page.getByRole('button', { name: '대화 기록 펼치기' })
   if (await expand.isVisible()) await expand.click()
 }
-test('welcome shows the brand without example question cards', async ({ page }, testInfo) => {
-  let calls = 0
-  await page.route('**/api/agent', async (route) => {
-    calls++
-    await route.abort()
+test('welcome canvas examples copy and fill the centered composer without starting a session', async ({ page }, testInfo) => {
+  const writes: string[] = []
+  page.on('request', request => { if (request.url().includes('/api/') && request.method() !== 'GET') writes.push(request.url()) })
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => {
+      (window as unknown as { welcomeCopy: string }).welcomeCopy = text
+    } } })
   })
   await page.goto('/')
+  await expect(page.locator('.react-flow__node-welcome')).toHaveCount(6)
+  await expect(page.locator('.react-flow__edge-welcomeExample')).toHaveCount(5)
   await expect(page.locator('.welcome-brand')).toHaveText('Rabbit Hole')
   await expect(page.locator('.welcome-brand svg')).toBeVisible()
+  await expect(page.locator('.welcome-canvas-brand')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(page.getByRole('heading', { name: '호기심이 이어지는 곳' })).toBeVisible()
-  await expect(page.locator('.suggestions')).toHaveCount(0)
+  await expect(page.locator('.welcome-question')).toHaveCount(5)
+  await expect(page.getByRole('article', { name: /예시 질문 · 원티드 AI Championship 2026/ })).toHaveCount(1)
+  await expect(page.getByRole('article', { name: /예시 질문 · 원티드랩/ })).toHaveCount(1)
+  const composer = page.locator('.composer')
+  const before = (await composer.boundingBox())!
+  const viewport = await page.locator('.react-flow__viewport').getAttribute('style')
+  const example = page.getByRole('article', { name: /예시 질문 · 아이폰 폴더블/ })
+  await expect(example.getByRole('button')).toHaveCount(2)
+  await example.getByRole('button', { name: '복사하기' }).click()
+  expect(await page.evaluate(() => (window as unknown as { welcomeCopy: string }).welcomeCopy)).toBe('아이폰 폴더블, 언제 나오고 무엇이 달라질까요? 공개된 정보와 전망을 나눠 알려주세요.')
+  await example.getByRole('button', { name: '다음 응답에 활용' }).click()
+  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('아이폰 폴더블, 언제 나오고 무엇이 달라질까요? 공개된 정보와 전망을 나눠 알려주세요.')
+  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toBeFocused()
+  await expect(page.locator('.workspace')).toHaveClass(/is-empty/)
+  const after = (await composer.boundingBox())!
+  expect(Math.abs(after.y + after.height / 2 - before.y - before.height / 2)).toBeLessThan(2)
+  await expect(page.locator('.react-flow__viewport')).toHaveAttribute('style', viewport!)
+  if (testInfo.project.name === 'mobile') {
+    await page.mouse.move(page.viewportSize()!.width - 8, 180)
+    await page.mouse.wheel(700, 0)
+    await page.waitForTimeout(300)
+  }
+  await page.getByRole('article', { name: /예시 질문 · gpt-6-astra/ }).getByRole('button', { name: '다음 응답에 활용' }).click()
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await page.waitForTimeout(350)
+  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('gpt-6-astra는 어떤 모델인가요? 주요 특징과 잘 맞는 활용 사례를 알려주세요.')
+  const brandBefore = (await page.locator('.welcome-brand').boundingBox())!
+  await page.mouse.move(page.viewportSize()!.width - 8, 180)
+  await page.mouse.wheel(0, 100)
+  await expect.poll(async () => (await page.locator('.welcome-brand').boundingBox())!.y).toBeLessThan(brandBefore.y - 10)
+  const afterPan = (await composer.boundingBox())!
+  expect(Math.abs(afterPan.y + afterPan.height / 2 - before.y - before.height / 2)).toBeLessThan(2)
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await page.waitForTimeout(350)
+  const canvasX = () => page.locator('.react-flow__viewport').evaluate(el => new DOMMatrix(getComputedStyle(el).transform).m41)
+  const initialX = await canvasX()
+  await page.mouse.move(page.viewportSize()!.width - 8, 180)
+  await page.mouse.wheel(900, 0)
+  await expect.poll(canvasX).toBeLessThan(initialX - 100)
+  await page.mouse.wheel(-900, 0)
+  await expect.poll(canvasX).toBeGreaterThan(initialX - 10)
+  await page.mouse.wheel(100000, 0)
+  await page.waitForTimeout(200)
+  const boundaryX = await canvasX()
+  await page.mouse.wheel(100000, 0)
+  await page.waitForTimeout(200)
+  expect(await canvasX()).toBeCloseTo(boundaryX, 0)
+  await page.mouse.wheel(-900, 0)
+  await expect.poll(canvasX).toBeGreaterThan(boundaryX + 100)
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await page.waitForTimeout(350)
+  const canvasZoom = () => page.locator('.react-flow__viewport').evaluate(el => new DOMMatrix(getComputedStyle(el).transform).m11)
+  await page.getByRole('button', { name: '확대', exact: true }).click()
+  await expect.poll(canvasZoom).toBeGreaterThan(1)
+  await page.waitForTimeout(350)
+  const beforeSidebar = await page.locator('.react-flow__viewport').getAttribute('style')
+  await page.keyboard.press('Control+b')
+  await page.waitForTimeout(350)
+  await expect(page.locator('.react-flow__viewport')).toHaveAttribute('style', beforeSidebar!)
+  await page.keyboard.press('Control+b')
+  await page.mouse.click(page.viewportSize()!.width - 8, 180, { button: 'right' })
+  await expect(page.getByRole('menu', { name: '캔버스 편집 메뉴' })).toHaveCount(0)
+  await page.mouse.click(page.viewportSize()!.width - 8, 180)
+  await page.keyboard.press('Control+v')
+  await page.keyboard.press('F2')
+  await expect(page.locator('.react-flow__node-welcome')).toHaveCount(6)
+  await expect(page.locator('.react-flow__node-user, .inline-editor')).toHaveCount(0)
+  for (const name of ['공유', '다운로드', '실행 취소', '다시 실행']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '화면 맞춤', exact: true }).click()
+  await page.waitForTimeout(350)
   await page.screenshot({ path: testInfo.outputPath('welcome.png') })
-  await expect(page.getByRole('textbox', { name: '메시지 입력' })).toHaveValue('')
-  await openHistory(page)
-  await expect(page.getByRole('button', { name: '디자인 예시 둘러보기' })).toHaveCount(0)
-  await expect(page.locator('.sample-menu, .sample-controls')).toHaveCount(0)
-  expect(calls).toBe(0)
+  expect(writes).toEqual([])
 })
 
 test('history count follows its heading and long icon-free history scrolls inside the sidebar', async ({
@@ -712,7 +782,7 @@ test('composer and canvas tools stay separate while resizing with sidebar open o
           const tools = document.querySelector('.canvas-tools')!.getBoundingClientRect()
           return (
             Math.abs(input.right - (innerWidth - (innerWidth <= 700 ? 14 : 20))) < 2 &&
-            tools.bottom + 8 <= input.top &&
+            input.bottom + 8 <= tools.top &&
             tools.right <= input.right + 1
           )
         }),
@@ -2175,13 +2245,17 @@ test('dragging connection handles creates persistent editable edges and copies c
   expect(submitted?.node_context.node_id).toBe(edge.session.canvasEdits!.nodes[0].id)
 })
 
-test('empty canvas context menu creates nodes and preserves default relation labels and colors', async ({
+test('active canvas context menu creates nodes and preserves default relation labels and colors', async ({
   page,
   context,
 }, testInfo) => {
   const history = memoryHistoryApi()
+  const session = entitySession()
+  await history.save(session.id, { session, revision: 0 })
   await mockHistory(context, history)
   await page.goto('/')
+  await openHistory(page)
+  await page.getByRole('button', { name: session.query, exact: true }).click()
   const viewport = page.viewportSize()!
   await page.mouse.click(viewport.width - 30, 220, { button: 'right' })
   await page.getByRole('menuitem', { name: '노드 생성', exact: true }).click()

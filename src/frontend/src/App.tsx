@@ -1,3 +1,4 @@
+import { WelcomeNode, WelcomeExampleEdge, welcomeGraph, type WelcomeCanvasNode } from './components/WelcomeNode'
 import { CanvasShareActions } from './components/CanvasShareActions'
 import { SharedCanvasPage } from './components/SharedCanvasPage'
 import { UserCard } from './components/UserCard'
@@ -62,8 +63,10 @@ import { safeUrl } from './lib/utils'
 import { CARD_HEIGHT, CARD_WIDTH } from './lib/layout'
 import type { CanvasNode } from './types'
 
-const nodeTypes = { user: UserCard, attachment: AttachmentCard, page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
-  edgeTypes = { relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
+type WorkspaceNode = CanvasNode | WelcomeCanvasNode
+
+const nodeTypes = { welcome: WelcomeNode, user: UserCard, attachment: AttachmentCard, page: PageCard, response: ResponseCard, information: ContentCard, source: ContentCard, entity: EntityCard },
+  edgeTypes = { welcomeExample: WelcomeExampleEdge, relation: RelationEdge, conversation: ConversationEdge, content: ContentEdge }
 function Workspace({ shared = false }: { shared?: boolean }) {
   const state = useStore(),
     session = state.session
@@ -78,7 +81,7 @@ function Workspace({ shared = false }: { shared?: boolean }) {
   }, [menu])
   useEffect(() => setMenu(null), [session?.id, state.loadingSessionId])
   const dismissError = useCallback(() => useStore.setState({ error: null, storageError: null }), [])
-  const flow = useReactFlow<CanvasNode>(),
+  const flow = useReactFlow<WorkspaceNode>(),
     viewport = useViewport()
   const [screenSize, setScreenSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   useEffect(() => {
@@ -86,10 +89,6 @@ function Workspace({ shared = false }: { shared?: boolean }) {
     window.addEventListener('resize', resize)
     return () => window.removeEventListener('resize', resize)
   }, [])
-  const extent = useMemo(
-    () => canvasBounds(visibleNodes(session), viewport, screenSize),
-    [session, viewport, screenSize],
-  )
   const [historyOpen, setHistoryOpen] = useState(() => !shared && window.innerWidth > 700)
   useEffect(() => {
     const mobile = window.matchMedia('(max-width: 700px)')
@@ -108,6 +107,21 @@ function Workspace({ shared = false }: { shared?: boolean }) {
   useEffect(() => {
     if (state.draftAttachments.length) inputRef.current?.focus()
   }, [state.draftAttachments.length])
+  const useExample = useCallback((prompt: string) => {
+    useStore.getState().setInput(prompt)
+    inputRef.current?.focus({ preventScroll: true })
+  }, [])
+  const welcome = useMemo(() => welcomeGraph(screenSize.width, useExample), [screenSize.width, useExample])
+  const welcomeViewport = useMemo(() => {
+    const mobile = screenSize.width <= 700
+    const left = mobile ? 14 : shared ? 76 : 264
+    const right = mobile ? 14 : screenSize.width <= 1100 ? 20 : 24
+    return { x: (left + screenSize.width - right) / 2, y: screenSize.height / 2, zoom: 1 }
+  }, [screenSize, shared])
+  const extent = useMemo(
+    () => canvasBounds(session ? visibleNodes(session) : welcome.nodes, session ? viewport : welcomeViewport, screenSize),
+    [session, welcome, viewport, welcomeViewport, screenSize],
+  )
   const navigateRef = useRef<(direction: number) => void>(() => {})
   const fitRef = useRef<(initial?: boolean) => void>(() => {})
   useEffect(() => {
@@ -125,7 +139,7 @@ function Workspace({ shared = false }: { shared?: boolean }) {
       if (current.editingNode || current.editingEdge) return
       if (modified && ['c', 'v', 'z', 'y'].includes(key) || key === 'delete' || key === 'backspace' && modified || key === 'f2' || modified && key === 'e') {
         event.preventDefault()
-        if (event.repeat) return
+        if (event.repeat || !current.session) return
         if (modified && key === 'c' && current.selected) current.copyNode(current.selected)
         else if (modified && key === 'v') current.pasteNode(flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }), flow.getViewport())
         else if (modified && key === 'z') event.shiftKey ? current.redo() : current.undo()
@@ -163,9 +177,13 @@ function Workspace({ shared = false }: { shared?: boolean }) {
   }, [shared])
   useEffect(() => {
     const s = useStore.getState().session
-    void flow.setViewport(s?.viewport ?? { x: 0, y: 0, zoom: 1 })
+    if (s) void flow.setViewport(s.viewport)
   }, [session?.id, flow])
+  useEffect(() => {
+    if (!session) void flow.setViewport(welcomeViewport)
+  }, [session?.id, flow, welcomeViewport])
   function fit(initial = false) {
+    if (!useStore.getState().session) { void flow.setViewport(welcomeViewport, { duration: initial ? 0 : 250 }); return }
     let nodes = visibleNodes(useStore.getState().session)
     if (!nodes?.length) return
     if (initial && window.innerWidth < 700 && nodes[0].type !== 'attachment') nodes = nodes.slice(0, 1)
@@ -400,21 +418,23 @@ function Workspace({ shared = false }: { shared?: boolean }) {
       className={`workspace ${shared ? 'shared-workspace' : ''} ${historyOpen ? 'sidebar-open' : 'sidebar-closed'} ${session ? 'has-session' : 'is-empty'} ${state.serverError ? 'has-server-error' : ''} ${opening ? 'is-loading-content' : ''}`}
       aria-label="대화 캔버스"
     >
-      <ReactFlow<CanvasNode>
+      <ReactFlow<WorkspaceNode>
         translateExtent={extent}
-        nodes={(state.serverError || opening) ? [] : shared ? arrivingGraph.nodes.map(n => ({ ...n, draggable: false, connectable: false })) : arrivingGraph.nodes}
-        edges={(state.serverError || opening) ? [] : arrivingGraph.edges}
+        nodes={(state.serverError || opening) ? [] : !session ? welcome.nodes : shared ? arrivingGraph.nodes.map(n => ({ ...n, draggable: false, connectable: false })) : arrivingGraph.nodes}
+        edges={(state.serverError || opening) ? [] : !session ? welcome.edges : arrivingGraph.edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        nodesDraggable={!shared}
-        edgesReconnectable={!shared}
-        onNodesChange={state.nodesChange}
-        onNodeContextMenu={(event, node) => { event.preventDefault(); state.select(node.id); setMenu({ x: event.clientX, y: event.clientY, node: node.id }) }}
-        onPaneContextMenu={event => { event.preventDefault(); setMenu({ x: event.clientX, y: event.clientY }) }}
-        onEdgeContextMenu={(event, edge) => { event.preventDefault(); useStore.setState({ selectedLink: edge.id, selected: null }); setMenu({ x: event.clientX, y: event.clientY, edge: edge.id }) }}
-        onEdgeClick={(_, edge) => useStore.setState({ selectedLink: edge.id, selected: null })}
-        onEdgeDoubleClick={(_, edge) => state.editEdge(edge.id)}
+        autoPanOnNodeFocus={!!session}
+        nodesDraggable={!!session && !shared}
+        edgesReconnectable={!!session && !shared}
+        onNodesChange={changes => { if (session) state.nodesChange(changes.filter(c => c.type !== 'add' && c.type !== 'replace')) }}
+        onNodeContextMenu={(event, node) => { event.preventDefault(); if (!session || shared) return; state.select(node.id); setMenu({ x: event.clientX, y: event.clientY, node: node.id }) }}
+        onPaneContextMenu={event => { event.preventDefault(); if (!session || shared) return; setMenu({ x: event.clientX, y: event.clientY }) }}
+        onEdgeContextMenu={(event, edge) => { event.preventDefault(); if (!session || shared) return; useStore.setState({ selectedLink: edge.id, selected: null }); setMenu({ x: event.clientX, y: event.clientY, edge: edge.id }) }}
+        onEdgeClick={(_, edge) => { if (session) useStore.setState({ selectedLink: edge.id, selected: null }) }}
+        onEdgeDoubleClick={(_, edge) => { if (session) state.editEdge(edge.id) }}
         onNodeClick={(event, node) => {
+          if (node.type === 'welcome') return
           const target = event.target
           if (target instanceof Element && target.closest('button, a, input, textarea')) return
           state.select(node.id)
@@ -467,7 +487,7 @@ function Workspace({ shared = false }: { shared?: boolean }) {
         <Background variant={BackgroundVariant.Lines} gap={28} lineWidth={0.6} color="#e2e6df" />
       </ReactFlow>
       <ActionToast />
-      {!shared && menu && <div className="canvas-context-menu panel" role="menu" aria-label="캔버스 편집 메뉴" style={{ left: Math.min(menu.x, window.innerWidth - 228), top: Math.min(menu.y, window.innerHeight - 280) }} onPointerDown={e => e.stopPropagation()}>
+      {!shared && session && menu && <div className="canvas-context-menu panel" role="menu" aria-label="캔버스 편집 메뉴" style={{ left: Math.min(menu.x, window.innerWidth - 228), top: Math.min(menu.y, window.innerHeight - 280) }} onPointerDown={e => e.stopPropagation()}>
         {!menu.node && !menu.edge && <button role="menuitem" disabled={Boolean(state.activeRequest || state.loadingSessionId || session && editLocked(session))} onClick={() => {
           state.createNode(flow.screenToFlowPosition({ x: menu.x, y: menu.y }), flow.getViewport()); setMenu(null)
         }}>노드 생성</button>}
@@ -741,14 +761,8 @@ function Workspace({ shared = false }: { shared?: boolean }) {
             )}
           </div>
         )}
-        {!session && (
-          <section className="welcome">
-            <div className="welcome-brand"><RabbitIcon /><span>Rabbit Hole</span></div>
-            <h1>호기심이 이어지는 곳</h1>
-          </section>
-        )}
       {!opening && <nav className="canvas-tools panel" aria-label="캔버스 도구">
-        {!shared && <><Button variant="ghost" size="icon" aria-label="실행 취소" data-tooltip="실행 취소 · Ctrl/⌘+Z" disabled={!state.undoStack.length || editLocked(session)} onClick={state.undo}><Undo2 /></Button>
+        {!shared && session && <><Button variant="ghost" size="icon" aria-label="실행 취소" data-tooltip="실행 취소 · Ctrl/⌘+Z" disabled={!state.undoStack.length || editLocked(session)} onClick={state.undo}><Undo2 /></Button>
         <Button variant="ghost" size="icon" aria-label="다시 실행" data-tooltip="다시 실행 · Ctrl/⌘+Shift+Z" disabled={!state.redoStack.length || editLocked(session)} onClick={state.redo}><Redo2 /></Button>
         <i /></>}
         <Button

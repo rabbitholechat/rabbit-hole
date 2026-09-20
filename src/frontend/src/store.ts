@@ -257,8 +257,8 @@ function restoreSession(session: Session): Session {
 
 export const useStore = create<State>((set, get) => ({
   undoStack: [], redoStack: [], clipboard: null, actionNotice: null, editingDraft: null, editingNode: null, editingEdge: null, selectedLink: null,
-  editNode: (id) => { if (id && get().session?.readOnly) return; set({ editingDraft: id && get().session ? nodeDraft(get().session!, id) : null, editingNode: id, editingEdge: null, ...(id ? { selected: id, selectedLink: null } : {}) }) },
-  editEdge: (id) => { if (id && get().session?.readOnly) return; set({ editingEdge: id, editingDraft: null, editingNode: null, selectedLink: id, selected: null }) },
+  editNode: (id) => { if (id && (!get().session || get().session?.readOnly)) return; set({ editingDraft: id && get().session ? nodeDraft(get().session!, id) : null, editingNode: id, editingEdge: null, ...(id ? { selected: id, selectedLink: null } : {}) }) },
+  editEdge: (id) => { if (id && (!get().session || get().session?.readOnly)) return; set({ editingEdge: id, editingDraft: null, editingNode: null, selectedLink: id, selected: null }) },
   copyNode: (id) => {
     const session = get().session
     const data = session && nodeDraft(session, id)
@@ -267,9 +267,8 @@ export const useStore = create<State>((set, get) => ({
     set({ clipboard: { data, width: node.width ?? node.measured?.width ?? (data.kind === 'response' ? 560 : data.kind === 'entity' ? 340 : 460) } })
     notifyAction('복사를 완료했습니다')
   },
-  createNode: (position, viewport) => {
-    if (get().activeRequest || get().loadingSessionId || get().session && editLocked(get().session)) return
-    if (!get().session) set({ session: { ...emptySession('새 캔버스'), fitted: true, viewport: viewport ?? { x: 0, y: 0, zoom: 1 } }, undoStack: [], redoStack: [] })
+  createNode: (position) => {
+    if (!get().session || get().activeRequest || get().loadingSessionId || editLocked(get().session)) return
     const session = get().session!
     const id = `user_${crypto.randomUUID()}`
     const edits = structuredClone(session.canvasEdits ?? emptyEdits())
@@ -278,10 +277,9 @@ export const useStore = create<State>((set, get) => ({
     set({ selected: id, selectedLink: null, editingDraft: nodeDraft(get().session!, id), editingNode: id, editingEdge: null })
     notifyAction('노드 생성을 완료했습니다')
   },
-  pasteNode: (position, viewport) => {
+  pasteNode: (position) => {
     const clipboard = get().clipboard
-    if (!clipboard || get().activeRequest || get().loadingSessionId || get().session && editLocked(get().session)) return
-    if (!get().session) set({ session: { ...emptySession('새 캔버스'), fitted: true, viewport: viewport ?? { x: 0, y: 0, zoom: 1 } }, undoStack: [], redoStack: [] })
+    if (!get().session || !clipboard || get().activeRequest || get().loadingSessionId || editLocked(get().session)) return
     const session = get().session!
     const selected = visibleNodes(session).find(n => n.id === get().selected)
     const id = `user_${crypto.randomUUID()}`

@@ -1,12 +1,11 @@
-import type { CoordinateExtent, Viewport } from '@xyflow/react'
-import type { CanvasNode } from '../types'
+import type { CoordinateExtent, Viewport, Node } from '@xyflow/react'
 
 const BASE_WIDTH = 2400
 const BASE_HEIGHT = 1600
 
 /** Canvas coordinates: keep a base area, room around every node, and the current view. */
 export function canvasBounds(
-  nodes: CanvasNode[],
+  nodes: Node[],
   viewport: Viewport,
   screen: { width: number; height: number },
 ): CoordinateExtent {

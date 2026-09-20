@@ -2347,3 +2347,29 @@ svg {
 
 .shared-workspace .brand { text-decoration: none; }
 .shared-label { flex-shrink: 0; }
+
+/* Start-screen content belongs to the canvas; only the composer stays on screen. */
+.workspace.is-empty .composer-area { top: 0; bottom: 0; height: max-content; margin-block: auto; transform: none; }
+.workspace.is-empty .canvas-tools { position: fixed; top: auto; left: auto; bottom: 20px; right: var(--right-space); margin: 0; width: max-content; height: auto; flex-direction: row; gap: 3px; padding: 4px 6px; transform: none; }
+.workspace.is-empty .canvas-tools i { width: 1px; height: 18px; margin: 0 3px; }
+.workspace.is-empty .composer-tool-menu { max-height: min(390px, calc(50dvh - 80px)); }
+.welcome-canvas-brand { background: transparent; border: 0; box-shadow: none; text-align: center; }
+.welcome-canvas-brand .welcome-brand { margin-bottom: 14px; }
+.welcome-canvas-brand h1 { margin: 0; color: #3e5145; font-size: 26px; font-weight: 500; letter-spacing: -1px; }
+.welcome-handle { opacity: 0; pointer-events: none; }
+.welcome-question { position: relative; min-height: 130px; padding: 18px 18px 12px; border: 1px solid #214b3d; border-radius: 18px; background: #285b48; box-shadow: 0 6px 20px #153f2e12; }
+.welcome-question p { margin: 0; font-size: 14px; line-height: 1.6; color: #f0f7f2; word-break: keep-all; }
+.welcome-question-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 10px; }
+.welcome-question-actions button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: #d5e8dc; }
+@media (max-width: 700px) {
+  .workspace.is-empty .canvas-tools { right: 14px; bottom: max(12px, env(safe-area-inset-bottom)); }
+  .welcome-question { padding: 12px 16px 9px; }
+  .welcome-question p { font-size: 13px; }
+  .welcome-question-actions { margin-top: 5px; }
+}
+
+.welcome-question.tone-1 { background: #326452; }
+.welcome-question.tone-2 { background: #225749; }
+.welcome-question.tone-3 { background: #3d6b54; }
+.workspace .welcome-question-actions button:hover:not(:disabled) { background: #ffffff1f; color: #fff; }
+.workspace .welcome-question-actions button:focus-visible { outline: 2px solid #c2e6d0; outline-offset: 2px; }
