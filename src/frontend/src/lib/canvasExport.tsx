@@ -61,6 +61,25 @@ function freezeCanvas(viewport: HTMLElement): HTMLElement {
       'script, iframe, object, embed, .react-flow__edge-interaction, .edge-inline-editor, .inline-editor, .connection-reveal',
     )
     .forEach((element) => element.remove())
+  // Keep card geometry while omitting action and navigation controls from the export.
+  clone
+    .querySelectorAll<HTMLElement>('.response-actions, .previous-node, .node-button')
+    .forEach((control) => {
+      const spacer = document.createElement('span')
+      spacer.style.cssText = control.style.cssText
+      spacer.style.visibility = 'hidden'
+      spacer.style.pointerEvents = 'none'
+      spacer.setAttribute('aria-hidden', 'true')
+      control.replaceWith(spacer)
+    })
+  // Related-information titles and edge labels are content, even when the app uses buttons.
+  clone.querySelectorAll('button').forEach((button) => {
+    const label = document.createElement('span')
+    label.style.cssText = button.style.cssText
+    label.className = button.className
+    label.append(...button.childNodes)
+    button.replaceWith(label)
+  })
   return clone
 }
 

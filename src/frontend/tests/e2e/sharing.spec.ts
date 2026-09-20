@@ -102,6 +102,9 @@ test('share snapshots and exports the current canvas; shared view never writes o
   const exportPage = await opened
   await expect(exportPage.locator('.react-flow__node')).toHaveCount(2)
   await expect(exportPage.locator('.react-flow__edge')).toHaveCount(1)
+  await expect(exportPage.locator('.react-flow__node button, .response-actions, .previous-node')).toHaveCount(
+    0,
+  )
   await expect(exportPage.getByText('노드 위치와 연결선 유지')).toBeVisible()
   await expect(exportPage.locator('[data-id="response_next"]')).toHaveCSS(
     'transform',
