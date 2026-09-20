@@ -2374,8 +2374,8 @@ svg {
 .workspace .welcome-question-actions button:hover:not(:disabled) { background: #d9ebe2; color: #245c4b; }
 .workspace .welcome-question-actions button:focus-visible { outline: 2px solid #458c80; outline-offset: 2px; }
 
-.sidebar-footer { display: flex; flex: none; gap: 6px; padding-top: 12px; margin-top: 12px; border-top: 1px solid #dce5de; }
-.sidebar-footer > button, .sidebar-footer > a { display: flex; flex: 1; align-items: center; justify-content: center; gap: 8px; padding: 10px 6px; border: 0; border-radius: 10px; background: transparent; color: #52675b; font-size: 13px; text-decoration: none; }
+.sidebar-footer { display: flex; flex-direction: column; flex: none; gap: 6px; padding-top: 12px; margin-top: 12px; border-top: 1px solid #dce5de; }
+.sidebar-footer > button, .sidebar-footer > a { display: flex; flex: 1; align-items: center; justify-content: flex-start; gap: 8px; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: #52675b; font-size: 13px; text-decoration: none; }
 .sidebar-footer > button:hover, .sidebar-footer > a:hover { background: #e5efe8; color: #245c4b; }
 .settings-dialog { position: fixed; inset: 0; margin: auto; width: min(720px, calc(100vw - 32px)); max-height: min(680px, calc(100dvh - 40px)); padding: 0; overflow: hidden; border: 1px solid #cbded2; border-radius: 22px; background: #fafcf9; color: #30473b; box-shadow: 0 24px 90px #173b2926; }
 .settings-dialog::backdrop { background: #18312755; backdrop-filter: blur(4px); }
