@@ -1,5 +1,7 @@
 # 실행과 배포
 
+로컬 첫 실행, 개발 명령, 코드 구조와 모델 설정은 [개발 가이드](DEVELOPMENT.md)를 참고하세요.
+
 ## PostgreSQL 연결 준비 (로컬 / Vercel 공통)
 
 1. `make install`로 psycopg를 포함한 잠금 의존성을 설치합니다.
