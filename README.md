@@ -1,12 +1,24 @@
-# Rabbit Hole
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/frontend/public/brand/rabbit-hole-icon-white.svg">
+    <img src="src/frontend/public/brand/rabbit-hole-icon-black.svg" width="112" height="112" alt="Rabbit Hole 토끼 아이콘">
+  </picture>
+</p>
 
-### 하나의 질문에서, 다음 호기심으로.
+<h1 align="center">Rabbit Hole</h1>
+
+<p align="center"><strong>하나의 질문에서, 다음 호기심으로.</strong></p>
+
+<p align="center">
+  <a href="#주요-기능">주요 기능</a> ·
+  <a href="#사용-흐름">사용 흐름</a> ·
+  <a href="docs/DEVELOPMENT.md">개발 가이드</a> ·
+  <a href="docs/BRAND.md">브랜드 자료</a>
+</p>
 
 Rabbit Hole은 **질문과 답변을 하나의 캔버스에서 탐색하는 AI 서비스**입니다. 답변을 읽고, 핵심 정보와 출처를 살펴보고, 더 궁금한 지점에서 다음 질문을 이어 가세요. 대화가 쌓일수록 나만의 탐색 지도가 만들어집니다.
 
 ![응답과 핵심 정보, 출처와 이미지가 한 캔버스에 펼쳐진 Rabbit Hole](src/frontend/public/images/landing/answer-canvas.webp)
-
-[주요 기능](#주요-기능) · [사용 흐름](#사용-흐름) · [개발 가이드](docs/DEVELOPMENT.md)
 
 ## 주요 기능
 
