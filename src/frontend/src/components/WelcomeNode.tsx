@@ -28,6 +28,13 @@ export function WelcomeNode({ data }: NodeProps<WelcomeCanvasNode>) {
           <span>Rabbit Hole</span>
         </div>
         <h1>호기심이 이어지는 곳</h1>
+        <p className="welcome-handwritten">
+          여기서, <span>호기심을 이어 보세요
+            <svg viewBox="0 0 210 12" fill="none" aria-hidden="true">
+              <path d="M3 7C49 2 135 2 205 6M18 10C78 6 143 7 185 9" />
+            </svg>
+          </span>
+        </p>
         <Handle id="above" type="source" position={Position.Top} className="welcome-handle" />
         <Handle id="below" type="source" position={Position.Bottom} className="welcome-handle" />
       </section>
