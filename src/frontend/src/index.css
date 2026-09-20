@@ -2373,3 +2373,41 @@ svg {
 .welcome-question.tone-3 { background: #f0f7ee; }
 .workspace .welcome-question-actions button:hover:not(:disabled) { background: #d9ebe2; color: #245c4b; }
 .workspace .welcome-question-actions button:focus-visible { outline: 2px solid #458c80; outline-offset: 2px; }
+
+.sidebar-footer { display: flex; flex: none; gap: 6px; padding-top: 12px; margin-top: 12px; border-top: 1px solid #dce5de; }
+.sidebar-footer > button, .sidebar-footer > a { display: flex; flex: 1; align-items: center; justify-content: center; gap: 8px; padding: 10px 6px; border: 0; border-radius: 10px; background: transparent; color: #52675b; font-size: 13px; text-decoration: none; }
+.sidebar-footer > button:hover, .sidebar-footer > a:hover { background: #e5efe8; color: #245c4b; }
+.settings-dialog { position: fixed; inset: 0; margin: auto; width: min(720px, calc(100vw - 32px)); max-height: min(680px, calc(100dvh - 40px)); padding: 0; overflow: hidden; border: 1px solid #cbded2; border-radius: 22px; background: #fafcf9; color: #30473b; box-shadow: 0 24px 90px #173b2926; }
+.settings-dialog::backdrop { background: #18312755; backdrop-filter: blur(4px); }
+.settings-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid #e0e9e2; }
+.settings-header h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.settings-header button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 9px; background: transparent; color: #62776a; }
+.settings-layout { display: flex; height: min(490px, calc(100dvh - 120px)); }
+.settings-nav { display: flex; flex-direction: column; flex: 0 0 150px; gap: 6px; padding: 18px 12px; border-right: 1px solid #e0e9e2; background: #f0f5ef; }
+.settings-nav button { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 0; border-radius: 10px; background: transparent; color: #65766a; text-align: left; }
+.settings-nav button[aria-pressed="true"] { background: #dcebe1; color: #245c4b; font-weight: 600; }
+.settings-content { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px; }
+.settings-content h3 { margin: 0 0 22px; font-size: 17px; }
+.settings-profile { display: flex; align-items: center; gap: 16px; padding: 20px; background: #edf7f3; border: 1px solid #b9d7ce; border-radius: 16px; }
+.settings-avatar { display: grid; place-items: center; flex: none; width: 58px; height: 58px; border: 1px solid #c0d8c9; border-radius: 50%; background: #f9fcf8; color: #315344; }
+.settings-avatar svg { width: 34px; height: 40px; }
+.settings-profile strong { font-size: 18px; }
+.settings-profile p { margin: 6px 0 0; font-size: 13px; color: #6c8174; }
+.settings-logout { display: flex; align-items: center; gap: 9px; margin-top: 24px; padding: 10px 14px; border: 1px solid #d1ddd4; border-radius: 10px; background: transparent; color: #52675b; }
+.settings-dialog button:hover { background: #e2ece4; }
+.settings-hint { margin: -8px 0 22px; color: #6c8174; font-size: 13px; line-height: 1.7; }
+.shortcut-group h4 { margin: 22px 0 8px; font-size: 13px; color: #5f7667; }
+.shortcut-group dl { margin: 0; }
+.shortcut-group dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #e5ece6; font-size: 12px; }
+.shortcut-group dd { margin: 0; text-align: right; }
+.shortcut-group kbd { font-family: inherit; font-size: 11px; line-height: 1.7; color: #536b5c; }
+.landing-placeholder { display: grid; min-height: 100dvh; align-content: center; justify-items: center; gap: 18px; color: #365142; }
+.landing-placeholder p { margin: 0; color: #718377; }
+.landing-placeholder a { padding: 12px 22px; border-radius: 24px; background: #0f766e; color: white; text-decoration: none; }
+@media (max-width: 700px) {
+  .settings-layout { flex-direction: column; }
+  .settings-nav { flex: none; flex-direction: row; padding: 10px 14px; border-right: 0; border-bottom: 1px solid #e0e9e2; }
+  .settings-nav button { flex: 1; justify-content: center; }
+  .settings-content { padding: 20px 16px; }
+  .shortcut-group dl > div { gap: 10px; }
+}
