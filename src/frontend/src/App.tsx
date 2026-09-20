@@ -1,4 +1,5 @@
-import { SidebarSettings, LandingPlaceholder } from './components/SettingsDialog'
+import { SidebarSettings } from './components/SettingsDialog'
+import { LandingPage } from './components/LandingPage'
 import { WelcomeNode, WelcomeExampleEdge, welcomeGraph, type WelcomeCanvasNode } from './components/WelcomeNode'
 import { CanvasShareActions } from './components/CanvasShareActions'
 import { SharedCanvasPage } from './components/SharedCanvasPage'
@@ -897,7 +898,7 @@ function Workspace({ shared = false }: { shared?: boolean }) {
   )
 }
 export default function App() {
-  if (window.location.pathname.replace(/\/$/, '') === '/landing') return <LandingPlaceholder />
+  if (window.location.pathname.replace(/\/$/, '') === '/landing') return <LandingPage />
   const shareMatch = window.location.pathname.match(/^\/share\/([^/]+)\/?$/)
   return (
     <ReactFlowProvider>

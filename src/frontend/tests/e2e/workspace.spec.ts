@@ -154,10 +154,10 @@ test('sidebar settings show the demo account and shortcuts, preserve the canvas 
   await page.screenshot({ path: testInfo.outputPath('settings-account.png') })
   await dialog.getByRole('button', { name: '로그아웃', exact: true }).click()
   await expect(page).toHaveURL(/\/landing$/)
-  await expect(page.getByText('로그아웃되었습니다', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '하나의 질문에서, 다음 호기심으로.' })).toBeVisible()
   await expect(page.locator('.react-flow')).toHaveCount(0)
   await page.reload()
-  await expect(page.getByRole('link', { name: '데모 시작하기' })).toBeVisible()
+  await expect(page.getByRole('link', { name: '내 호기심 따라가 보기' })).toBeVisible()
 })
 
 test('welcome canvas examples copy and fill the centered composer without starting a session', async ({ page }, testInfo) => {

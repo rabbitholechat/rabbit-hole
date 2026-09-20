@@ -2402,9 +2402,6 @@ svg {
 .shortcut-group dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #e5ece6; font-size: 12px; }
 .shortcut-group dd { margin: 0; text-align: right; }
 .shortcut-group kbd { font-family: inherit; font-size: 11px; line-height: 1.7; color: #536b5c; }
-.landing-placeholder { display: grid; min-height: 100dvh; align-content: center; justify-items: center; gap: 18px; color: #365142; }
-.landing-placeholder p { margin: 0; color: #718377; }
-.landing-placeholder a { padding: 12px 22px; border-radius: 24px; background: #0f766e; color: white; text-decoration: none; }
 @media (max-width: 700px) {
   .settings-layout { flex-direction: column; }
   .settings-nav { flex: none; flex-direction: row; padding: 10px 14px; border-right: 0; border-bottom: 1px solid #e0e9e2; }

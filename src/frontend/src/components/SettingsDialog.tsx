@@ -180,17 +180,3 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
     </dialog>
   )
 }
-
-// Landing design is intentionally deferred to the next task.
-export function LandingPlaceholder() {
-  return (
-    <main className="landing-placeholder">
-      <div className="welcome-brand">
-        <RabbitIcon />
-        <span>Rabbit Hole</span>
-      </div>
-      <p>로그아웃되었습니다</p>
-      <a href="/">데모 시작하기</a>
-    </main>
-  )
-}
